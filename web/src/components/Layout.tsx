@@ -1,0 +1,104 @@
+import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { LayoutDashboard, MonitorPlay, ScrollText, LogOut } from "lucide-react";
+import { api } from "../lib/api";
+import { useAuth } from "../lib/auth";
+import { LogoMark } from "./Logo";
+
+const NAV = [
+  { to: "/dashboard", label: "Přehled", icon: LayoutDashboard },
+  { to: "/displeje", label: "Displeje", icon: MonitorPlay },
+  { to: "/audit", label: "Audit log", icon: ScrollText },
+];
+
+export default function Layout() {
+  const { username, setUsername } = useAuth();
+  const navigate = useNavigate();
+
+  async function handleLogout() {
+    try {
+      await api.logout();
+    } catch {
+      // i tak odhlásíme lokálně
+    }
+    setUsername(null);
+    navigate("/login");
+  }
+
+  const initials = (username ?? "?").slice(0, 2).toUpperCase();
+
+  return (
+    <div className="min-h-screen flex">
+      {/* Levý navigační sloupec */}
+      <aside className="w-56 shrink-0 border-r border-line flex flex-col">
+        <div className="h-16 flex items-center gap-2.5 px-6">
+          <LogoMark size={30} />
+          <span className="font-display text-[15px] font-bold tracking-tight text-fg">
+            Amphibiárium
+          </span>
+        </div>
+
+        <nav className="flex-1 px-3 pt-4 space-y-0.5">
+          {NAV.map(({ to, label, icon: Icon }) => (
+            <NavLink
+              key={to}
+              to={to}
+              className={({ isActive }) =>
+                `relative flex items-center gap-3 rounded-md pl-4 pr-3 py-2 text-sm transition-colors ${
+                  isActive
+                    ? "text-accent font-semibold"
+                    : "text-fg-muted font-medium hover:text-fg"
+                }`
+              }
+            >
+              {({ isActive }) => (
+                <>
+                  {isActive && (
+                    <span className="absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-full bg-accent" />
+                  )}
+                  <Icon className="h-[18px] w-[18px]" strokeWidth={1.75} />
+                  {label}
+                </>
+              )}
+            </NavLink>
+          ))}
+        </nav>
+
+        <button
+          onClick={handleLogout}
+          className="flex items-center gap-3 px-6 py-4 text-sm font-medium text-fg-muted hover:text-fg transition-colors"
+        >
+          <LogOut className="h-[18px] w-[18px]" strokeWidth={1.75} />
+          Odhlásit
+        </button>
+      </aside>
+
+      {/* Hlavní obsah */}
+      <div className="flex-1 flex flex-col min-w-0">
+        <header className="h-16 shrink-0 border-b border-line flex items-center justify-between px-9">
+          <div className="flex items-center gap-2.5 text-fg-muted">
+            <span className="dot-online" />
+            <span className="text-sm">
+              Pavilon Amphibiárium, ZOO Ostrava
+              <span className="text-fg-dim"> · 37 displejů</span>
+            </span>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="text-right leading-tight">
+              <div className="text-sm font-semibold text-fg">{username ?? "Uživatel"}</div>
+              <div className="text-[11px] text-fg-dim">Správce obsahu</div>
+            </div>
+            <div className="h-8 w-8 rounded-full bg-accent text-white grid place-items-center text-xs font-bold">
+              {initials}
+            </div>
+          </div>
+        </header>
+
+        <main className="flex-1 overflow-y-auto">
+          <div className="mx-auto max-w-6xl px-9 py-10">
+            <Outlet />
+          </div>
+        </main>
+      </div>
+    </div>
+  );
+}

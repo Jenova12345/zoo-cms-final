@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600" viewBox="0 0 800 600" role="img" aria-label="Axolotl mexický">
+  <rect width="800" height="600" fill="#0f766e"/>
+  <rect width="800" height="600" fill="url(#g)"/>
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.12"/>
+      <stop offset="1" stop-color="#000000" stop-opacity="0.18"/>
+    </linearGradient>
+  </defs>
+  <text x="50%" y="46%" fill="#ffffff" font-family="Inter, Arial, sans-serif" font-size="56" font-weight="700" text-anchor="middle">Axolotl mexický</text>
+  <text x="50%" y="56%" fill="#ffffff" fill-opacity="0.85" font-family="Inter, Arial, sans-serif" font-size="26" text-anchor="middle">Amphibiárium · ZOO Ostrava</text>
+</svg>
