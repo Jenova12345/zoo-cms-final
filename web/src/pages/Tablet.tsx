@@ -1,11 +1,17 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ChevronLeft, ChevronRight, Sparkles, RefreshCw, X } from "lucide-react";
 import { api } from "../lib/api";
-import { NEPRIRAZENO, type DisplayDetail } from "../lib/types";
+import { NEPRIRAZENO, type DisplayDetail, type SlideContent } from "../lib/types";
 import { LogoMark } from "../components/Logo";
 
 const AUTO_ADVANCE_MS = 8000;
+const MEDIA_ADVANCE_MS = 5000;
+
+interface MediaItem {
+  typ: "video" | "foto";
+  url: string;
+}
 
 export default function Tablet() {
   const { id = "" } = useParams();
@@ -32,12 +38,19 @@ export default function Tablet() {
   const next = useCallback(() => setIndex((i) => (total ? (i + 1) % total : 0)), [total]);
   const prev = useCallback(() => setIndex((i) => (total ? (i - 1 + total) % total : 0)), [total]);
 
-  // Auto-advance.
+  // Drž index v rozsahu, když se po načtení změní počet slidů.
   useEffect(() => {
-    if (!total || paused) return;
+    if (total && index >= total) setIndex(0);
+  }, [total, index]);
+
+  const slideHasVideo = !!detail?.slides[index]?.video;
+
+  // Auto-advance. U slidu s videem nepřepínáme, ať se video stihne přehrát.
+  useEffect(() => {
+    if (!total || paused || slideHasVideo) return;
     const t = setInterval(next, AUTO_ADVANCE_MS);
     return () => clearInterval(t);
-  }, [total, paused, next, index]);
+  }, [total, paused, slideHasVideo, next, index]);
 
   // Ovládání šipkami z klávesnice.
   useEffect(() => {
@@ -66,7 +79,7 @@ export default function Tablet() {
     return <div className="min-h-screen grid place-items-center bg-bg text-fg-dim">Načítám…</div>;
   }
 
-  const slide = detail.slides[index];
+  const slide = detail.slides[index] ?? detail.slides[0];
   const druh = detail.meta.druh;
   const prirazeno = druh !== NEPRIRAZENO;
 
@@ -108,12 +121,7 @@ export default function Tablet() {
         {slide.jeAi ? (
           <AiPlaceholder druh={prirazeno ? druh : null} />
         ) : (
-          <ContentSlide
-            nadpis={slide.nadpis}
-            text={slide.text}
-            obrazky={slide.obrazky}
-            prirazeno={prirazeno}
-          />
+          <ContentSlide slide={slide} prirazeno={prirazeno} />
         )}
 
         {/* Navigační šipky */}
@@ -152,7 +160,7 @@ export default function Tablet() {
                   : "w-8 bg-accent"
                 : "w-2.5 bg-line hover:bg-fg-dim"
             }`}
-            aria-label={`Slide ${s.n}`}
+            aria-label={`Slide ${i + 1}`}
           />
         ))}
       </div>
@@ -166,18 +174,16 @@ export default function Tablet() {
   );
 }
 
-function ContentSlide({
-  nadpis,
-  text,
-  obrazky,
-  prirazeno,
-}: {
-  nadpis: string;
-  text: string;
-  obrazky: string[];
-  prirazeno: boolean;
-}) {
-  const hasContent = prirazeno && (nadpis || text || obrazky.length > 0);
+function ContentSlide({ slide, prirazeno }: { slide: SlideContent; prirazeno: boolean }) {
+  const { nadpis, text, obrazky, video } = slide;
+  const media = useMemo<MediaItem[]>(() => {
+    const items: MediaItem[] = [];
+    if (video) items.push({ typ: "video", url: video });
+    for (const url of obrazky) items.push({ typ: "foto", url });
+    return items;
+  }, [video, obrazky]);
+
+  const hasContent = prirazeno && (nadpis || text || media.length > 0);
   if (!hasContent) {
     return (
       <div className="h-full grid place-items-center text-center px-10">
@@ -192,10 +198,10 @@ function ContentSlide({
   }
   return (
     <div className="h-full grid grid-cols-1 lg:grid-cols-2">
-      {/* Obrázek */}
+      {/* Média: carousel fotek a video */}
       <div className="relative bg-bg grid place-items-center overflow-hidden">
-        {obrazky.length > 0 ? (
-          <img src={obrazky[0]} alt={nadpis} className="h-full w-full object-cover" />
+        {media.length > 0 ? (
+          <MediaCarousel key={slide.n} items={media} alt={nadpis} />
         ) : (
           <div className="text-fg-dim text-sm">Bez fotky</div>
         )}
@@ -216,19 +222,61 @@ function ContentSlide({
         <p className="mt-6 text-lg lg:text-xl leading-relaxed text-fg-muted whitespace-pre-line max-w-2xl">
           {text}
         </p>
-        {obrazky.length > 1 && (
-          <div className="mt-8 flex gap-3">
-            {obrazky.slice(1, 5).map((url) => (
-              <img
-                key={url}
-                src={url}
-                alt=""
-                className="h-16 w-16 rounded-lg object-cover border border-line"
-              />
-            ))}
-          </div>
-        )}
       </div>
+    </div>
+  );
+}
+
+// Carousel přes média jednoho slidu: video (pokud je) a všechny fotky.
+function MediaCarousel({ items, alt }: { items: MediaItem[]; alt: string }) {
+  const [i, setI] = useState(0);
+  const safe = Math.min(i, items.length - 1);
+  const current = items[safe];
+
+  // Automatické přepínání fotek. U videa se nepřepíná, ať dohraje.
+  useEffect(() => {
+    if (items.length <= 1 || current?.typ === "video") return;
+    const t = setInterval(() => setI((x) => (x + 1) % items.length), MEDIA_ADVANCE_MS);
+    return () => clearInterval(t);
+  }, [items.length, current?.typ, safe]);
+
+  if (!current) return null;
+
+  return (
+    <div className="relative h-full w-full">
+      {current.typ === "video" ? (
+        <video
+          key={current.url}
+          src={current.url}
+          className="h-full w-full object-contain bg-black"
+          autoPlay
+          muted
+          loop
+          playsInline
+          controls
+        />
+      ) : (
+        <img src={current.url} alt={alt} className="h-full w-full object-cover" />
+      )}
+
+      {/* Tečky médií */}
+      {items.length > 1 && (
+        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-2">
+          {items.map((m, idx) => (
+            <button
+              key={m.url}
+              onClick={(e) => {
+                e.stopPropagation();
+                setI(idx);
+              }}
+              className={`h-2 rounded-full transition-all ${
+                idx === safe ? "w-6 bg-white" : "w-2 bg-white/50 hover:bg-white/80"
+              }`}
+              aria-label={m.typ === "video" ? "Video" : `Fotka ${idx + 1}`}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

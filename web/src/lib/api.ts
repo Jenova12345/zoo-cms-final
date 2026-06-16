@@ -61,6 +61,49 @@ export const api = {
     });
   },
 
+  async deleteImage(id: string, n: number, nazev: string): Promise<void> {
+    await request(`/api/displays/${id}/slides/${n}/images/${encodeURIComponent(nazev)}`, {
+      method: "DELETE",
+    });
+  },
+
+  async reorderImages(id: string, n: number, poradi: string[]): Promise<void> {
+    await request(`/api/displays/${id}/slides/${n}/images/reorder`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ poradi }),
+    });
+  },
+
+  async uploadVideo(id: string, n: number, file: File): Promise<{ url: string }> {
+    const form = new FormData();
+    form.append("file", file);
+    return request<{ ok: boolean; url: string }>(`/api/displays/${id}/slides/${n}/video`, {
+      method: "POST",
+      body: form,
+    });
+  },
+
+  async deleteVideo(id: string, n: number): Promise<void> {
+    await request(`/api/displays/${id}/slides/${n}/video`, { method: "DELETE" });
+  },
+
+  async addSlide(id: string): Promise<{ n: number }> {
+    return request<{ ok: boolean; n: number }>(`/api/displays/${id}/slides`, { method: "POST" });
+  },
+
+  async deleteSlide(id: string, n: number): Promise<void> {
+    await request(`/api/displays/${id}/slides/${n}`, { method: "DELETE" });
+  },
+
+  async reorderSlides(id: string, poradi: number[]): Promise<void> {
+    await request(`/api/displays/${id}/slides/reorder`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ poradi }),
+    });
+  },
+
   async refresh(id: string): Promise<void> {
     await request(`/api/displays/${id}/refresh`, { method: "POST" });
   },
@@ -70,6 +113,16 @@ export const api = {
     return data.entries;
   },
 };
+
+// Z URL fotky (/data/.../soubor.jpg) vytáhne čistý název souboru.
+export function nazevSouboru(url: string): string {
+  const last = url.split("/").pop() ?? url;
+  try {
+    return decodeURIComponent(last);
+  } catch {
+    return last;
+  }
+}
 
 // Formátování českého data a času.
 export function formatDateTime(iso: string): string {

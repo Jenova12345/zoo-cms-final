@@ -44,12 +44,18 @@ V dev režimu otevři **http://127.0.0.1:5173**.
 Struktura (přesně takhle, kvůli budoucí Unity integraci):
 
 ```
-data/displeje/<cislo>/meta.json                 {"druh","stav","posledniZmena"}
-data/displeje/<cislo>/cs/slide-<1..6>/text.md   slidy 1-5 (obsahové)
-data/displeje/<cislo>/cs/slide-6/kb.md          slide 6 = AI znalostní báze
-data/displeje/<cislo>/cs/slide-<n>/<obrazky>    fotky slidu
+data/displeje/<cislo>/meta.json                 {"druh","stav","posledniZmena","slidy"}
+data/displeje/<cislo>/cs/slide-<n>/text.md      obsahový slide
+data/displeje/<cislo>/cs/slide-6/kb.md          AI slide = znalostní báze chatbota
+data/displeje/<cislo>/cs/slide-<n>/<obrazky>    fotky slidu (víc fotek = galerie)
+data/displeje/<cislo>/cs/slide-<n>/<video>.mp4  video slidu (jedno na slide)
 data/audit.jsonl                                append-only audit log
 ```
+
+Počet a pořadí slidů jsou dané složkami `slide-<n>` na disku, jejich pořadí (a pořadí
+fotek a název videa) drží pole `slidy` v `meta.json`. Když `slidy` chybí (starší data),
+struktura se odvodí z disku a dopíše se při první úpravě. Soubor ručně přetažený do
+složky slidu se i nadále objeví v CMS i na tabletu.
 
 ## Dva toky, které lze předvést
 
@@ -71,11 +77,18 @@ data/audit.jsonl                                append-only audit log
 | POST | `/api/login` | přihlášení (jakékoliv neprázdné údaje), session cookie, audit |
 | GET | `/api/displays` | seznam displejů |
 | GET | `/api/displays/:id` | meta + 6 slidů |
-| PUT | `/api/displays/:id/slides/:n` | zápis nadpisu a textu (audit „úprava“) |
-| POST | `/api/displays/:id/slides/:n/image` | multipart upload fotky (audit „upload“) |
+| PUT | `/api/displays/:id/slides/:n` | zápis nadpisu a textu, u AI slidu celé kb.md (audit „úprava“) |
+| POST | `/api/displays/:id/slides/:n/image` | multipart upload fotky, přidá do galerie (audit „upload“) |
+| DELETE | `/api/displays/:id/slides/:n/images/:nazev` | smazání jedné fotky |
+| PUT | `/api/displays/:id/slides/:n/images/reorder` | změna pořadí fotek (`{poradi:[...]}`) |
+| POST | `/api/displays/:id/slides/:n/video` | multipart upload videa (mp4) |
+| DELETE | `/api/displays/:id/slides/:n/video` | smazání videa |
+| POST | `/api/displays/:id/slides` | přidání nového slidu |
+| DELETE | `/api/displays/:id/slides/:n` | odebrání slidu (AI slide nelze) |
+| PUT | `/api/displays/:id/slides/reorder` | změna pořadí slidů (`{poradi:[...]}`) |
 | POST | `/api/displays/:id/refresh` | mock odeslání na displej (audit) |
 | GET | `/api/audit` | audit log |
-| GET | `/data/...` | servírování souborů (fotky) |
+| GET | `/data/...` | servírování souborů (fotky, video) |
 
 ## Poznámky
 
