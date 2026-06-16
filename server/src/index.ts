@@ -13,6 +13,7 @@ import {
   readSlides,
   writeSlide,
   saveImage,
+  isImageFilename,
   deleteImage,
   reorderImages,
   saveVideo,
@@ -133,6 +134,12 @@ app.post<{ Params: { id: string; n: string } }>(
 
     const file = await req.file();
     if (!file) return reply.code(400).send({ chyba: "Chybí soubor." });
+    // Co neumíme vypsat, nesmíme tiše přijmout (jinak fotka zmizí). Raději jasná chyba.
+    if (!isImageFilename(file.filename)) {
+      return reply.code(400).send({
+        chyba: "Nepodporovaný formát obrázku. Použijte JPG, PNG, HEIC, WEBP, AVIF, GIF nebo SVG.",
+      });
+    }
     const buffer = await file.toBuffer();
     const url = await saveImage(id, n, file.filename, buffer);
 

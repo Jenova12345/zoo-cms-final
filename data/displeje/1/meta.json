@@ -1,5 +1,52 @@
 {
   "druh": "Axolotl mexický",
   "stav": "online",
-  "posledniZmena": "2026-06-01T06:49:43.707Z"
+  "posledniZmena": "2026-06-16T10:53:19.174Z",
+  "slidy": [
+    {
+      "klic": "slide-1",
+      "ai": false,
+      "obrazky": [
+        "Unknown.jpeg",
+        "Unknown-mqgh6456-2c386d.jpeg",
+        "Unknown-mqgh6wij-19b51c.jpeg",
+        "uvod.svg"
+      ],
+      "video": null
+    },
+    {
+      "klic": "slide-3",
+      "ai": false,
+      "obrazky": [],
+      "video": null
+    },
+    {
+      "klic": "slide-2",
+      "ai": false,
+      "obrazky": [
+        "Unknown.jpeg"
+      ],
+      "video": null
+    },
+    {
+      "klic": "slide-4",
+      "ai": false,
+      "obrazky": [],
+      "video": null
+    },
+    {
+      "klic": "slide-5",
+      "ai": false,
+      "obrazky": [
+        "Unknown.jpeg"
+      ],
+      "video": "DSCN1430.MOV"
+    },
+    {
+      "klic": "slide-6",
+      "ai": true,
+      "obrazky": [],
+      "video": null
+    }
+  ]
 }

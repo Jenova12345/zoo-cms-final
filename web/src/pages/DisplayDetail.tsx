@@ -41,7 +41,6 @@ export default function DisplayDetail() {
   const [active, setActive] = useState(1);
   const [drafts, setDrafts] = useState<Record<number, Draft>>({});
   const [saving, setSaving] = useState(false);
-  const [sending, setSending] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadingVideo, setUploadingVideo] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -106,15 +105,19 @@ export default function DisplayDetail() {
     }
   }
 
-  async function handleSend() {
-    setSending(true);
+  // Jeden klik: uloží obsah slidu na disk (audit "úprava") a hned ho odešle na
+  // displej (audit "odesláno na displej").
+  async function handleSaveAndSend() {
+    setSaving(true);
     try {
+      await api.saveSlide(id, active, draft.nadpis, draft.text);
       await api.refresh(id);
-      toast.success(`Obsah odeslán na displej ${id}`);
+      await load();
+      toast.success(`Uloženo a odesláno na displej ${id}`);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Odeslání selhalo.");
+      toast.error(e instanceof Error ? e.message : "Uložení nebo odeslání selhalo.");
     } finally {
-      setSending(false);
+      setSaving(false);
     }
   }
 
@@ -386,13 +389,9 @@ export default function DisplayDetail() {
               />
             </div>
             <div className="flex items-center gap-3 pt-1">
-              <button onClick={handleSave} className="btn-primary" disabled={saving}>
-                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" strokeWidth={1.75} />}
-                Uložit
-              </button>
-              <button onClick={handleSend} className="btn-amber" disabled={sending}>
-                {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" strokeWidth={1.75} />}
-                Odeslat na displej
+              <button onClick={handleSaveAndSend} className="btn-primary" disabled={saving}>
+                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" strokeWidth={1.75} />}
+                Uložit a odeslat na displej
               </button>
             </div>
           </div>

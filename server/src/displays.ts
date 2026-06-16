@@ -1,4 +1,5 @@
 import { promises as fs } from "node:fs";
+import { randomBytes } from "node:crypto";
 import path from "node:path";
 import { DISPLAYS_DIR, AI_SLIDE } from "./paths.js";
 
@@ -38,8 +39,31 @@ export interface DisplaySummary {
   thumbnail: string | null;
 }
 
-const IMAGE_EXT = new Set([".svg", ".png", ".jpg", ".jpeg", ".webp", ".gif"]);
+// Pozn.: tenhle whitelist musí pokrýt všechno, co dovolíme nahrát přes upload.
+// Když je užší, soubor se uloží na disk, ale reconcile (listImages) ho zahodí
+// a fotka pak v galerii ani v meta nikdy nevyskočí. Proto sem patří i moderní
+// formáty z mobilů (HEIC z iPhonu, AVIF apod.).
+const IMAGE_EXT = new Set([
+  ".svg",
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".jfif",
+  ".webp",
+  ".gif",
+  ".avif",
+  ".bmp",
+  ".heic",
+  ".heif",
+  ".tif",
+  ".tiff",
+]);
 const VIDEO_EXT = new Set([".mp4", ".webm", ".m4v", ".mov", ".ogg"]);
+
+// Jediný zdroj pravdy: co je obrázek pro výpis, je obrázek i pro upload.
+export function isImageFilename(name: string): boolean {
+  return IMAGE_EXT.has(path.extname(name).toLowerCase());
+}
 
 export const NEPRIRAZENO = "Nepřiřazeno";
 
@@ -316,6 +340,21 @@ function sanitizeFilename(name: string): string {
   return base || `soubor-${Date.now()}`;
 }
 
+// Každá nahraná fotka musí být samostatný soubor i samostatná položka galerie.
+// Safari pojmenovává přetažené obrázky vždy "Unknown.jpeg", takže bez unikátního
+// názvu by druhý upload přepsal první soubor a v poli obrazky by nepřibyl záznam.
+// Proto k bezpečnému základu přidáme timestamp a krátký random, příponu zachováme.
+function uniqueImageName(filename: string): string {
+  const ext = path.extname(filename).toLowerCase();
+  const safe = sanitizeFilename(filename);
+  let stem = safe.slice(0, safe.length - path.extname(safe).length);
+  stem = stem.slice(0, 40).replace(/[\s._-]+$/g, "");
+  if (!stem) stem = "fotka";
+  const razitko = Date.now().toString(36);
+  const nahodne = randomBytes(3).toString("hex");
+  return `${stem}-${razitko}-${nahodne}${ext}`;
+}
+
 export async function saveImage(
   id: string,
   n: number,
@@ -325,7 +364,7 @@ export async function saveImage(
   const klic = nToKlic(n);
   const dir = slideDirByKlic(id, klic);
   await fs.mkdir(dir, { recursive: true });
-  const safe = sanitizeFilename(filename);
+  const safe = uniqueImageName(filename);
   await fs.writeFile(path.join(dir, safe), data);
   await mutateDisplay(id, (slides) => {
     const s = slides.find((x) => x.klic === klic);

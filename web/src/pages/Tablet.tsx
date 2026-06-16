@@ -233,7 +233,10 @@ function MediaCarousel({ items, alt }: { items: MediaItem[]; alt: string }) {
   const safe = Math.min(i, items.length - 1);
   const current = items[safe];
 
-  // Automatické přepínání fotek. U videa se nepřepíná, ať dohraje.
+  const goto = (idx: number) => setI(((idx % items.length) + items.length) % items.length);
+
+  // Automatické přepínání fotek (autoplay jako na reálném tabletu).
+  // U videa se nepřepíná časovačem, ať dohraje; posun řeší onEnded.
   useEffect(() => {
     if (items.length <= 1 || current?.typ === "video") return;
     const t = setInterval(() => setI((x) => (x + 1) % items.length), MEDIA_ADVANCE_MS);
@@ -251,30 +254,59 @@ function MediaCarousel({ items, alt }: { items: MediaItem[]; alt: string }) {
           className="h-full w-full object-contain bg-black"
           autoPlay
           muted
-          loop
+          loop={items.length <= 1}
           playsInline
           controls
+          onEnded={() => {
+            // Video dohrálo: posuň carousel na další médium slidu.
+            if (items.length > 1) setI((x) => (x + 1) % items.length);
+          }}
         />
       ) : (
         <img src={current.url} alt={alt} className="h-full w-full object-cover" />
       )}
 
-      {/* Tečky médií */}
+      {/* Ovládání fotek v rámci slidu: malé šipky + tečky.
+          Záměrně menší a oddělené od velkých bočních šipek (ty přepínají slidy). */}
       {items.length > 1 && (
-        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-2">
-          {items.map((m, idx) => (
-            <button
-              key={m.url}
-              onClick={(e) => {
-                e.stopPropagation();
-                setI(idx);
-              }}
-              className={`h-2 rounded-full transition-all ${
-                idx === safe ? "w-6 bg-white" : "w-2 bg-white/50 hover:bg-white/80"
-              }`}
-              aria-label={m.typ === "video" ? "Video" : `Fotka ${idx + 1}`}
-            />
-          ))}
+        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-3">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              goto(safe - 1);
+            }}
+            className="grid h-8 w-8 place-items-center rounded-full bg-black/45 text-white/90 backdrop-blur hover:bg-black/70 hover:text-white transition shadow-card"
+            aria-label="Předchozí fotka"
+          >
+            <ChevronLeft className="h-4 w-4" strokeWidth={2} />
+          </button>
+
+          <div className="flex items-center gap-2">
+            {items.map((m, idx) => (
+              <button
+                key={m.url}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  goto(idx);
+                }}
+                className={`h-2 rounded-full transition-all ${
+                  idx === safe ? "w-6 bg-white" : "w-2 bg-white/50 hover:bg-white/80"
+                }`}
+                aria-label={m.typ === "video" ? "Video" : `Fotka ${idx + 1}`}
+              />
+            ))}
+          </div>
+
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              goto(safe + 1);
+            }}
+            className="grid h-8 w-8 place-items-center rounded-full bg-black/45 text-white/90 backdrop-blur hover:bg-black/70 hover:text-white transition shadow-card"
+            aria-label="Další fotka"
+          >
+            <ChevronRight className="h-4 w-4" strokeWidth={2} />
+          </button>
         </div>
       )}
     </div>
