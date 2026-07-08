@@ -1,53 +1,49 @@
-// Reálný český obsah pro displeje 1-3. Každý obsahový slide má 3-4 věty.
-// Slidy: 1 Popis, 2 Výskyt, 3 Potrava, 4 Zajímavost, 5 Ohrožení, 6 AI (kb.md).
-
-export interface SeedSlide {
-  nadpis: string;
-  text: string;
-}
+// Reálný český obsah pro displeje 1-3 v novém formátu pro Unity:
+// 1_info (pole do text.txt), 2_vid (prázdné, video nahraje kurátor),
+// 3_gal (placeholder fotky), 4_ai (prázdná složka) a kb.md v kořeni.
 
 export interface SeedDisplay {
   druh: string;
-  barva: string; // pozadí SVG placeholderu
-  slides: [SeedSlide, SeedSlide, SeedSlide, SeedSlide, SeedSlide]; // slidy 1-5
-  kb: string; // slide 6
+  barva: string; // pozadí PNG placeholderů
+  pole: Record<string, string>; // info panel: řádky "Klic: Hodnota" do text.txt
+  kb: string; // znalostní báze kb.md v kořeni displeje
 }
 
 export const SEED_DISPLAYS: Record<number, SeedDisplay> = {
   1: {
     druh: "Axolotl mexický",
     barva: "#0f766e",
-    slides: [
-      {
-        nadpis: "Popis",
-        text: "Axolotl mexický (Ambystoma mexicanum) je ocasatý obojživelník, který si po celý život zachovává larvální podobu včetně vnějších keříčkovitých žaber. Dorůstá délky kolem 25 až 30 centimetrů a vyznačuje se širokou hlavou s výrazem připomínajícím úsměv. V přírodě má tmavě hnědé až olivové zbarvení, v chovech jsou běžné i světlé a růžové formy. Patří mezi nejznámější obojživelníky světa.",
-      },
-      {
-        nadpis: "Výskyt",
-        text: "Pochází z jezerní soustavy Xochimilco a dříve i Chalco poblíž hlavního města Mexika. Žije výhradně ve sladkovodních kanálech a jezerech v nadmořské výšce kolem 2 200 metrů. Jeho přirozený areál se kvůli vysoušení a zástavbě zmenšil na nepatrný zlomek původního rozsahu. Dnes přežívají poslední divoké populace pouze v kanálech Xochimilca.",
-      },
-      {
-        nadpis: "Potrava",
-        text: "Axolotl je dravec, který loví drobné vodní bezobratlé, larvy hmyzu, červy a malé korýše. Kořist nasává prudkým otevřením tlamy společně s proudem vody. V chovu přijímá žížaly, nitěnky a speciální granule. Mladí jedinci jsou poměrně hltaví a rostou rychle.",
-      },
-      {
-        nadpis: "Zajímavost",
-        text: "Axolotl má mimořádnou schopnost regenerace: dokáže obnovit ztracené končetiny, ocas, části srdce i míchy bez vzniku jizev. Díky tomu je oblíbeným modelovým organismem v biologickém a lékařském výzkumu. Jev, kdy zůstává celý život ve larvální formě, se nazývá neotenie. Za vhodných podmínek se vzácně může přeměnit v suchozemskou dospělou formu.",
-      },
-      {
-        nadpis: "Ohrožení",
-        text: "V přírodě je axolotl kriticky ohrožený a hrozí mu vyhynutí ve volné přírodě. Hlavními příčinami jsou znečištění vody, úbytek biotopu a vysazené invazní ryby, které požírají mláďata. Paradoxně přitom žijí statisíce jedinců v chovech a laboratořích po celém světě. Ochranné programy se snaží obnovit kvalitu vody v kanálech Xochimilca.",
-      },
-    ],
+    pole: {
+      Sekce: "Neotenie",
+      Nazev: "Axolotl mexický",
+      Latinsky: "Ambystoma mexicanum",
+      Strava: "vodní bezobratlí, larvy hmyzu, drobní korýši",
+      Velikost: "25 až 30 cm",
+      DobaLihnuti: "14 až 21 dní",
+      Ohrozeni: "kriticky ohrožený",
+      DelkaZivota: "10 až 15 let",
+    },
     kb: `# Znalostní báze: Axolotl mexický
 
-Tato sekce slouží jako podklad pro budoucího AI průvodce u displeje. Obsahuje fakta, na která se návštěvníci nejčastěji ptají.
+Tato sekce slouží jako podklad pro AI průvodce u displeje. Obsahuje fakta, na která se návštěvníci nejčastěji ptají.
 
 ## Základní fakta
 - Druh: Axolotl mexický (Ambystoma mexicanum)
 - Skupina: ocasatí obojživelníci
 - Velikost: 25 až 30 cm
 - Zvláštnost: celý život si zachovává larvální podobu (neotenie)
+
+## Popis
+Axolotl mexický je ocasatý obojživelník, který si po celý život zachovává larvální podobu včetně vnějších keříčkovitých žaber. Dorůstá délky kolem 25 až 30 centimetrů a vyznačuje se širokou hlavou s výrazem připomínajícím úsměv. V přírodě má tmavě hnědé až olivové zbarvení, v chovech jsou běžné i světlé a růžové formy.
+
+## Výskyt
+Pochází z jezerní soustavy Xochimilco a dříve i Chalco poblíž hlavního města Mexika. Žije výhradně ve sladkovodních kanálech a jezerech v nadmořské výšce kolem 2 200 metrů. Dnes přežívají poslední divoké populace pouze v kanálech Xochimilca.
+
+## Zajímavost
+Axolotl má mimořádnou schopnost regenerace: dokáže obnovit ztracené končetiny, ocas, části srdce i míchy bez vzniku jizev. Jev, kdy zůstává celý život ve larvální formě, se nazývá neotenie.
+
+## Ohrožení
+V přírodě je axolotl kriticky ohrožený. Hlavními příčinami jsou znečištění vody, úbytek biotopu a vysazené invazní ryby. Ochranné programy se snaží obnovit kvalitu vody v kanálech Xochimilca.
 
 ## Časté otázky
 - "Je to ryba?" Ne, je to obojživelník, příbuzný mloků a čolků.
@@ -62,37 +58,36 @@ Přátelský, stručný, vhodný pro děti i dospělé. Bez latinských termín�
   2: {
     druh: "Mlok skvrnitý",
     barva: "#a16207",
-    slides: [
-      {
-        nadpis: "Popis",
-        text: "Mlok skvrnitý (Salamandra salamandra) je nápadný ocasatý obojživelník s leskle černým tělem a sytě žlutými až oranžovými skvrnami. Dorůstá délky kolem 15 až 25 centimetrů a má zavalité tělo s krátkýma nohama. Výrazné zbarvení je varovné a upozorňuje predátory na jedovaté kožní výměšky. Patří k nejznámějším obojživelníkům střední Evropy.",
-      },
-      {
-        nadpis: "Výskyt",
-        text: "Obývá vlhké listnaté a smíšené lesy s čistými potoky, často v pahorkatinách a podhůří. Vyskytuje se ve velké části Evropy včetně České republiky. Přes den se ukrývá pod kameny, kládami a v norách, aktivní je hlavně za vlhka a po dešti. Vyžaduje chladné a stinné prostředí v blízkosti tekoucí vody.",
-      },
-      {
-        nadpis: "Potrava",
-        text: "Živí se převážně bezobratlými, jako jsou žížaly, slimáci, pavouci a hmyz. Kořist loví aktivním vyhledáváním zejména za vlhkých nocí. Larvy ve vodě požírají drobné vodní bezobratlé. Při lovu se spoléhá hlavně na čich a hmat.",
-      },
-      {
-        nadpis: "Zajímavost",
-        text: "Mlok skvrnitý nerodí vajíčka, ale rovnou živé larvy, které samice klade do chladné tekoucí vody. Žlutočerné zbarvení je u každého jedince trochu jiné, takže funguje jako otisk prstu. Dožívá se vysokého věku, v zajetí i přes dvacet let. V minulosti byl díky výskytu u ohnišť spojován s pověrami o ohni.",
-      },
-      {
-        nadpis: "Ohrožení",
-        text: "Mloka ohrožuje úbytek vlhkých lesů, znečištění a vysoušení potoků a rozdělení krajiny silnicemi. Vážnou hrozbou je plísňové onemocnění Bsal, které v některých oblastech Evropy způsobilo prudký pokles populací. V České republice je zvláště chráněným druhem. Klíčová je ochrana lesních pramenišť a čistých toků.",
-      },
-    ],
+    pole: {
+      Sekce: "Caudata",
+      Nazev: "Mlok skvrnitý",
+      Latinsky: "Salamandra salamandra",
+      Strava: "žížaly, slimáci, pavouci a hmyz",
+      Velikost: "15 až 25 cm",
+      Ohrozeni: "zvláště chráněný druh",
+      DelkaZivota: "přes 20 let",
+    },
     kb: `# Znalostní báze: Mlok skvrnitý
 
-Podklad pro budoucího AI průvodce u displeje.
+Podklad pro AI průvodce u displeje.
 
 ## Základní fakta
 - Druh: Mlok skvrnitý (Salamandra salamandra)
 - Skupina: ocasatí obojživelníci
 - Velikost: 15 až 25 cm
 - Zvláštnost: rodí živé larvy, žlutočerné varovné zbarvení
+
+## Popis
+Mlok skvrnitý je nápadný ocasatý obojživelník s leskle černým tělem a sytě žlutými až oranžovými skvrnami. Výrazné zbarvení je varovné a upozorňuje predátory na jedovaté kožní výměšky.
+
+## Výskyt
+Obývá vlhké listnaté a smíšené lesy s čistými potoky. Vyskytuje se ve velké části Evropy včetně České republiky. Přes den se ukrývá pod kameny a kládami, aktivní je hlavně za vlhka a po dešti.
+
+## Zajímavost
+Mlok skvrnitý nerodí vajíčka, ale rovnou živé larvy, které samice klade do chladné tekoucí vody. Žlutočerné zbarvení je u každého jedince trochu jiné, takže funguje jako otisk prstu.
+
+## Ohrožení
+Mloka ohrožuje úbytek vlhkých lesů, znečištění potoků a plísňové onemocnění Bsal. V České republice je zvláště chráněným druhem.
 
 ## Časté otázky
 - "Je jedovatý?" Ano, kožní výměšky jsou jedovaté, proto má varovné zbarvení. Pro člověka při běžném pozorování není nebezpečný.
@@ -106,37 +101,37 @@ Přátelský a poučný, zdůraznit ochranu druhu a jeho biotopu.
   3: {
     druh: "Rosnička zelená",
     barva: "#15803d",
-    slides: [
-      {
-        nadpis: "Popis",
-        text: "Rosnička zelená (Hyla arborea) je drobná žába s hladkou, obvykle jasně zelenou kůží a tmavým pruhem po stranách těla. Dorůstá jen kolem 4 až 5 centimetrů a je to jediná evropská žába, která dokáže šplhat po rostlinách. Na koncích prstů má přísavné terčíky, díky nimž se udrží i na listech a větvičkách. Zbarvení dokáže měnit podle prostředí a teploty.",
-      },
-      {
-        nadpis: "Výskyt",
-        text: "Žije v křovinách, na okrajích lesů, v zahradách a rákosinách poblíž stojatých vod. Rozšířená je ve velké části Evropy včetně teplejších oblastí České republiky. K rozmnožování vyhledává osluněné tůně a rybníky bez ryb. Mimo období rozmnožování se zdržuje ve vegetaci i poměrně daleko od vody.",
-      },
-      {
-        nadpis: "Potrava",
-        text: "Loví drobný hmyz, jako jsou mouchy, komáři, mšice a pavouci. Kořist chytá rychlým vymrštěním lepkavého jazyka. Aktivní je hlavně za soumraku a v noci. Díky šplhání loví i na vyšších rostlinách, kam se jiné žáby nedostanou.",
-      },
-      {
-        nadpis: "Zajímavost",
-        text: "Samci rosničky mají velký hrdelní rezonátor a jejich hlasité sborové kvákání je slyšet do daleka, zejména za teplých večerů. Lidé je dříve chovali jako živé barometry, protože před změnou počasí více volaly. Přísavné terčíky na prstech jí umožňují vyšplhat i po svislém skle. Patří k nejmenším evropským žábám.",
-      },
-      {
-        nadpis: "Ohrožení",
-        text: "Rosničku ohrožuje hlavně mizení a zarůstání tůní, znečištění vody a používání pesticidů v krajině. Citelně jí škodí i vysazování ryb do drobných vod, kde se vyvíjejí pulci. V České republice je zvláště chráněným druhem. Pomáhá jí zakládání a obnova mělkých osluněných tůní.",
-      },
-    ],
+    pole: {
+      Sekce: "Obojživelníci České republiky",
+      Nazev: "Rosnička zelená",
+      Latinsky: "Hyla arborea",
+      Strava: "drobný hmyz: mouchy, komáři, mšice, pavouci",
+      Velikost: "4 až 5 cm",
+      DobaLihnuti: "10 až 14 dní",
+      Ohrozeni: "zvláště chráněný druh",
+      DelkaZivota: "až 15 let",
+    },
     kb: `# Znalostní báze: Rosnička zelená
 
-Podklad pro budoucího AI průvodce u displeje.
+Podklad pro AI průvodce u displeje.
 
 ## Základní fakta
 - Druh: Rosnička zelená (Hyla arborea)
 - Skupina: žáby (bezocasí obojživelníci)
 - Velikost: 4 až 5 cm
 - Zvláštnost: jediná evropská žába, která šplhá; přísavné terčíky na prstech
+
+## Popis
+Rosnička zelená je drobná žába s hladkou, obvykle jasně zelenou kůží a tmavým pruhem po stranách těla. Na koncích prstů má přísavné terčíky, díky nimž se udrží i na listech a větvičkách. Zbarvení dokáže měnit podle prostředí a teploty.
+
+## Výskyt
+Žije v křovinách, na okrajích lesů, v zahradách a rákosinách poblíž stojatých vod. Rozšířená je ve velké části Evropy včetně teplejších oblastí České republiky.
+
+## Zajímavost
+Samci rosničky mají velký hrdelní rezonátor a jejich hlasité sborové kvákání je slyšet do daleka. Lidé je dříve chovali jako živé barometry, protože před změnou počasí více volaly.
+
+## Ohrožení
+Rosničku ohrožuje hlavně mizení a zarůstání tůní, znečištění vody a pesticidy. V České republice je zvláště chráněným druhem.
 
 ## Časté otázky
 - "Proč kvákají tak nahlas?" Samci se ozývají, aby přilákali samice; mají velký hrdelní rezonátor.
@@ -149,11 +144,15 @@ Lehký a hravý, vhodný pro děti, zmínit šplhání a hlasité kvákání.
   },
 };
 
-// Jednoduchý SVG placeholder: barevný blok s názvem druhu.
-export function placeholderSvg(druh: string, barva: string): string {
-  const safe = druh.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+export const DEFAULT_KB =
+  "# Znalostní báze\n\nDisplej zatím není přiřazen. Po přiřazení druhu sem doplňte podklady pro AI průvodce.\n";
+
+// Jednoduchý SVG placeholder: barevný blok s názvem druhu a popiskem.
+// Seed ho rasterizuje do PNG (Unity čte fotky jako .png).
+export function placeholderSvg(druh: string, barva: string, popisek: string): string {
+  const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   return `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600" viewBox="0 0 800 600" role="img" aria-label="${safe}">
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600" viewBox="0 0 800 600" role="img" aria-label="${esc(druh)}">
   <rect width="800" height="600" fill="${barva}"/>
   <rect width="800" height="600" fill="url(#g)"/>
   <defs>
@@ -162,8 +161,8 @@ export function placeholderSvg(druh: string, barva: string): string {
       <stop offset="1" stop-color="#000000" stop-opacity="0.18"/>
     </linearGradient>
   </defs>
-  <text x="50%" y="46%" fill="#ffffff" font-family="Inter, Arial, sans-serif" font-size="56" font-weight="700" text-anchor="middle">${safe}</text>
-  <text x="50%" y="56%" fill="#ffffff" fill-opacity="0.85" font-family="Inter, Arial, sans-serif" font-size="26" text-anchor="middle">Amphibiárium · ZOO Ostrava</text>
+  <text x="50%" y="46%" fill="#ffffff" font-family="Arial, sans-serif" font-size="56" font-weight="700" text-anchor="middle">${esc(druh)}</text>
+  <text x="50%" y="56%" fill="#ffffff" fill-opacity="0.85" font-family="Arial, sans-serif" font-size="26" text-anchor="middle">${esc(popisek)}</text>
 </svg>
 `;
 }

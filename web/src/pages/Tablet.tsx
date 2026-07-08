@@ -2,14 +2,14 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ChevronLeft, ChevronRight, Sparkles, RefreshCw, X } from "lucide-react";
 import { api } from "../lib/api";
-import { NEPRIRAZENO, type DisplayDetail, type SlideContent } from "../lib/types";
+import { INFO_POLE, NEPRIRAZENO, type DisplayDetail, type SlideContent } from "../lib/types";
 import { LogoMark } from "../components/Logo";
 
 const AUTO_ADVANCE_MS = 8000;
 const MEDIA_ADVANCE_MS = 5000;
 
 interface MediaItem {
-  typ: "video" | "foto";
+  typ: "video" | "foto" | "mapa";
   url: string;
 }
 
@@ -43,7 +43,7 @@ export default function Tablet() {
     if (total && index >= total) setIndex(0);
   }, [total, index]);
 
-  const slideHasVideo = !!detail?.slides[index]?.video;
+  const slideHasVideo = detail?.slides[index]?.typ === "vid" && !!detail?.slides[index]?.video;
 
   // Auto-advance. U slidu s videem nepřepínáme, ať se video stihne přehrát.
   useEffect(() => {
@@ -79,7 +79,7 @@ export default function Tablet() {
     return <div className="min-h-screen grid place-items-center bg-bg text-fg-dim">Načítám…</div>;
   }
 
-  const slide = detail.slides[index] ?? detail.slides[0];
+  const slide = detail.slides[index] ?? detail.slides[0] ?? null;
   const druh = detail.meta.druh;
   const prirazeno = druh !== NEPRIRAZENO;
 
@@ -118,33 +118,43 @@ export default function Tablet() {
 
       {/* Plocha slidu */}
       <div className="flex-1 relative overflow-hidden bg-surface" onClick={() => setPaused((p) => !p)}>
-        {slide.jeAi ? (
+        {!slide ? (
+          <EmptySlide />
+        ) : slide.typ === "ai" ? (
           <AiPlaceholder druh={prirazeno ? druh : null} />
+        ) : slide.typ === "info" ? (
+          <InfoSlide slide={slide} />
+        ) : slide.typ === "gal" ? (
+          <GalSlide slide={slide} />
         ) : (
-          <ContentSlide slide={slide} prirazeno={prirazeno} />
+          <VidSlide slide={slide} onEnded={next} />
         )}
 
         {/* Navigační šipky */}
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            prev();
-          }}
-          className="absolute left-5 top-1/2 -translate-y-1/2 h-14 w-14 grid place-items-center rounded-full border border-line bg-surface/90 backdrop-blur text-fg-muted hover:text-fg hover:border-accent/40 shadow-card transition"
-          aria-label="Předchozí"
-        >
-          <ChevronLeft className="h-7 w-7" strokeWidth={1.5} />
-        </button>
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            next();
-          }}
-          className="absolute right-5 top-1/2 -translate-y-1/2 h-14 w-14 grid place-items-center rounded-full border border-line bg-surface/90 backdrop-blur text-fg-muted hover:text-fg hover:border-accent/40 shadow-card transition"
-          aria-label="Další"
-        >
-          <ChevronRight className="h-7 w-7" strokeWidth={1.5} />
-        </button>
+        {total > 1 && (
+          <>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                prev();
+              }}
+              className="absolute left-5 top-1/2 -translate-y-1/2 h-14 w-14 grid place-items-center rounded-full border border-line bg-surface/90 backdrop-blur text-fg-muted hover:text-fg hover:border-accent/40 shadow-card transition"
+              aria-label="Předchozí"
+            >
+              <ChevronLeft className="h-7 w-7" strokeWidth={1.5} />
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                next();
+              }}
+              className="absolute right-5 top-1/2 -translate-y-1/2 h-14 w-14 grid place-items-center rounded-full border border-line bg-surface/90 backdrop-blur text-fg-muted hover:text-fg hover:border-accent/40 shadow-card transition"
+              aria-label="Další"
+            >
+              <ChevronRight className="h-7 w-7" strokeWidth={1.5} />
+            </button>
+          </>
+        )}
       </div>
 
       {/* Indikátory slidů */}
@@ -154,11 +164,7 @@ export default function Tablet() {
             key={s.n}
             onClick={() => setIndex(i)}
             className={`h-2.5 rounded-full transition-all ${
-              i === index
-                ? s.jeAi
-                  ? "w-8 bg-amber"
-                  : "w-8 bg-accent"
-                : "w-2.5 bg-line hover:bg-fg-dim"
+              i === index ? (s.typ === "ai" ? "w-8 bg-amber" : "w-8 bg-accent") : "w-2.5 bg-line hover:bg-fg-dim"
             }`}
             aria-label={`Slide ${i + 1}`}
           />
@@ -174,60 +180,102 @@ export default function Tablet() {
   );
 }
 
-function ContentSlide({ slide, prirazeno }: { slide: SlideContent; prirazeno: boolean }) {
-  const { nadpis, text, obrazky, video } = slide;
-  const media = useMemo<MediaItem[]>(() => {
-    const items: MediaItem[] = [];
-    if (video) items.push({ typ: "video", url: video });
-    for (const url of obrazky) items.push({ typ: "foto", url });
-    return items;
-  }, [video, obrazky]);
-
-  const hasContent = prirazeno && (nadpis || text || media.length > 0);
-  if (!hasContent) {
-    return (
-      <div className="h-full grid place-items-center text-center px-10">
-        <div className="text-fg-dim">
-          <div className="font-display text-2xl font-bold text-fg-muted">
-            Displej zatím nemá obsah
-          </div>
-          <p className="mt-2 text-sm">Obsah doplníte ve správě displejů.</p>
-        </div>
-      </div>
-    );
-  }
+function EmptySlide() {
   return (
-    <div className="h-full grid grid-cols-1 lg:grid-cols-2">
-      {/* Média: carousel fotek a video */}
-      <div className="relative bg-bg grid place-items-center overflow-hidden">
-        {media.length > 0 ? (
-          <MediaCarousel key={slide.n} items={media} alt={nadpis} />
-        ) : (
-          <div className="text-fg-dim text-sm">Bez fotky</div>
-        )}
-      </div>
-      {/* Text */}
-      <div className="flex flex-col justify-center px-10 lg:px-16 py-10">
-        {nadpis && (
-          <>
-            <span className="text-xs font-semibold uppercase tracking-[0.18em] text-accent">
-              Amphibiárium
-            </span>
-            <h2 className="mt-3 font-display text-3xl lg:text-5xl font-bold tracking-tight text-fg">
-              {nadpis}
-            </h2>
-            <div className="mt-5 h-1 w-14 rounded-full bg-accent" />
-          </>
-        )}
-        <p className="mt-6 text-lg lg:text-xl leading-relaxed text-fg-muted whitespace-pre-line max-w-2xl">
-          {text}
-        </p>
+    <div className="h-full grid place-items-center text-center px-10">
+      <div className="text-fg-dim">
+        <div className="font-display text-2xl font-bold text-fg-muted">Displej zatím nemá obsah</div>
+        <p className="mt-2 text-sm">Obsah doplníte ve správě displejů.</p>
       </div>
     </div>
   );
 }
 
-// Carousel přes média jednoho slidu: video (pokud je) a všechny fotky.
+// Info panel: vlevo fotky (hlavní vizuál + mapa výskytu), vpravo pole z text.txt.
+function InfoSlide({ slide }: { slide: SlideContent }) {
+  const media = useMemo<MediaItem[]>(() => {
+    const items: MediaItem[] = slide.obrazky.map((url) => ({ typ: "foto" as const, url }));
+    if (slide.mapa) items.push({ typ: "mapa", url: slide.mapa });
+    return items;
+  }, [slide.obrazky, slide.mapa]);
+
+  const { Sekce: sekce, Nazev: nazev, Latinsky: latinsky } = slide.pole;
+  const detaily = INFO_POLE.filter(
+    (d) => !["Sekce", "Nazev", "Latinsky"].includes(d.klic) && (slide.pole[d.klic] ?? "").trim(),
+  );
+
+  const hasContent = nazev || sekce || media.length > 0;
+  if (!hasContent) return <EmptySlide />;
+
+  return (
+    <div className="h-full grid grid-cols-1 lg:grid-cols-2">
+      {/* Fotky */}
+      <div className="relative bg-bg grid place-items-center overflow-hidden">
+        {media.length > 0 ? (
+          <MediaCarousel key={slide.n} items={media} alt={nazev ?? "Fotka"} />
+        ) : (
+          <div className="text-fg-dim text-sm">Bez fotky</div>
+        )}
+      </div>
+      {/* Pole info panelu */}
+      <div className="flex flex-col justify-center px-10 lg:px-16 py-10 overflow-y-auto">
+        <span className="text-xs font-semibold uppercase tracking-[0.18em] text-accent">
+          {sekce || "Amphibiárium"}
+        </span>
+        <h2 className="mt-3 font-display text-3xl lg:text-5xl font-bold tracking-tight text-fg">
+          {nazev}
+        </h2>
+        {latinsky && <p className="mt-2 text-lg lg:text-xl italic text-fg-muted">{latinsky}</p>}
+        <div className="mt-5 h-1 w-14 rounded-full bg-accent" />
+        {detaily.length > 0 && (
+          <dl className="mt-8 space-y-4 max-w-xl">
+            {detaily.map((d) => (
+              <div key={d.klic} className="grid grid-cols-[140px_1fr] gap-4 items-baseline">
+                <dt className="text-xs font-semibold uppercase tracking-wider text-fg-dim">
+                  {d.label}
+                </dt>
+                <dd className="text-base lg:text-lg text-fg-muted">{slide.pole[d.klic]}</dd>
+              </div>
+            ))}
+          </dl>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Galerie: fotky přes celou plochu.
+function GalSlide({ slide }: { slide: SlideContent }) {
+  const media = useMemo<MediaItem[]>(
+    () => slide.obrazky.map((url) => ({ typ: "foto" as const, url })),
+    [slide.obrazky],
+  );
+  if (media.length === 0) return <EmptySlide />;
+  return (
+    <div className="h-full bg-bg">
+      <MediaCarousel key={slide.n} items={media} alt="Fotka galerie" />
+    </div>
+  );
+}
+
+// Video: jedno MP4 přes celou plochu; po dohrání se posune na další slide.
+function VidSlide({ slide, onEnded }: { slide: SlideContent; onEnded: () => void }) {
+  if (!slide.video) return <EmptySlide />;
+  return (
+    <video
+      key={slide.video}
+      src={slide.video}
+      className="h-full w-full object-contain bg-black"
+      autoPlay
+      muted
+      playsInline
+      controls
+      onEnded={onEnded}
+    />
+  );
+}
+
+// Carousel fotek jednoho slidu (autoplay jako na reálném tabletu).
 function MediaCarousel({ items, alt }: { items: MediaItem[]; alt: string }) {
   const [i, setI] = useState(0);
   const safe = Math.min(i, items.length - 1);
@@ -235,35 +283,21 @@ function MediaCarousel({ items, alt }: { items: MediaItem[]; alt: string }) {
 
   const goto = (idx: number) => setI(((idx % items.length) + items.length) % items.length);
 
-  // Automatické přepínání fotek (autoplay jako na reálném tabletu).
-  // U videa se nepřepíná časovačem, ať dohraje; posun řeší onEnded.
   useEffect(() => {
-    if (items.length <= 1 || current?.typ === "video") return;
+    if (items.length <= 1) return;
     const t = setInterval(() => setI((x) => (x + 1) % items.length), MEDIA_ADVANCE_MS);
     return () => clearInterval(t);
-  }, [items.length, current?.typ, safe]);
+  }, [items.length, safe]);
 
   if (!current) return null;
 
   return (
     <div className="relative h-full w-full">
-      {current.typ === "video" ? (
-        <video
-          key={current.url}
-          src={current.url}
-          className="h-full w-full object-contain bg-black"
-          autoPlay
-          muted
-          loop={items.length <= 1}
-          playsInline
-          controls
-          onEnded={() => {
-            // Video dohrálo: posuň carousel na další médium slidu.
-            if (items.length > 1) setI((x) => (x + 1) % items.length);
-          }}
-        />
-      ) : (
-        <img src={current.url} alt={alt} className="h-full w-full object-cover" />
+      <img src={current.url} alt={alt} className="h-full w-full object-cover" />
+      {current.typ === "mapa" && (
+        <span className="absolute left-4 top-4 chip bg-surface/90 text-fg border border-line backdrop-blur text-xs">
+          Mapa výskytu
+        </span>
       )}
 
       {/* Ovládání fotek v rámci slidu: malé šipky + tečky.
@@ -292,7 +326,7 @@ function MediaCarousel({ items, alt }: { items: MediaItem[]; alt: string }) {
                 className={`h-2 rounded-full transition-all ${
                   idx === safe ? "w-6 bg-white" : "w-2 bg-white/50 hover:bg-white/80"
                 }`}
-                aria-label={m.typ === "video" ? "Video" : `Fotka ${idx + 1}`}
+                aria-label={m.typ === "mapa" ? "Mapa výskytu" : `Fotka ${idx + 1}`}
               />
             ))}
           </div>

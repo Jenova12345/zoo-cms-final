@@ -1,34 +1,70 @@
 import { promises as fs } from "node:fs";
 import { randomBytes } from "node:crypto";
 import path from "node:path";
-import { DISPLAYS_DIR, AI_SLIDE } from "./paths.js";
+import sharp from "sharp";
+import { DISPLAYS_DIR } from "./paths.js";
 
-// Pořadí slidů i pořadí fotek držíme v meta.json (pole `slidy`), zatímco
-// samotná existence slidu a souborů je dána strukturou složek na disku.
-// Když `slidy` chybí (starší data), odvodíme strukturu z disku a při první
-// strukturální změně se sama dopíše do meta.json.
+// Zdroj pravdy pro Unity je struktura složek na disku:
+//
+//   data/displeje/<id>/
+//     kb.md                 znalostní báze pro chatbota (NENÍ slide)
+//     meta.json             doplněk (druh, stav, poslední změna, přehled slidů)
+//     cs/
+//       1_info/text.txt     info panel: řádky "Klic: Hodnota" + fotky .png
+//       1_info/mapa.png     volitelná mapa výskytu (přesně tento název)
+//       2_vid/<video>.mp4   jedno video
+//       3_gal/<fotky>.png   galerie
+//       4_ai/               prázdná složka = AI slide
+//
+// Typ slidu určuje suffix názvu složky, pořadí číslo na začátku. Při změně
+// pořadí nebo odebrání slidu se prefixy složek přečíslují na souvislou řadu.
 
-export interface SlideMeta {
-  klic: string; // např. "slide-1" = název složky slidu
-  ai: boolean; // AI slide (kb.md pro chatbota)
-  obrazky: string[]; // názvy souborů v pořadí
-  video: string | null; // název video souboru
-}
+export type SlideTyp = "info" | "vid" | "gal" | "ai";
+
+export const SLIDE_TYPY: SlideTyp[] = ["info", "vid", "gal", "ai"];
+
+// Klíče polí info panelu v pořadí, ve kterém se zapisují do text.txt.
+export const INFO_KLICE = [
+  "Sekce",
+  "Nazev",
+  "Latinsky",
+  "Strava",
+  "Velikost",
+  "DobaLihnuti",
+  "Ohrozeni",
+  "DelkaZivota",
+] as const;
+
+export const SEKCE = [
+  "Listovnice",
+  "Caudata",
+  "Červoři",
+  "Lezci",
+  "Madagaskar",
+  "Neotenie",
+  "Obojživelníci České republiky",
+  "Pralesničky",
+  "Rozmanitost žab",
+  "Šesté vymírání",
+];
+
+export const MAPA_SOUBOR = "mapa.png";
 
 export interface DisplayMeta {
   druh: string;
   stav: "online" | "offline";
   posledniZmena: string;
-  slidy?: SlideMeta[];
+  // Doplněk pro rychlou orientaci; Unity čte jen složky.
+  slidy?: { slozka: string; typ: SlideTyp }[];
 }
 
 export interface SlideContent {
-  n: number; // číselný klíč slidu (složka slide-<n>), používá se v routách
-  nadpis: string;
-  text: string;
-  obrazky: string[]; // URL do /data v pořadí
-  video: string | null; // URL do /data nebo null
-  jeAi: boolean;
+  n: number; // pořadí = číselný prefix složky
+  typ: SlideTyp;
+  pole: Record<string, string>; // jen info: obsah text.txt
+  obrazky: string[]; // URL do /data (info: hlavní fotky bez mapy; gal: galerie)
+  mapa: string | null; // jen info: URL mapa.png
+  video: string | null; // jen vid: URL videa
 }
 
 export interface DisplaySummary {
@@ -39,42 +75,9 @@ export interface DisplaySummary {
   thumbnail: string | null;
 }
 
-// Pozn.: tenhle whitelist musí pokrýt všechno, co dovolíme nahrát přes upload.
-// Když je užší, soubor se uloží na disk, ale reconcile (listImages) ho zahodí
-// a fotka pak v galerii ani v meta nikdy nevyskočí. Proto sem patří i moderní
-// formáty z mobilů (HEIC z iPhonu, AVIF apod.).
-const IMAGE_EXT = new Set([
-  ".svg",
-  ".png",
-  ".jpg",
-  ".jpeg",
-  ".jfif",
-  ".webp",
-  ".gif",
-  ".avif",
-  ".bmp",
-  ".heic",
-  ".heif",
-  ".tif",
-  ".tiff",
-]);
-const VIDEO_EXT = new Set([".mp4", ".webm", ".m4v", ".mov", ".ogg"]);
-
-// Jediný zdroj pravdy: co je obrázek pro výpis, je obrázek i pro upload.
-export function isImageFilename(name: string): boolean {
-  return IMAGE_EXT.has(path.extname(name).toLowerCase());
-}
-
 export const NEPRIRAZENO = "Nepřiřazeno";
 
-function klicToN(klic: string): number {
-  const m = /^slide-(\d+)$/.exec(klic);
-  return m ? Number(m[1]) : NaN;
-}
-
-function nToKlic(n: number): string {
-  return `slide-${n}`;
-}
+const SLIDE_DIR_RE = /^(\d+)_(info|vid|gal|ai)$/;
 
 function displayDir(id: string): string {
   return path.join(DISPLAYS_DIR, id);
@@ -84,21 +87,13 @@ function csDir(id: string): string {
   return path.join(displayDir(id), "cs");
 }
 
-function slideDirByKlic(id: string, klic: string): string {
-  return path.join(csDir(id), klic);
-}
-
-function slideDir(id: string, n: number): string {
-  return slideDirByKlic(id, nToKlic(n));
-}
-
 // URL, pod kterou server servíruje soubor z /data.
 function dataUrl(...segments: string[]): string {
   return "/data/" + segments.map(encodeURIComponent).join("/");
 }
 
-function slideFileUrl(id: string, klic: string, soubor: string): string {
-  return dataUrl("displeje", id, "cs", klic, soubor);
+function slideFileUrl(id: string, slozka: string, soubor: string): string {
+  return dataUrl("displeje", id, "cs", slozka, soubor);
 }
 
 export async function readMeta(id: string): Promise<DisplayMeta | null> {
@@ -118,304 +113,296 @@ async function writeMeta(id: string, meta: DisplayMeta): Promise<void> {
   );
 }
 
-// Při každé úpravě obsahu posuneme posledniZmena (nemění strukturu slidů).
+// Po každé změně obsahu: posune posledniZmena a přepíše doplňkový přehled
+// slidů v meta.json podle skutečného stavu složek.
 export async function touchDisplay(id: string): Promise<void> {
   const meta = await readMeta(id);
   if (!meta) return;
   meta.posledniZmena = new Date().toISOString();
+  meta.slidy = (await listSlides(id)).map((s) => ({ slozka: s.slozka, typ: s.typ }));
   await writeMeta(id, meta);
 }
 
-// --- Čtení struktury z disku ---
+// --- Struktura slidů na disku ---
 
-async function listSlideKlice(id: string): Promise<string[]> {
+interface SlideDirInfo {
+  n: number;
+  typ: SlideTyp;
+  slozka: string; // název složky, např. "1_info"
+}
+
+async function listSlides(id: string): Promise<SlideDirInfo[]> {
   try {
     const entries = await fs.readdir(csDir(id), { withFileTypes: true });
     return entries
-      .filter((e) => e.isDirectory() && /^slide-\d+$/.test(e.name))
-      .map((e) => e.name)
-      .sort((a, b) => klicToN(a) - klicToN(b));
+      .filter((e) => e.isDirectory())
+      .map((e) => {
+        const m = SLIDE_DIR_RE.exec(e.name);
+        return m ? { n: Number(m[1]), typ: m[2] as SlideTyp, slozka: e.name } : null;
+      })
+      .filter((s): s is SlideDirInfo => s !== null)
+      .sort((a, b) => a.n - b.n);
   } catch {
     return [];
   }
 }
 
-async function diskImages(id: string, klic: string): Promise<string[]> {
+async function findSlide(id: string, n: number): Promise<SlideDirInfo | null> {
+  return (await listSlides(id)).find((s) => s.n === n) ?? null;
+}
+
+export async function slideExists(id: string, n: number): Promise<boolean> {
+  return (await findSlide(id, n)) !== null;
+}
+
+export async function slideTyp(id: string, n: number): Promise<SlideTyp | null> {
+  return (await findSlide(id, n))?.typ ?? null;
+}
+
+function slideDirPath(id: string, slozka: string): string {
+  return path.join(csDir(id), slozka);
+}
+
+async function listFiles(id: string, slozka: string, ext: string): Promise<string[]> {
   try {
-    const files = await fs.readdir(slideDirByKlic(id, klic));
-    return files.filter((f) => IMAGE_EXT.has(path.extname(f).toLowerCase()));
+    const files = await fs.readdir(slideDirPath(id, slozka));
+    return files.filter((f) => path.extname(f).toLowerCase() === ext).sort();
   } catch {
     return [];
   }
 }
 
-async function diskVideos(id: string, klic: string): Promise<string[]> {
+// --- text.txt info panelu: řádky "Klic: Hodnota" ---
+
+export function parseInfoText(raw: string): Record<string, string> {
+  const pole: Record<string, string> = {};
+  for (const line of raw.replace(/\r\n/g, "\n").split("\n")) {
+    const m = /^([A-Za-z]+):\s*(.*)$/.exec(line.trim());
+    if (!m) continue;
+    if ((INFO_KLICE as readonly string[]).includes(m[1])) pole[m[1]] = m[2].trim();
+  }
+  return pole;
+}
+
+export function serializeInfoText(pole: Record<string, string>): string {
+  const lines: string[] = [];
+  for (const klic of INFO_KLICE) {
+    const v = (pole[klic] ?? "").trim();
+    if (v) lines.push(`${klic}: ${v}`);
+  }
+  return lines.join("\n") + (lines.length ? "\n" : "");
+}
+
+async function readInfoPole(id: string, slozka: string): Promise<Record<string, string>> {
   try {
-    const files = await fs.readdir(slideDirByKlic(id, klic));
-    return files.filter((f) => VIDEO_EXT.has(path.extname(f).toLowerCase()));
+    const raw = await fs.readFile(path.join(slideDirPath(id, slozka), "text.txt"), "utf8");
+    return parseInfoText(raw);
   } catch {
-    return [];
+    return {};
   }
 }
 
-async function hasKb(id: string, klic: string): Promise<boolean> {
-  try {
-    await fs.access(path.join(slideDirByKlic(id, klic), "kb.md"));
-    return true;
-  } catch {
-    return false;
-  }
+// Validace povinných polí; vrací text chyby, nebo null když je vše v pořádku.
+export function validateInfoPole(pole: Record<string, string>): string | null {
+  const sekce = (pole.Sekce ?? "").trim();
+  const nazev = (pole.Nazev ?? "").trim();
+  if (!sekce) return "Vyplňte prosím sekci.";
+  if (!SEKCE.includes(sekce)) return "Neplatná sekce.";
+  if (!nazev) return "Vyplňte prosím název.";
+  return null;
 }
 
-async function isAiSlide(id: string, klic: string): Promise<boolean> {
-  if (klicToN(klic) === AI_SLIDE) return true;
-  return hasKb(id, klic);
-}
-
-// Sloučí pořadí z meta s realitou na disku pro jeden slide.
-async function reconcileSlide(
+export async function writeInfoPole(
   id: string,
-  klic: string,
-  sm: SlideMeta | null,
-): Promise<SlideMeta> {
-  const disk = await diskImages(id, klic);
-  const diskSet = new Set(disk);
-  const ordered: string[] = [];
-  const seen = new Set<string>();
-  if (sm?.obrazky) {
-    for (const f of sm.obrazky) {
-      if (diskSet.has(f) && !seen.has(f)) {
-        ordered.push(f);
-        seen.add(f);
-      }
-    }
-  }
-  // Soubory přetažené ručně do složky (nejsou v meta) přidáme na konec.
-  for (const f of disk.sort()) {
-    if (!seen.has(f)) {
-      ordered.push(f);
-      seen.add(f);
-    }
-  }
-
-  let video: string | null = null;
-  const videos = await diskVideos(id, klic);
-  if (sm?.video && videos.includes(sm.video)) {
-    video = sm.video;
-  } else if (videos.length > 0) {
-    video = videos.sort()[0];
-  }
-
-  const ai = sm?.ai ?? (await isAiSlide(id, klic));
-  return { klic, ai, obrazky: ordered, video };
+  n: number,
+  pole: Record<string, string>,
+): Promise<{ ok: boolean; chyba?: string }> {
+  const slide = await findSlide(id, n);
+  if (!slide || slide.typ !== "info") return { ok: false, chyba: "Slide není typu info." };
+  const chyba = validateInfoPole(pole);
+  if (chyba) return { ok: false, chyba };
+  await fs.writeFile(
+    path.join(slideDirPath(id, slide.slozka), "text.txt"),
+    serializeInfoText(pole),
+    "utf8",
+  );
+  await touchDisplay(id);
+  return { ok: true };
 }
 
-// Normalizovaný seznam slidů: pořadí z meta, doplněné o složky na disku.
-async function resolveSlides(id: string, meta: DisplayMeta): Promise<SlideMeta[]> {
-  const diskKlice = await listSlideKlice(id);
-  const diskSet = new Set(diskKlice);
-  const out: SlideMeta[] = [];
-  const seen = new Set<string>();
+// --- Obsah slidů pro API ---
 
-  for (const sm of meta.slidy ?? []) {
-    if (!sm || typeof sm.klic !== "string") continue;
-    if (!diskSet.has(sm.klic) || seen.has(sm.klic)) continue;
-    out.push(await reconcileSlide(id, sm.klic, sm));
-    seen.add(sm.klic);
-  }
-  for (const klic of diskKlice) {
-    if (seen.has(klic)) continue;
-    out.push(await reconcileSlide(id, klic, null));
-    seen.add(klic);
-  }
-  return out;
-}
-
-// Centrální mutace: načte, normalizuje, nechá callback upravit, zapíše zpět.
-async function mutateDisplay(
-  id: string,
-  fn: (slides: SlideMeta[], meta: DisplayMeta) => SlideMeta[] | void,
-): Promise<void> {
-  const meta = await readMeta(id);
-  if (!meta) throw new Error("Displej nenalezen.");
-  let slides = await resolveSlides(id, meta);
-  const res = fn(slides, meta);
-  if (Array.isArray(res)) slides = res;
-  meta.slidy = slides;
-  meta.posledniZmena = new Date().toISOString();
-  await writeMeta(id, meta);
-}
-
-// --- Markdown obsah slidu ---
-
-function parseSlideMarkdown(raw: string): { nadpis: string; text: string } {
-  const lines = raw.replace(/\r\n/g, "\n").split("\n");
-  if (lines[0]?.startsWith("# ")) {
-    const nadpis = lines[0].slice(2).trim();
-    const text = lines.slice(1).join("\n").trim();
-    return { nadpis, text };
-  }
-  return { nadpis: "", text: raw.trim() };
-}
-
-function serializeSlideMarkdown(nadpis: string, text: string): string {
-  const head = nadpis.trim() ? `# ${nadpis.trim()}\n\n` : "";
-  return head + text.trim() + "\n";
-}
-
-// AI slide čteme/zapisujeme jako celé kb.md (kurátor edituje celou znalostní bázi).
-async function readSlideText(
-  id: string,
-  klic: string,
-  ai: boolean,
-): Promise<{ nadpis: string; text: string }> {
-  const file = path.join(slideDirByKlic(id, klic), ai ? "kb.md" : "text.md");
-  try {
-    const raw = await fs.readFile(file, "utf8");
-    if (ai) return { nadpis: "", text: raw.replace(/\r\n/g, "\n").replace(/\n+$/, "") };
-    return parseSlideMarkdown(raw);
-  } catch {
-    return { nadpis: "", text: "" };
-  }
-}
-
-async function toContent(id: string, sm: SlideMeta): Promise<SlideContent> {
-  const { nadpis, text } = await readSlideText(id, sm.klic, sm.ai);
-  return {
-    n: klicToN(sm.klic),
-    nadpis,
-    text,
-    obrazky: sm.obrazky.map((f) => slideFileUrl(id, sm.klic, f)),
-    video: sm.video ? slideFileUrl(id, sm.klic, sm.video) : null,
-    jeAi: sm.ai,
+async function toContent(id: string, s: SlideDirInfo): Promise<SlideContent> {
+  const content: SlideContent = {
+    n: s.n,
+    typ: s.typ,
+    pole: {},
+    obrazky: [],
+    mapa: null,
+    video: null,
   };
+  if (s.typ === "info") {
+    content.pole = await readInfoPole(id, s.slozka);
+    const pngs = await listFiles(id, s.slozka, ".png");
+    content.obrazky = pngs
+      .filter((f) => f !== MAPA_SOUBOR)
+      .map((f) => slideFileUrl(id, s.slozka, f));
+    if (pngs.includes(MAPA_SOUBOR)) content.mapa = slideFileUrl(id, s.slozka, MAPA_SOUBOR);
+  } else if (s.typ === "gal") {
+    content.obrazky = (await listFiles(id, s.slozka, ".png")).map((f) =>
+      slideFileUrl(id, s.slozka, f),
+    );
+  } else if (s.typ === "vid") {
+    const videos = await listFiles(id, s.slozka, ".mp4");
+    content.video = videos.length ? slideFileUrl(id, s.slozka, videos[0]) : null;
+  }
+  return content;
 }
 
 export async function readSlides(id: string): Promise<SlideContent[]> {
-  const meta = await readMeta(id);
-  if (!meta) return [];
-  const slides = await resolveSlides(id, meta);
-  return Promise.all(slides.map((sm) => toContent(id, sm)));
+  const slides = await listSlides(id);
+  return Promise.all(slides.map((s) => toContent(id, s)));
 }
 
 export async function displayExists(id: string): Promise<boolean> {
   return (await readMeta(id)) !== null;
 }
 
-export async function slideExists(id: string, n: number): Promise<boolean> {
+// --- Znalostní báze (kb.md v kořeni displeje) ---
+
+export async function readKb(id: string): Promise<string> {
   try {
-    const st = await fs.stat(slideDir(id, n));
-    return st.isDirectory();
+    const raw = await fs.readFile(path.join(displayDir(id), "kb.md"), "utf8");
+    return raw.replace(/\r\n/g, "\n").replace(/\n+$/, "");
   } catch {
-    return false;
+    return "";
   }
 }
 
-// --- Zápis textu slidu (obsah i AI znalostní báze) ---
-
-export async function writeSlide(
-  id: string,
-  n: number,
-  nadpis: string,
-  text: string,
-): Promise<void> {
-  const klic = nToKlic(n);
-  const dir = slideDirByKlic(id, klic);
-  await fs.mkdir(dir, { recursive: true });
-  if (await isAiSlide(id, klic)) {
-    const body = text.replace(/\r\n/g, "\n");
-    await fs.writeFile(path.join(dir, "kb.md"), body.endsWith("\n") ? body : body + "\n", "utf8");
-  } else {
-    await fs.writeFile(path.join(dir, "text.md"), serializeSlideMarkdown(nadpis, text), "utf8");
-  }
+export async function writeKb(id: string, text: string): Promise<void> {
+  const body = text.replace(/\r\n/g, "\n");
+  await fs.writeFile(
+    path.join(displayDir(id), "kb.md"),
+    body.endsWith("\n") ? body : body + "\n",
+    "utf8",
+  );
   await touchDisplay(id);
 }
 
-// --- Fotky ---
+// --- Fotky (vždy PNG, aby je přečetlo Unity) ---
 
-function sanitizeFilename(name: string): string {
-  const base = path
-    .basename(name)
-    .replace(/[^\w.\- áčďéěíňóřšťúůýžÁČĎÉĚÍŇÓŘŠŤÚŮÝŽ]/g, "_");
-  return base || `soubor-${Date.now()}`;
+// Unity čte fotky jako .png, proto každý upload převedeme přes sharp.
+// Název je vždy unikátní (Safari pojmenovává přetažené obrázky "Unknown.jpeg",
+// bez unikátního jména by se soubory přepisovaly).
+export async function convertToPng(data: Buffer): Promise<Buffer> {
+  return sharp(data).rotate().png().toBuffer();
 }
 
-// Každá nahraná fotka musí být samostatný soubor i samostatná položka galerie.
-// Safari pojmenovává přetažené obrázky vždy "Unknown.jpeg", takže bez unikátního
-// názvu by druhý upload přepsal první soubor a v poli obrazky by nepřibyl záznam.
-// Proto k bezpečnému základu přidáme timestamp a krátký random, příponu zachováme.
-function uniqueImageName(filename: string): string {
-  const ext = path.extname(filename).toLowerCase();
-  const safe = sanitizeFilename(filename);
-  let stem = safe.slice(0, safe.length - path.extname(safe).length);
-  stem = stem.slice(0, 40).replace(/[\s._-]+$/g, "");
-  if (!stem) stem = "fotka";
-  const razitko = Date.now().toString(36);
-  const nahodne = randomBytes(3).toString("hex");
-  return `${stem}-${razitko}-${nahodne}${ext}`;
+function uniquePngName(): string {
+  return `foto-${Date.now().toString(36)}-${randomBytes(3).toString("hex")}.png`;
 }
 
 export async function saveImage(
   id: string,
   n: number,
-  filename: string,
   data: Buffer,
-): Promise<string> {
-  const klic = nToKlic(n);
-  const dir = slideDirByKlic(id, klic);
-  await fs.mkdir(dir, { recursive: true });
-  const safe = uniqueImageName(filename);
-  await fs.writeFile(path.join(dir, safe), data);
-  await mutateDisplay(id, (slides) => {
-    const s = slides.find((x) => x.klic === klic);
-    if (s && !s.obrazky.includes(safe)) s.obrazky.push(safe);
-  });
-  return slideFileUrl(id, klic, safe);
+): Promise<{ ok: boolean; url?: string; chyba?: string }> {
+  const slide = await findSlide(id, n);
+  if (!slide || (slide.typ !== "info" && slide.typ !== "gal")) {
+    return { ok: false, chyba: "Fotky lze nahrát jen na info panel nebo do galerie." };
+  }
+  let png: Buffer;
+  try {
+    png = await convertToPng(data);
+  } catch {
+    return { ok: false, chyba: "Obrázek se nepodařilo převést do PNG. Použijte JPG nebo PNG." };
+  }
+  const nazev = uniquePngName();
+  await fs.writeFile(path.join(slideDirPath(id, slide.slozka), nazev), png);
+  await touchDisplay(id);
+  return { ok: true, url: slideFileUrl(id, slide.slozka, nazev) };
 }
 
 export async function deleteImage(id: string, n: number, filename: string): Promise<boolean> {
-  const klic = nToKlic(n);
+  const slide = await findSlide(id, n);
+  if (!slide) return false;
   const safe = path.basename(filename);
-  if (!IMAGE_EXT.has(path.extname(safe).toLowerCase())) return false;
+  if (path.extname(safe).toLowerCase() !== ".png") return false;
   try {
-    await fs.unlink(path.join(slideDirByKlic(id, klic), safe));
+    await fs.unlink(path.join(slideDirPath(id, slide.slozka), safe));
   } catch {
-    // Soubor už neexistuje, jen vyčistíme meta.
+    return false;
   }
-  await mutateDisplay(id, (slides) => {
-    const s = slides.find((x) => x.klic === klic);
-    if (s) s.obrazky = s.obrazky.filter((f) => f !== safe);
-  });
+  await touchDisplay(id);
   return true;
 }
 
-export async function reorderImages(id: string, n: number, poradi: string[]): Promise<void> {
-  const klic = nToKlic(n);
-  const wanted = poradi.map((p) => path.basename(p));
-  await mutateDisplay(id, (slides) => {
-    const s = slides.find((x) => x.klic === klic);
-    if (!s) return;
-    const current = new Set(s.obrazky);
-    const next = wanted.filter((f) => current.has(f));
-    // Cokoliv, co kurátor nevyjmenoval, necháme na konci ve stávajícím pořadí.
-    for (const f of s.obrazky) if (!next.includes(f)) next.push(f);
-    s.obrazky = next;
-  });
+// Označení fotky jako "mapa výskytu": soubor se přejmenuje na mapa.png.
+// Dosavadní mapa (pokud existuje) se vrátí mezi běžné fotky. `nazev: null`
+// značení zruší (mapa.png se stane běžnou fotkou).
+export async function setMapa(
+  id: string,
+  n: number,
+  nazev: string | null,
+): Promise<{ ok: boolean; chyba?: string }> {
+  const slide = await findSlide(id, n);
+  if (!slide || slide.typ !== "info") {
+    return { ok: false, chyba: "Mapa výskytu patří jen na info panel." };
+  }
+  const dir = slideDirPath(id, slide.slozka);
+  const mapaPath = path.join(dir, MAPA_SOUBOR);
+
+  const demote = async () => {
+    try {
+      await fs.rename(mapaPath, path.join(dir, uniquePngName()));
+    } catch {
+      // mapa.png neexistuje, není co vracet
+    }
+  };
+
+  if (nazev === null) {
+    await demote();
+    await touchDisplay(id);
+    return { ok: true };
+  }
+
+  const safe = path.basename(nazev);
+  if (path.extname(safe).toLowerCase() !== ".png" || safe === MAPA_SOUBOR) {
+    return { ok: false, chyba: "Neplatný název souboru." };
+  }
+  try {
+    await fs.access(path.join(dir, safe));
+  } catch {
+    return { ok: false, chyba: "Fotka nenalezena." };
+  }
+  await demote();
+  await fs.rename(path.join(dir, safe), mapaPath);
+  await touchDisplay(id);
+  return { ok: true };
 }
 
-// --- Video ---
+// --- Video (jedno MP4 ve složce _vid) ---
+
+function sanitizeFilename(name: string): string {
+  const base = path
+    .basename(name)
+    .replace(/[^\w.\- áčďéěíňóřšťúůýžÁČĎÉĚÍŇÓŘŠŤÚŮÝŽ]/g, "_");
+  return base || `video-${Date.now()}`;
+}
 
 export async function saveVideo(
   id: string,
   n: number,
   filename: string,
   data: Buffer,
-): Promise<string> {
-  const klic = nToKlic(n);
-  const dir = slideDirByKlic(id, klic);
-  await fs.mkdir(dir, { recursive: true });
-  // Jedno video na slide: starší soubory odstraníme.
-  for (const old of await diskVideos(id, klic)) {
+): Promise<{ ok: boolean; url?: string; chyba?: string }> {
+  const slide = await findSlide(id, n);
+  if (!slide || slide.typ !== "vid") {
+    return { ok: false, chyba: "Video patří jen na video slide." };
+  }
+  const dir = slideDirPath(id, slide.slozka);
+  // Jedno video na slide: starší mp4 odstraníme.
+  for (const old of await listFiles(id, slide.slozka, ".mp4")) {
     try {
       await fs.unlink(path.join(dir, old));
     } catch {
@@ -423,86 +410,90 @@ export async function saveVideo(
     }
   }
   let safe = sanitizeFilename(filename);
-  if (!VIDEO_EXT.has(path.extname(safe).toLowerCase())) safe = `${safe}.mp4`;
+  if (path.extname(safe).toLowerCase() !== ".mp4") {
+    safe = safe.replace(/\.[^.]*$/, "") + ".mp4";
+  }
   await fs.writeFile(path.join(dir, safe), data);
-  await mutateDisplay(id, (slides) => {
-    const s = slides.find((x) => x.klic === klic);
-    if (s) s.video = safe;
-  });
-  return slideFileUrl(id, klic, safe);
+  await touchDisplay(id);
+  return { ok: true, url: slideFileUrl(id, slide.slozka, safe) };
 }
 
 export async function deleteVideo(id: string, n: number): Promise<void> {
-  const klic = nToKlic(n);
-  for (const v of await diskVideos(id, klic)) {
+  const slide = await findSlide(id, n);
+  if (!slide) return;
+  for (const v of await listFiles(id, slide.slozka, ".mp4")) {
     try {
-      await fs.unlink(path.join(slideDirByKlic(id, klic), v));
+      await fs.unlink(path.join(slideDirPath(id, slide.slozka), v));
     } catch {
       // ignore
     }
   }
-  await mutateDisplay(id, (slides) => {
-    const s = slides.find((x) => x.klic === klic);
-    if (s) s.video = null;
-  });
+  await touchDisplay(id);
 }
 
-// --- Správa slidů ---
+// --- Správa slidů (pořadí drží číselný prefix názvu složky) ---
 
-export async function addSlide(id: string): Promise<number> {
-  const klice = await listSlideKlice(id);
-  const nums = klice.map(klicToN).filter((x) => Number.isFinite(x));
-  const next = (nums.length ? Math.max(...nums) : 0) + 1;
-  const klic = nToKlic(next);
-  const dir = slideDirByKlic(id, klic);
-  await fs.mkdir(dir, { recursive: true });
-  await fs.writeFile(path.join(dir, "text.md"), "", "utf8");
-  await mutateDisplay(id, (slides) => {
-    if (!slides.some((s) => s.klic === klic)) {
-      slides.push({ klic, ai: false, obrazky: [], video: null });
-    }
+// Přejmenuje složky tak, aby prefixy tvořily souvislou řadu 1..k v zadaném
+// pořadí. Dvoufázově (přes dočasné názvy), aby se cílové názvy nesrazily.
+async function renumberSlides(id: string, ordered: SlideDirInfo[]): Promise<void> {
+  const dir = csDir(id);
+  const tmp: { from: string; to: string }[] = [];
+  ordered.forEach((s, i) => {
+    tmp.push({ from: s.slozka, to: `${i + 1}_${s.typ}` });
   });
+  const changing = tmp.filter((t) => t.from !== t.to);
+  if (changing.length === 0) return;
+  for (const t of changing) {
+    await fs.rename(path.join(dir, t.from), path.join(dir, `.tmp-${t.to}`));
+  }
+  for (const t of changing) {
+    await fs.rename(path.join(dir, `.tmp-${t.to}`), path.join(dir, t.to));
+  }
+}
+
+export async function addSlide(id: string, typ: SlideTyp): Promise<number> {
+  const slides = await listSlides(id);
+  const next = (slides.length ? Math.max(...slides.map((s) => s.n)) : 0) + 1;
+  await fs.mkdir(path.join(csDir(id), `${next}_${typ}`), { recursive: true });
+  await touchDisplay(id);
   return next;
 }
 
 export async function removeSlide(id: string, n: number): Promise<{ ok: boolean; chyba?: string }> {
-  const klic = nToKlic(n);
-  if (await isAiSlide(id, klic)) {
-    return { ok: false, chyba: "AI slide nelze odebrat." };
-  }
-  const klice = await listSlideKlice(id);
-  if (klice.length <= 1) {
-    return { ok: false, chyba: "Displej musí mít aspoň jeden slide." };
-  }
-  if (!klice.includes(klic)) {
-    return { ok: false, chyba: "Slide nenalezen." };
-  }
-  await fs.rm(slideDirByKlic(id, klic), { recursive: true, force: true });
-  await mutateDisplay(id, (slides) => slides.filter((s) => s.klic !== klic));
+  const slides = await listSlides(id);
+  const slide = slides.find((s) => s.n === n);
+  if (!slide) return { ok: false, chyba: "Slide nenalezen." };
+  await fs.rm(slideDirPath(id, slide.slozka), { recursive: true, force: true });
+  await renumberSlides(
+    id,
+    slides.filter((s) => s.n !== n),
+  );
+  await touchDisplay(id);
   return { ok: true };
 }
 
 export async function reorderSlides(id: string, poradi: number[]): Promise<void> {
-  const wanted = poradi.map(nToKlic);
-  await mutateDisplay(id, (slides) => {
-    const byKlic = new Map(slides.map((s) => [s.klic, s]));
-    const next: SlideMeta[] = [];
-    for (const klic of wanted) {
-      const s = byKlic.get(klic);
-      if (s && !next.includes(s)) next.push(s);
-    }
-    // Nevyjmenované slidy zachováme na konci.
-    for (const s of slides) if (!next.includes(s)) next.push(s);
-    return next;
-  });
+  const slides = await listSlides(id);
+  const byN = new Map(slides.map((s) => [s.n, s]));
+  const next: SlideDirInfo[] = [];
+  for (const n of poradi) {
+    const s = byN.get(n);
+    if (s && !next.includes(s)) next.push(s);
+  }
+  // Nevyjmenované slidy zachováme na konci ve stávajícím pořadí.
+  for (const s of slides) if (!next.includes(s)) next.push(s);
+  await renumberSlides(id, next);
+  await touchDisplay(id);
 }
 
 // --- Přehled displejů ---
 
-async function thumbnailFor(id: string, meta: DisplayMeta): Promise<string | null> {
-  const slides = await resolveSlides(id, meta);
-  for (const s of slides) {
-    if (s.obrazky.length > 0) return slideFileUrl(id, s.klic, s.obrazky[0]);
+async function thumbnailFor(id: string): Promise<string | null> {
+  for (const s of await listSlides(id)) {
+    if (s.typ !== "info" && s.typ !== "gal") continue;
+    const pngs = await listFiles(id, s.slozka, ".png");
+    const hlavni = pngs.find((f) => f !== MAPA_SOUBOR) ?? pngs[0];
+    if (hlavni) return slideFileUrl(id, s.slozka, hlavni);
   }
   return null;
 }
@@ -525,7 +516,7 @@ export async function listDisplays(): Promise<DisplaySummary[]> {
       druh: meta.druh,
       stav: meta.stav,
       posledniZmena: meta.posledniZmena,
-      thumbnail: await thumbnailFor(id, meta),
+      thumbnail: await thumbnailFor(id),
     });
   }
   return out;

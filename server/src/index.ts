@@ -11,11 +11,12 @@ import {
   listDisplays,
   readMeta,
   readSlides,
-  writeSlide,
+  readKb,
+  writeKb,
+  writeInfoPole,
   saveImage,
-  isImageFilename,
   deleteImage,
-  reorderImages,
+  setMapa,
   saveVideo,
   deleteVideo,
   addSlide,
@@ -23,6 +24,8 @@ import {
   reorderSlides,
   displayExists,
   slideExists,
+  SLIDE_TYPY,
+  type SlideTyp,
 } from "./displays.js";
 
 const PORT = Number(process.env.PORT ?? 3000);
@@ -58,8 +61,8 @@ function validId(id: string): boolean {
   return /^\d+$/.test(id);
 }
 
-// Slidy už nejsou pevně 1-6: klíč je číslo složky slide-<n>. Existenci
-// konkrétního slidu ověřujeme přes slideExists, ne pevným rozsahem.
+// Slide se adresuje číselným prefixem složky (<n>_<typ>). Po přečíslování se
+// čísla mění, klient si po každé strukturální změně načte detail znovu.
 function validSlide(n: number): boolean {
   return Number.isInteger(n) && n >= 1;
 }
@@ -100,10 +103,29 @@ app.get<{ Params: { id: string } }>("/api/displays/:id", async (req, reply) => {
   if (!validId(id)) return reply.code(400).send({ chyba: "Neplatné id." });
   const meta = await readMeta(id);
   if (!meta) return reply.code(404).send({ chyba: "Displej nenalezen." });
-  return { id, meta, slides: await readSlides(id) };
+  return { id, meta, slides: await readSlides(id), kb: await readKb(id) };
 });
 
-app.put<{ Params: { id: string; n: string }; Body: { nadpis?: string; text?: string } }>(
+// --- Znalostní báze (kb.md v kořeni displeje, edituje se mimo slidy) ---
+app.put<{ Params: { id: string }; Body: { text?: string } }>(
+  "/api/displays/:id/kb",
+  async (req, reply) => {
+    const { id } = req.params;
+    if (!validId(id)) return reply.code(400).send({ chyba: "Neplatné id." });
+    if (!(await displayExists(id))) return reply.code(404).send({ chyba: "Displej nenalezen." });
+
+    await writeKb(id, req.body?.text ?? "");
+    await appendAudit({
+      uzivatel: currentUser(req),
+      akce: "úprava znalostní báze",
+      cil: `displej ${id}`,
+    });
+    return { ok: true };
+  },
+);
+
+// Uložení polí info panelu (text.txt jako řádky "Klic: Hodnota").
+app.put<{ Params: { id: string; n: string }; Body: { pole?: Record<string, string> } }>(
   "/api/displays/:id/slides/:n",
   async (req, reply) => {
     const { id } = req.params;
@@ -112,18 +134,19 @@ app.put<{ Params: { id: string; n: string }; Body: { nadpis?: string; text?: str
     if (!(await displayExists(id))) return reply.code(404).send({ chyba: "Displej nenalezen." });
     if (!(await slideExists(id, n))) return reply.code(404).send({ chyba: "Slide nenalezen." });
 
-    const nadpis = req.body?.nadpis ?? "";
-    const text = req.body?.text ?? "";
-    await writeSlide(id, n, nadpis, text);
+    const pole = req.body?.pole && typeof req.body.pole === "object" ? req.body.pole : {};
+    const res = await writeInfoPole(id, n, pole);
+    if (!res.ok) return reply.code(400).send({ chyba: res.chyba });
     await appendAudit({
       uzivatel: currentUser(req),
-      akce: "úprava",
+      akce: "úprava info panelu",
       cil: `displej ${id}, slide ${n}`,
     });
     return { ok: true };
   },
 );
 
+// Upload fotky (info panel a galerie). Vždy se převádí do PNG kvůli Unity.
 app.post<{ Params: { id: string; n: string } }>(
   "/api/displays/:id/slides/:n/image",
   async (req, reply) => {
@@ -134,21 +157,16 @@ app.post<{ Params: { id: string; n: string } }>(
 
     const file = await req.file();
     if (!file) return reply.code(400).send({ chyba: "Chybí soubor." });
-    // Co neumíme vypsat, nesmíme tiše přijmout (jinak fotka zmizí). Raději jasná chyba.
-    if (!isImageFilename(file.filename)) {
-      return reply.code(400).send({
-        chyba: "Nepodporovaný formát obrázku. Použijte JPG, PNG, HEIC, WEBP, AVIF, GIF nebo SVG.",
-      });
-    }
     const buffer = await file.toBuffer();
-    const url = await saveImage(id, n, file.filename, buffer);
+    const res = await saveImage(id, n, buffer);
+    if (!res.ok) return reply.code(400).send({ chyba: res.chyba });
 
     await appendAudit({
       uzivatel: currentUser(req),
       akce: "upload",
-      cil: `displej ${id}, slide ${n}: ${path.basename(url)}`,
+      cil: `displej ${id}, slide ${n}: ${path.basename(res.url!)}`,
     });
-    return { ok: true, url };
+    return { ok: true, url: res.url };
   },
 );
 
@@ -163,7 +181,7 @@ app.delete<{ Params: { id: string; n: string; nazev: string } }>(
 
     const nazev = path.basename(decodeURIComponent(req.params.nazev));
     const ok = await deleteImage(id, n, nazev);
-    if (!ok) return reply.code(400).send({ chyba: "Neplatný název souboru." });
+    if (!ok) return reply.code(400).send({ chyba: "Fotku se nepodařilo smazat." });
 
     await appendAudit({
       uzivatel: currentUser(req),
@@ -174,27 +192,30 @@ app.delete<{ Params: { id: string; n: string; nazev: string } }>(
   },
 );
 
-// Změna pořadí fotek slidu (pořadí jde do meta).
-app.put<{ Params: { id: string; n: string }; Body: { poradi?: string[] } }>(
-  "/api/displays/:id/slides/:n/images/reorder",
+// Označení fotky info panelu jako mapa výskytu (přejmenuje se na mapa.png).
+// Body { nazev: null } značení zruší.
+app.put<{ Params: { id: string; n: string }; Body: { nazev?: string | null } }>(
+  "/api/displays/:id/slides/:n/images/mapa",
   async (req, reply) => {
     const { id } = req.params;
     const n = Number(req.params.n);
     if (!validId(id) || !validSlide(n)) return reply.code(400).send({ chyba: "Neplatné parametry." });
     if (!(await slideExists(id, n))) return reply.code(404).send({ chyba: "Slide nenalezen." });
 
-    const poradi = Array.isArray(req.body?.poradi) ? req.body!.poradi : [];
-    await reorderImages(id, n, poradi);
+    const nazev = typeof req.body?.nazev === "string" ? decodeURIComponent(req.body.nazev) : null;
+    const res = await setMapa(id, n, nazev);
+    if (!res.ok) return reply.code(400).send({ chyba: res.chyba });
+
     await appendAudit({
       uzivatel: currentUser(req),
-      akce: "pořadí fotek",
-      cil: `displej ${id}, slide ${n}`,
+      akce: nazev ? "označení mapy výskytu" : "zrušení mapy výskytu",
+      cil: `displej ${id}, slide ${n}${nazev ? `: ${path.basename(nazev)}` : ""}`,
     });
     return { ok: true };
   },
 );
 
-// Nahrání videa na slide (mp4).
+// Nahrání videa (jen video slide, ukládá se jako mp4).
 app.post<{ Params: { id: string; n: string } }>(
   "/api/displays/:id/slides/:n/video",
   async (req, reply) => {
@@ -206,17 +227,18 @@ app.post<{ Params: { id: string; n: string } }>(
     const file = await req.file();
     if (!file) return reply.code(400).send({ chyba: "Chybí soubor." });
     const ext = path.extname(file.filename).toLowerCase();
-    const jeVideo = file.mimetype?.startsWith("video/") || [".mp4", ".webm", ".m4v", ".mov", ".ogg"].includes(ext);
-    if (!jeVideo) return reply.code(400).send({ chyba: "Nahrajte prosím video (MP4)." });
+    const jeMp4 = file.mimetype === "video/mp4" || ext === ".mp4";
+    if (!jeMp4) return reply.code(400).send({ chyba: "Nahrajte prosím video ve formátu MP4." });
 
     const buffer = await file.toBuffer();
-    const url = await saveVideo(id, n, file.filename, buffer);
+    const res = await saveVideo(id, n, file.filename, buffer);
+    if (!res.ok) return reply.code(400).send({ chyba: res.chyba });
     await appendAudit({
       uzivatel: currentUser(req),
       akce: "upload videa",
-      cil: `displej ${id}, slide ${n}: ${path.basename(url)}`,
+      cil: `displej ${id}, slide ${n}: ${path.basename(res.url!)}`,
     });
-    return { ok: true, url };
+    return { ok: true, url: res.url };
   },
 );
 
@@ -239,22 +261,29 @@ app.delete<{ Params: { id: string; n: string } }>(
   },
 );
 
-// Přidání nového (obsahového) slidu na konec displeje.
-app.post<{ Params: { id: string } }>("/api/displays/:id/slides", async (req, reply) => {
-  const { id } = req.params;
-  if (!validId(id)) return reply.code(400).send({ chyba: "Neplatné id." });
-  if (!(await displayExists(id))) return reply.code(404).send({ chyba: "Displej nenalezen." });
+// Přidání nového slidu zvoleného typu na konec displeje.
+app.post<{ Params: { id: string }; Body: { typ?: string } }>(
+  "/api/displays/:id/slides",
+  async (req, reply) => {
+    const { id } = req.params;
+    if (!validId(id)) return reply.code(400).send({ chyba: "Neplatné id." });
+    if (!(await displayExists(id))) return reply.code(404).send({ chyba: "Displej nenalezen." });
 
-  const n = await addSlide(id);
-  await appendAudit({
-    uzivatel: currentUser(req),
-    akce: "přidání slidu",
-    cil: `displej ${id}, slide ${n}`,
-  });
-  return { ok: true, n };
-});
+    const typ = req.body?.typ;
+    if (!typ || !SLIDE_TYPY.includes(typ as SlideTyp)) {
+      return reply.code(400).send({ chyba: "Neplatný typ slidu." });
+    }
+    const n = await addSlide(id, typ as SlideTyp);
+    await appendAudit({
+      uzivatel: currentUser(req),
+      akce: "přidání slidu",
+      cil: `displej ${id}, slide ${n} (${typ})`,
+    });
+    return { ok: true, n };
+  },
+);
 
-// Odebrání slidu (AI slide nelze odebrat, musí zůstat aspoň jeden slide).
+// Odebrání slidu; zbylé složky se přečíslují na souvislou řadu.
 app.delete<{ Params: { id: string; n: string } }>(
   "/api/displays/:id/slides/:n",
   async (req, reply) => {
@@ -274,7 +303,7 @@ app.delete<{ Params: { id: string; n: string } }>(
   },
 );
 
-// Změna pořadí slidů v rámci displeje (pořadí jde do meta).
+// Změna pořadí slidů: přejmenují se číselné prefixy složek.
 app.put<{ Params: { id: string }; Body: { poradi?: number[] } }>(
   "/api/displays/:id/slides/reorder",
   async (req, reply) => {

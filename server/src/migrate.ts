@@ -1,0 +1,184 @@
+import { promises as fs } from "node:fs";
+import path from "node:path";
+import { DISPLAYS_DIR } from "./paths.js";
+import { SEED_DISPLAYS, DEFAULT_KB } from "./content.js";
+import { serializeInfoText, convertToPng, NEPRIRAZENO, type SlideTyp } from "./displays.js";
+
+// Jednorázová migrace staré struktury (cs/slide-1..6, text.md, kb.md ve
+// slide-6) na nový formát pro Unity (cs/<n>_<typ>, text.txt, kb.md v kořeni).
+//
+// Zachovává nahraná média: obrázky se převedou do PNG (fotky ze slide-1 jdou
+// do 1_info, ostatní do 3_gal), první nalezené MP4 jde do 2_vid. Texty starých
+// slidů se přesunou do znalostní báze kb.md, ať se o obsah nepřijde.
+//
+// Migrace je idempotentní: displej, který už nemá žádnou složku slide-*,
+// se přeskočí.
+
+const IMAGE_EXT = new Set([".svg", ".png", ".jpg", ".jpeg", ".jfif", ".webp", ".gif", ".avif", ".bmp", ".tif", ".tiff"]);
+
+interface OldSlide {
+  n: number;
+  dir: string;
+  nadpis: string;
+  text: string;
+  kb: string | null;
+  images: string[]; // absolutní cesty
+  videos: string[]; // absolutní cesty
+}
+
+function parseSlideMarkdown(raw: string): { nadpis: string; text: string } {
+  const lines = raw.replace(/\r\n/g, "\n").split("\n");
+  if (lines[0]?.startsWith("# ")) {
+    return { nadpis: lines[0].slice(2).trim(), text: lines.slice(1).join("\n").trim() };
+  }
+  return { nadpis: "", text: raw.trim() };
+}
+
+async function readOldSlides(csDir: string): Promise<OldSlide[]> {
+  let entries: string[];
+  try {
+    entries = await fs.readdir(csDir);
+  } catch {
+    return [];
+  }
+  const out: OldSlide[] = [];
+  for (const name of entries) {
+    const m = /^slide-(\d+)$/.exec(name);
+    if (!m) continue;
+    const dir = path.join(csDir, name);
+    if (!(await fs.stat(dir)).isDirectory()) continue;
+    const files = await fs.readdir(dir);
+    let nadpis = "";
+    let text = "";
+    let kb: string | null = null;
+    if (files.includes("kb.md")) {
+      kb = await fs.readFile(path.join(dir, "kb.md"), "utf8");
+    }
+    if (files.includes("text.md")) {
+      const parsed = parseSlideMarkdown(await fs.readFile(path.join(dir, "text.md"), "utf8"));
+      nadpis = parsed.nadpis;
+      text = parsed.text;
+    }
+    out.push({
+      n: Number(m[1]),
+      dir,
+      nadpis,
+      text,
+      kb,
+      images: files.filter((f) => IMAGE_EXT.has(path.extname(f).toLowerCase())).sort().map((f) => path.join(dir, f)),
+      videos: files.filter((f) => path.extname(f).toLowerCase() === ".mp4").sort().map((f) => path.join(dir, f)),
+    });
+  }
+  return out.sort((a, b) => a.n - b.n);
+}
+
+async function copyImagesAsPng(sources: string[], targetDir: string, prefix: string): Promise<number> {
+  let ok = 0;
+  for (const src of sources) {
+    try {
+      const png = await convertToPng(await fs.readFile(src));
+      ok += 1;
+      await fs.writeFile(path.join(targetDir, `${prefix}-${String(ok).padStart(2, "0")}.png`), png);
+    } catch {
+      console.warn(`  ! nepodařilo se převést do PNG, přeskočeno: ${src}`);
+    }
+  }
+  return ok;
+}
+
+async function migrateDisplay(id: string): Promise<void> {
+  const root = path.join(DISPLAYS_DIR, id);
+  const csDir = path.join(root, "cs");
+  const oldSlides = await readOldSlides(csDir);
+  if (oldSlides.length === 0) {
+    console.log(`Displej ${id}: už v novém formátu, přeskočeno.`);
+    return;
+  }
+
+  let meta: { druh?: string; stav?: string } = {};
+  try {
+    meta = JSON.parse(await fs.readFile(path.join(root, "meta.json"), "utf8"));
+  } catch {
+    // meta dopíšeme níž
+  }
+  const druh = meta.druh ?? NEPRIRAZENO;
+  const prirazeno = druh !== NEPRIRAZENO;
+
+  // 1) kb.md do kořene: stará znalostní báze + texty obsahových slidů.
+  let kb = oldSlides.find((s) => s.kb)?.kb ?? (prirazeno ? `# Znalostní báze: ${druh}\n` : DEFAULT_KB);
+  const textove = oldSlides.filter((s) => !s.kb && (s.nadpis || s.text));
+  if (textove.length) {
+    kb = kb.replace(/\n+$/, "\n");
+    kb += "\n## Texty z původních slidů\n";
+    for (const s of textove) {
+      kb += `\n### ${s.nadpis || `Slide ${s.n}`}\n${s.text}\n`;
+    }
+  }
+  await fs.writeFile(path.join(root, "kb.md"), kb.endsWith("\n") ? kb : kb + "\n", "utf8");
+
+  const slidy: { slozka: string; typ: SlideTyp }[] = [];
+  if (prirazeno) {
+    // 2) 1_info: pole (ze seedu, pokud druh známe, jinak aspoň Nazev) + fotky slide-1.
+    const seed = Object.values(SEED_DISPLAYS).find((s) => s.druh === druh);
+    const pole = seed ? seed.pole : { Nazev: druh };
+    const info = path.join(csDir, "1_info");
+    await fs.mkdir(info, { recursive: true });
+    await fs.writeFile(path.join(info, "text.txt"), serializeInfoText(pole), "utf8");
+    await copyImagesAsPng(oldSlides[0]?.images ?? [], info, "foto");
+
+    // 3) 2_vid: první nalezené MP4.
+    const vid = path.join(csDir, "2_vid");
+    await fs.mkdir(vid, { recursive: true });
+    const mp4 = oldSlides.flatMap((s) => s.videos)[0];
+    if (mp4) await fs.copyFile(mp4, path.join(vid, path.basename(mp4)));
+
+    // 4) 3_gal: fotky z ostatních slidů.
+    const gal = path.join(csDir, "3_gal");
+    await fs.mkdir(gal, { recursive: true });
+    await copyImagesAsPng(oldSlides.slice(1).flatMap((s) => s.images), gal, "foto");
+
+    // 5) 4_ai: prázdná složka.
+    await fs.mkdir(path.join(csDir, "4_ai"), { recursive: true });
+
+    slidy.push(
+      { slozka: "1_info", typ: "info" },
+      { slozka: "2_vid", typ: "vid" },
+      { slozka: "3_gal", typ: "gal" },
+      { slozka: "4_ai", typ: "ai" },
+    );
+  }
+
+  // 6) Staré slide-* složky pryč.
+  for (const s of oldSlides) {
+    await fs.rm(s.dir, { recursive: true, force: true });
+  }
+
+  const newMeta = {
+    druh,
+    stav: meta.stav === "offline" ? "offline" : "online",
+    posledniZmena: new Date().toISOString(),
+    slidy,
+  };
+  await fs.writeFile(path.join(root, "meta.json"), JSON.stringify(newMeta, null, 2) + "\n", "utf8");
+  console.log(`Displej ${id}: zmigrováno (${druh}${prirazeno ? `, slidů: ${slidy.length}` : ", bez slidů"}).`);
+}
+
+async function main() {
+  console.log(`Migruji displeje v ${DISPLAYS_DIR} na formát pro Unity ...`);
+  let ids: string[];
+  try {
+    ids = await fs.readdir(DISPLAYS_DIR);
+  } catch {
+    console.error("Datová složka nenalezena.");
+    process.exit(1);
+  }
+  for (const id of ids.filter((x) => /^\d+$/.test(x)).sort((a, b) => Number(a) - Number(b))) {
+    await migrateDisplay(id);
+  }
+  console.log("Migrace hotová.");
+}
+
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

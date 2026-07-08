@@ -13,7 +13,8 @@
     "dev:web": "npm run dev --workspace web",
     "dev": "concurrently -n server,web -c green,cyan \"npm:dev:server\" \"npm:dev:web\"",
     "build": "npm run build --workspace web",
-    "start": "npm run start --workspace server"
+    "start": "npm run start --workspace server",
+    "migrate": "npm run migrate --workspace server"
   },
   "devDependencies": {
     "concurrently": "^9.1.0"

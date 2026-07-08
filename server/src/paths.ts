@@ -16,6 +16,4 @@ export const AUDIT_FILE = path.join(DATA_ROOT, "audit.jsonl");
 // Buildnutý web (vzniká přes `npm run build`). Servíruje ho stejný proces.
 export const WEB_DIST = path.join(repoRoot, "web", "dist");
 
-export const SLIDE_COUNT = 6;
-export const AI_SLIDE = 6;
 export const DISPLAY_COUNT = 37;

@@ -6,33 +6,30 @@ export interface DisplaySummary {
   thumbnail: string | null;
 }
 
-export interface SlideMeta {
-  klic: string;
-  ai: boolean;
-  obrazky: string[];
-  video: string | null;
-}
+// Typ slidu = suffix názvu složky na disku (<n>_<typ>), pořadí = číselný prefix.
+export type SlideTyp = "info" | "vid" | "gal" | "ai";
 
 export interface DisplayMeta {
   druh: string;
   stav: "online" | "offline";
   posledniZmena: string;
-  slidy?: SlideMeta[];
+  slidy?: { slozka: string; typ: SlideTyp }[];
 }
 
 export interface SlideContent {
-  n: number; // číselný klíč slidu (složka slide-<n>)
-  nadpis: string;
-  text: string;
-  obrazky: string[];
-  video: string | null;
-  jeAi: boolean;
+  n: number; // číselný prefix složky slidu
+  typ: SlideTyp;
+  pole: Record<string, string>; // jen info: obsah text.txt ("Klic: Hodnota")
+  obrazky: string[]; // URL fotek (info: hlavní fotky, gal: galerie)
+  mapa: string | null; // jen info: URL mapa.png
+  video: string | null; // jen vid: URL mp4
 }
 
 export interface DisplayDetail {
   id: string;
   meta: DisplayMeta;
   slides: SlideContent[];
+  kb: string; // znalostní báze kb.md v kořeni displeje
 }
 
 export interface AuditEntry {
@@ -43,3 +40,42 @@ export interface AuditEntry {
 }
 
 export const NEPRIRAZENO = "Nepřiřazeno";
+
+// Sekce expozice (dropdown info panelu; hodnota jde do text.txt beze změny).
+export const SEKCE = [
+  "Listovnice",
+  "Caudata",
+  "Červoři",
+  "Lezci",
+  "Madagaskar",
+  "Neotenie",
+  "Obojživelníci České republiky",
+  "Pralesničky",
+  "Rozmanitost žab",
+  "Šesté vymírání",
+];
+
+// Pole info panelu: klíč přesně tak, jak se zapisuje do text.txt.
+export interface InfoPoleDef {
+  klic: string;
+  label: string;
+  povinne: boolean;
+}
+
+export const INFO_POLE: InfoPoleDef[] = [
+  { klic: "Sekce", label: "Sekce", povinne: true },
+  { klic: "Nazev", label: "Název", povinne: true },
+  { klic: "Latinsky", label: "Latinský název", povinne: false },
+  { klic: "Strava", label: "Strava", povinne: false },
+  { klic: "Velikost", label: "Velikost", povinne: false },
+  { klic: "DobaLihnuti", label: "Doba líhnutí", povinne: false },
+  { klic: "Ohrozeni", label: "Ohrožení", povinne: false },
+  { klic: "DelkaZivota", label: "Délka života", povinne: false },
+];
+
+export const SLIDE_TYP_LABEL: Record<SlideTyp, string> = {
+  info: "Info panel",
+  vid: "Video",
+  gal: "Galerie",
+  ai: "AI slide",
+};

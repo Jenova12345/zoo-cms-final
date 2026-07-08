@@ -1,5 +1,23 @@
 {
   "druh": "Mlok skvrnitý",
   "stav": "online",
-  "posledniZmena": "2026-06-01T07:46:53.656Z"
+  "posledniZmena": "2026-07-08T09:11:15.288Z",
+  "slidy": [
+    {
+      "slozka": "1_info",
+      "typ": "info"
+    },
+    {
+      "slozka": "2_vid",
+      "typ": "vid"
+    },
+    {
+      "slozka": "3_gal",
+      "typ": "gal"
+    },
+    {
+      "slozka": "4_ai",
+      "typ": "ai"
+    }
+  ]
 }

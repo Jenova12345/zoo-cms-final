@@ -1,5 +1,23 @@
 {
   "druh": "Rosnička zelená",
   "stav": "online",
-  "posledniZmena": "2026-05-31T23:18:48.197Z"
+  "posledniZmena": "2026-07-08T09:11:15.333Z",
+  "slidy": [
+    {
+      "slozka": "1_info",
+      "typ": "info"
+    },
+    {
+      "slozka": "2_vid",
+      "typ": "vid"
+    },
+    {
+      "slozka": "3_gal",
+      "typ": "gal"
+    },
+    {
+      "slozka": "4_ai",
+      "typ": "ai"
+    }
+  ]
 }

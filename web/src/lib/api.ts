@@ -1,4 +1,4 @@
-import type { AuditEntry, DisplayDetail, DisplaySummary } from "./types";
+import type { AuditEntry, DisplayDetail, DisplaySummary, SlideTyp } from "./types";
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, {
@@ -44,11 +44,21 @@ export const api = {
     return request<DisplayDetail>(`/api/displays/${id}`);
   },
 
-  async saveSlide(id: string, n: number, nadpis: string, text: string): Promise<void> {
+  // Uloží pole info panelu (na disku vznikne text.txt s řádky "Klic: Hodnota").
+  async saveInfo(id: string, n: number, pole: Record<string, string>): Promise<void> {
     await request(`/api/displays/${id}/slides/${n}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ nadpis, text }),
+      body: JSON.stringify({ pole }),
+    });
+  },
+
+  // Uloží znalostní bázi (kb.md v kořeni displeje).
+  async saveKb(id: string, text: string): Promise<void> {
+    await request(`/api/displays/${id}/kb`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
     });
   },
 
@@ -67,11 +77,12 @@ export const api = {
     });
   },
 
-  async reorderImages(id: string, n: number, poradi: string[]): Promise<void> {
-    await request(`/api/displays/${id}/slides/${n}/images/reorder`, {
+  // Označí fotku info panelu jako mapu výskytu (mapa.png); nazev=null značení zruší.
+  async setMapa(id: string, n: number, nazev: string | null): Promise<void> {
+    await request(`/api/displays/${id}/slides/${n}/images/mapa`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ poradi }),
+      body: JSON.stringify({ nazev }),
     });
   },
 
@@ -88,8 +99,12 @@ export const api = {
     await request(`/api/displays/${id}/slides/${n}/video`, { method: "DELETE" });
   },
 
-  async addSlide(id: string): Promise<{ n: number }> {
-    return request<{ ok: boolean; n: number }>(`/api/displays/${id}/slides`, { method: "POST" });
+  async addSlide(id: string, typ: SlideTyp): Promise<{ n: number }> {
+    return request<{ ok: boolean; n: number }>(`/api/displays/${id}/slides`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ typ }),
+    });
   },
 
   async deleteSlide(id: string, n: number): Promise<void> {

@@ -1,55 +1,85 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { DISPLAYS_DIR, SLIDE_COUNT, AI_SLIDE, DISPLAY_COUNT } from "./paths.js";
-import { SEED_DISPLAYS, placeholderSvg, type SeedDisplay } from "./content.js";
+import sharp from "sharp";
+import { DISPLAYS_DIR, DISPLAY_COUNT } from "./paths.js";
+import { SEED_DISPLAYS, DEFAULT_KB, placeholderSvg, type SeedDisplay } from "./content.js";
+import { serializeInfoText } from "./displays.js";
 
-// Vygeneruje reálnou strukturu složek pro všech 37 displejů na disku.
-// Displeje 1-3 s obsahem, 4-37 jako "Nepřiřazeno" s prázdnými slidy.
+// Vygeneruje strukturu složek pro všech 37 displejů ve formátu pro Unity:
+//
+//   <id>/kb.md                znalostní báze (kořen displeje)
+//   <id>/meta.json            doplněk (druh, stav, poslední změna)
+//   <id>/cs/1_info/text.txt   pole "Klic: Hodnota" + fotky .png + mapa.png
+//   <id>/cs/2_vid/            video slide (mp4 nahraje kurátor)
+//   <id>/cs/3_gal/*.png       galerie
+//   <id>/cs/4_ai/             prázdná složka = AI slide
+//
+// Displeje 1-3 s obsahem, 4-37 jako "Nepřiřazeno" bez slidů (kurátor je
+// přidá výběrem typu).
 
-async function writeSlideFile(id: number, n: number, nadpis: string, text: string) {
-  const dir = path.join(DISPLAYS_DIR, String(id), "cs", `slide-${n}`);
-  await fs.mkdir(dir, { recursive: true });
-  const file = path.join(dir, n === AI_SLIDE ? "kb.md" : "text.md");
-  const body = n === AI_SLIDE ? text : (nadpis ? `# ${nadpis}\n\n` : "") + text;
-  await fs.writeFile(file, body.endsWith("\n") ? body : body + "\n", "utf8");
+async function pngPlaceholder(druh: string, barva: string, popisek: string): Promise<Buffer> {
+  return sharp(Buffer.from(placeholderSvg(druh, barva, popisek))).png().toBuffer();
 }
 
 async function seedDisplay(id: number, seed: SeedDisplay | null) {
   const root = path.join(DISPLAYS_DIR, String(id));
-  await fs.mkdir(root, { recursive: true });
+  await fs.rm(root, { recursive: true, force: true });
+  await fs.mkdir(path.join(root, "cs"), { recursive: true });
 
   const druh = seed ? seed.druh : "Nepřiřazeno";
   // Pár displejů offline kvůli realistickému status boardu.
   const stav: "online" | "offline" = id % 11 === 0 ? "offline" : "online";
 
+  await fs.writeFile(path.join(root, "kb.md"), seed ? seed.kb : DEFAULT_KB, "utf8");
+
+  const slidy: { slozka: string; typ: string }[] = [];
+  if (seed) {
+    // 1_info: pole + hlavní foto + mapa výskytu
+    const info = path.join(root, "cs", "1_info");
+    await fs.mkdir(info, { recursive: true });
+    await fs.writeFile(path.join(info, "text.txt"), serializeInfoText(seed.pole), "utf8");
+    await fs.writeFile(
+      path.join(info, "foto-uvod.png"),
+      await pngPlaceholder(seed.druh, seed.barva, "Amphibiárium · ZOO Ostrava"),
+    );
+    await fs.writeFile(
+      path.join(info, "mapa.png"),
+      await pngPlaceholder("Mapa výskytu", "#334155", seed.druh),
+    );
+
+    // 2_vid: prázdné, mp4 nahraje kurátor
+    await fs.mkdir(path.join(root, "cs", "2_vid"), { recursive: true });
+
+    // 3_gal: pár placeholder fotek
+    const gal = path.join(root, "cs", "3_gal");
+    await fs.mkdir(gal, { recursive: true });
+    await fs.writeFile(
+      path.join(gal, "foto-galerie-1.png"),
+      await pngPlaceholder(seed.druh, seed.barva, "Galerie · fotka 1"),
+    );
+    await fs.writeFile(
+      path.join(gal, "foto-galerie-2.png"),
+      await pngPlaceholder(seed.druh, seed.barva, "Galerie · fotka 2"),
+    );
+
+    // 4_ai: prázdná složka
+    await fs.mkdir(path.join(root, "cs", "4_ai"), { recursive: true });
+
+    slidy.push(
+      { slozka: "1_info", typ: "info" },
+      { slozka: "2_vid", typ: "vid" },
+      { slozka: "3_gal", typ: "gal" },
+      { slozka: "4_ai", typ: "ai" },
+    );
+  }
+
   const meta = {
     druh,
     stav,
     posledniZmena: new Date().toISOString(),
+    slidy,
   };
   await fs.writeFile(path.join(root, "meta.json"), JSON.stringify(meta, null, 2) + "\n", "utf8");
-
-  for (let n = 1; n <= SLIDE_COUNT; n++) {
-    if (n === AI_SLIDE) {
-      const kb = seed
-        ? seed.kb
-        : "# Znalostní báze\n\nDisplej zatím není přiřazen. Po přiřazení druhu sem doplňte podklady pro AI průvodce.\n";
-      await writeSlideFile(id, n, "", kb);
-    } else if (seed) {
-      const slide = seed.slides[n - 1];
-      await writeSlideFile(id, n, slide.nadpis, slide.text);
-    } else {
-      // Prázdný obsahový slide u nepřiřazeného displeje.
-      await writeSlideFile(id, n, "", "");
-    }
-  }
-
-  // Úvodní SVG placeholder do slide-1 (slouží jako thumbnail).
-  if (seed) {
-    const slide1 = path.join(root, "cs", "slide-1");
-    await fs.mkdir(slide1, { recursive: true });
-    await fs.writeFile(path.join(slide1, "uvod.svg"), placeholderSvg(seed.druh, seed.barva), "utf8");
-  }
 }
 
 async function main() {
@@ -58,7 +88,7 @@ async function main() {
   for (let id = 1; id <= DISPLAY_COUNT; id++) {
     await seedDisplay(id, SEED_DISPLAYS[id] ?? null);
   }
-  console.log("Hotovo. Displeje 1-3 mají reálný obsah, 4-37 jsou Nepřiřazeno.");
+  console.log("Hotovo. Displeje 1-3 mají obsah (1_info, 2_vid, 3_gal, 4_ai, kb.md), 4-37 jsou Nepřiřazeno.");
 }
 
 main().catch((err) => {
