@@ -5,6 +5,7 @@
 export interface SeedDisplay {
   druh: string;
   barva: string; // pozadí PNG placeholderů
+  celed: string; // taxonomická čeleď -> meta.section
   pole: Record<string, string>; // info panel: řádky "Klic: Hodnota" do text.txt
   kb: string; // znalostní báze kb.md v kořeni displeje
 }
@@ -13,6 +14,7 @@ export const SEED_DISPLAYS: Record<number, SeedDisplay> = {
   1: {
     druh: "Axolotl mexický",
     barva: "#0f766e",
+    celed: "Ambystomatidae",
     pole: {
       Sekce: "Neotenie",
       Nazev: "Axolotl mexický",
@@ -58,6 +60,7 @@ Přátelský, stručný, vhodný pro děti i dospělé. Bez latinských termín�
   2: {
     druh: "Mlok skvrnitý",
     barva: "#a16207",
+    celed: "Salamandridae",
     pole: {
       Sekce: "Caudata",
       Nazev: "Mlok skvrnitý",
@@ -101,6 +104,7 @@ Přátelský a poučný, zdůraznit ochranu druhu a jeho biotopu.
   3: {
     druh: "Rosnička zelená",
     barva: "#15803d",
+    celed: "Hylidae",
     pole: {
       Sekce: "Obojživelníci České republiky",
       Nazev: "Rosnička zelená",

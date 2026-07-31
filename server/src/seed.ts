@@ -4,6 +4,7 @@ import sharp from "sharp";
 import { DISPLAYS_DIR, DISPLAY_COUNT } from "./paths.js";
 import { SEED_DISPLAYS, DEFAULT_KB, placeholderSvg, type SeedDisplay } from "./content.js";
 import { serializeInfoText } from "./displays.js";
+import { canonicalizeLatin } from "./latin.js";
 
 // Vygeneruje strukturu složek pro všech 37 displejů ve formátu pro Unity:
 //
@@ -73,12 +74,19 @@ async function seedDisplay(id: number, seed: SeedDisplay | null) {
     );
   }
 
-  const meta = {
+  // Identifikace pro chatbota se seedne z týchž polí info panelu.
+  const meta: Record<string, unknown> = {
     druh,
     stav,
     posledniZmena: new Date().toISOString(),
     slidy,
   };
+  if (seed) {
+    meta.name = seed.pole.Nazev;
+    meta.latin_name = canonicalizeLatin(seed.pole.Latinsky ?? "");
+    if (seed.pole.Sekce) meta.category = seed.pole.Sekce;
+    meta.section = seed.celed;
+  }
   await fs.writeFile(path.join(root, "meta.json"), JSON.stringify(meta, null, 2) + "\n", "utf8");
 }
 

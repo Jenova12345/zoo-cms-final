@@ -11,6 +11,10 @@ export type SlideTyp = "info" | "vid" | "gal" | "ai";
 
 export interface DisplayMeta {
   druh: string;
+  name?: string; // = Nazev (identifikace pro chatbota)
+  latin_name?: string; // kanonizované latinské jméno (chatbot podle něj páruje)
+  category?: string; // = Sekce (zóna expozice)
+  section?: string; // taxonomická čeleď, např. Dendrobatidae
   stav: "online" | "offline";
   posledniZmena: string;
   slidy?: { slozka: string; typ: SlideTyp }[];

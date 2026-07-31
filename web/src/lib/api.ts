@@ -44,13 +44,29 @@ export const api = {
     return request<DisplayDetail>(`/api/displays/${id}`);
   },
 
-  // Uloží pole info panelu (na disku vznikne text.txt s řádky "Klic: Hodnota").
-  async saveInfo(id: string, n: number, pole: Record<string, string>): Promise<void> {
-    await request(`/api/displays/${id}/slides/${n}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ pole }),
-    });
+  // Uloží pole info panelu (na disku vznikne text.txt s řádky "Klic: Hodnota")
+  // a identita se propíše i do meta.json. Vrací kanonizované latinské jméno a
+  // příznak, jestli ho server musel opravit.
+  async saveInfo(
+    id: string,
+    n: number,
+    pole: Record<string, string>,
+    section: string,
+  ): Promise<{ latin: string; latinCorrected: boolean }> {
+    return request<{ ok: boolean; latin: string; latinCorrected: boolean }>(
+      `/api/displays/${id}/slides/${n}`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pole, section }),
+      },
+    );
+  },
+
+  // Výchozí šablona znalostní báze (kb.md) pro nový/prázdný druh.
+  async kbTemplate(): Promise<string> {
+    const d = await request<{ text: string }>("/api/kb-template");
+    return d.text;
   },
 
   // Uloží znalostní bázi (kb.md v kořeni displeje).

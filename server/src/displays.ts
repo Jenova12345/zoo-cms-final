@@ -3,6 +3,8 @@ import { randomBytes } from "node:crypto";
 import path from "node:path";
 import sharp from "sharp";
 import { DISPLAYS_DIR } from "./paths.js";
+import { canonicalizeLatin } from "./latin.js";
+import { notifyReingest } from "./reingest.js";
 
 // Zdroj pravdy pro Unity je struktura složek na disku:
 //
@@ -51,7 +53,13 @@ export const SEKCE = [
 export const MAPA_SOUBOR = "mapa.png";
 
 export interface DisplayMeta {
-  druh: string;
+  druh: string; // CMS-interní český název (řídí přehled a stav "Nepřiřazeno")
+  // Identifikace pro chatbota (Daniel). Jeden zdroj = pole info panelu; při
+  // uložení se sem propíšou, ať se nerozejdou s cs/1_info/text.txt.
+  name?: string; // = Nazev (český název)
+  latin_name?: string; // = kanonizovaný Latinsky (chatbot podle něj páruje druh)
+  category?: string; // = Sekce (zóna expozice)
+  section?: string; // taxonomická čeleď, např. Dendrobatidae (jen v meta.json)
   stav: "online" | "offline";
   posledniZmena: string;
   // Doplněk pro rychlou orientaci; Unity čte jen složky.
@@ -216,18 +224,56 @@ export async function writeInfoPole(
   id: string,
   n: number,
   pole: Record<string, string>,
-): Promise<{ ok: boolean; chyba?: string }> {
+  section?: string,
+): Promise<{ ok: boolean; chyba?: string; latin: string; latinCorrected: boolean }> {
   const slide = await findSlide(id, n);
-  if (!slide || slide.typ !== "info") return { ok: false, chyba: "Slide není typu info." };
-  const chyba = validateInfoPole(pole);
-  if (chyba) return { ok: false, chyba };
+  if (!slide || slide.typ !== "info") {
+    return { ok: false, chyba: "Slide není typu info.", latin: "", latinCorrected: false };
+  }
+
+  // Kanonizace latinského jména (chatbot podle něj páruje druh).
+  const rawLatin = (pole.Latinsky ?? "").trim();
+  const latin = canonicalizeLatin(rawLatin);
+  const latinCorrected = latin !== rawLatin;
+
+  const cleaned: Record<string, string> = { ...pole };
+  if (latin) cleaned.Latinsky = latin;
+  else delete cleaned.Latinsky;
+
+  const chyba = validateInfoPole(cleaned);
+  if (chyba) return { ok: false, chyba, latin, latinCorrected };
+
+  // 1) Fakta do cs/<slozka>/text.txt (formát Klic: Hodnota).
   await fs.writeFile(
     path.join(slideDirPath(id, slide.slozka), "text.txt"),
-    serializeInfoText(pole),
+    serializeInfoText(cleaned),
     "utf8",
   );
-  await touchDisplay(id);
-  return { ok: true };
+
+  // 2) Táž identita se propíše do meta.json, ať se soubory nerozejdou.
+  const meta = await readMeta(id);
+  if (meta) {
+    const nazev = (cleaned.Nazev ?? "").trim();
+    meta.druh = nazev; // validace zaručuje, že Nazev není prázdný
+    meta.name = nazev;
+    if (latin) meta.latin_name = latin;
+    else delete meta.latin_name;
+    const kategorie = (cleaned.Sekce ?? "").trim();
+    if (kategorie) meta.category = kategorie;
+    else delete meta.category;
+    const celed = (section ?? "").trim();
+    if (celed) meta.section = celed;
+    else delete meta.section;
+    meta.posledniZmena = new Date().toISOString();
+    meta.slidy = (await listSlides(id)).map((s) => ({ slozka: s.slozka, typ: s.typ }));
+    await writeMeta(id, meta);
+  }
+
+  // 3) Signál chatbotu, že se změnila fakta i identifikace (zatím vypnuto).
+  void notifyReingest(id, `cs/${slide.slozka}/text.txt`);
+  void notifyReingest(id, "meta.json");
+
+  return { ok: true, latin, latinCorrected };
 }
 
 // --- Obsah slidů pro API ---
@@ -287,6 +333,8 @@ export async function writeKb(id: string, text: string): Promise<void> {
     "utf8",
   );
   await touchDisplay(id);
+  // Signál chatbotu, že se změnila znalostní báze (zatím vypnuto).
+  void notifyReingest(id, "kb.md");
 }
 
 // --- Fotky (vždy PNG, aby je přečetlo Unity) ---

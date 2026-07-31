@@ -16,10 +16,12 @@ import {
   ChevronLeft,
   ChevronRight,
   Film,
+  FileText,
   Map,
   X,
 } from "lucide-react";
 import { api, formatDateTime, nazevSouboru } from "../lib/api";
+import { canonicalizeLatin } from "../lib/latin";
 import {
   INFO_POLE,
   NEPRIRAZENO,
@@ -57,6 +59,7 @@ export default function DisplayDetail() {
   const [active, setActive] = useState<ActiveTab>(1);
   const [infoDrafts, setInfoDrafts] = useState<Record<number, Record<string, string>>>({});
   const [kbDraft, setKbDraft] = useState("");
+  const [sectionDraft, setSectionDraft] = useState(""); // meta.section (čeleď), na úrovni displeje
   const [saving, setSaving] = useState(false);
   const [busy, setBusy] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
@@ -69,6 +72,7 @@ export default function DisplayDetail() {
         Object.fromEntries(d.slides.filter((s) => s.typ === "info").map((s) => [s.n, { ...s.pole }])),
       );
       setKbDraft(d.kb);
+      setSectionDraft(d.meta.section ?? "");
       // Pokud aktivní slide po změně struktury zmizel, vrátíme se na první.
       setActive((cur) =>
         cur === "kb" || d.slides.some((s) => s.n === cur) ? cur : d.slides[0]?.n ?? "kb",
@@ -129,14 +133,19 @@ export default function DisplayDetail() {
     }
   }
 
-  // Jeden klik: uloží pole info panelu na disk (text.txt) a odešle na displej.
+  // Jeden klik: uloží pole info panelu (text.txt + identita do meta.json) a
+  // odešle na displej. Latinské jméno server očistí na kanonický tvar.
   async function saveInfoAndSend(n: number, pole: Record<string, string>) {
     setSaving(true);
     try {
-      await api.saveInfo(id, n, pole);
+      const res = await api.saveInfo(id, n, pole, sectionDraft);
       await api.refresh(id);
       await load();
-      toast.success(`Uloženo a odesláno na displej ${id}`);
+      if (res.latinCorrected && res.latin) {
+        toast.success(`Uloženo a odesláno. Latinské jméno upraveno na kanonický tvar: ${res.latin}`);
+      } else {
+        toast.success(`Uloženo a odesláno na displej ${id}`);
+      }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Uložení nebo odeslání selhalo.");
     } finally {
@@ -189,6 +198,7 @@ export default function DisplayDetail() {
         Object.fromEntries(d.slides.filter((s) => s.typ === "info").map((s) => [s.n, { ...s.pole }])),
       );
       setKbDraft(d.kb);
+      setSectionDraft(d.meta.section ?? "");
       // Po přečíslování zůstaň na přesunutém slidu (má nové číslo).
       setActive(d.slides[cilova]?.n ?? d.slides[0]?.n ?? "kb");
     }, "Změna pořadí selhala.");
@@ -347,6 +357,8 @@ export default function DisplayDetail() {
           key={slide.n}
           slide={slide}
           pole={infoDrafts[slide.n] ?? {}}
+          section={sectionDraft}
+          onSectionChange={setSectionDraft}
           onChange={(patch) =>
             setInfoDrafts((prev) => ({ ...prev, [slide.n]: { ...(prev[slide.n] ?? {}), ...patch } }))
           }
@@ -464,6 +476,8 @@ function usePhotoUpload(displayId: string, n: number, reload: () => Promise<void
 function InfoEditor({
   slide,
   pole,
+  section,
+  onSectionChange,
   onChange,
   onSave,
   saving,
@@ -474,6 +488,8 @@ function InfoEditor({
 }: {
   slide: SlideContent;
   pole: Record<string, string>;
+  section: string;
+  onSectionChange: (v: string) => void;
   onChange: (patch: Record<string, string>) => void;
   onSave: (pole: Record<string, string>) => void;
   saving: boolean;
@@ -488,6 +504,11 @@ function InfoEditor({
 
   const chybi = (klic: string) => !(pole[klic] ?? "").trim();
   const valid = !chybi("Sekce") && !chybi("Nazev");
+
+  // Živý náhled kanonického tvaru latinského jména (autoritativně čistí server).
+  const latinRaw = pole.Latinsky ?? "";
+  const latinNahled = canonicalizeLatin(latinRaw);
+  const latinSeZmeni = !!latinNahled && latinNahled !== latinRaw.trim();
 
   function handleSave() {
     if (!valid) {
@@ -548,8 +569,30 @@ function InfoEditor({
             {showErrors && def.povinne && chybi(def.klic) && (
               <p className="mt-1 text-xs text-danger">Povinné pole.</p>
             )}
+            {def.klic === "Latinsky" && latinSeZmeni && (
+              <p className="mt-1 text-xs text-amber">
+                Uloží se v kanonickém tvaru: <span className="font-mono">{latinNahled}</span>
+              </p>
+            )}
           </div>
         ))}
+
+        {/* Taxonomická čeleď: jde jen do meta.json (identifikace pro chatbota). */}
+        <div>
+          <label className="label">
+            Čeleď (taxonomická)<span className="text-fg-dim font-normal"> · volitelné</span>
+          </label>
+          <input
+            className="input"
+            value={section}
+            onChange={(e) => onSectionChange(e.target.value)}
+            placeholder="Např. Dendrobatidae"
+          />
+          <p className="mt-1 text-xs text-fg-dim">
+            Ukládá se do meta.json jako <span className="font-mono">section</span> (pro chatbota), ne do textu panelu.
+          </p>
+        </div>
+
         <div className="flex items-center gap-3 pt-1">
           <button onClick={handleSave} className="btn-primary" disabled={saving}>
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" strokeWidth={1.75} />}
@@ -841,6 +884,36 @@ function KbEditor({
   onSave: () => void;
   saving: boolean;
 }) {
+  const toast = useToast();
+  const [template, setTemplate] = useState<string | null>(null);
+  const prefilled = useRef(false);
+  const prazdne = value.trim() === "";
+
+  // Šablonu si načteme jednou; slouží k předvyplnění i pro tlačítko.
+  useEffect(() => {
+    api.kbTemplate().then(setTemplate).catch(() => setTemplate(null));
+  }, []);
+
+  // Nový/prázdný druh: předvyplň editor šablonou, ať kurátor nezačíná z prázdna.
+  // Jen do rozepsaného konceptu (na disk se zapíše až po Uložit); existující
+  // vyplněný kb.md se nikdy nepřepíše.
+  useEffect(() => {
+    if (template && prazdne && !prefilled.current) {
+      prefilled.current = true;
+      onChange(template);
+    }
+  }, [template, prazdne, onChange]);
+
+  function vlozitSablonu() {
+    if (!template) return;
+    if (!prazdne && !window.confirm("Přepsat současný text šablonou? Neuložené změny se ztratí.")) {
+      return;
+    }
+    prefilled.current = true;
+    onChange(template);
+    toast.success("Šablona vložena. Přepište nápovědy vlastním obsahem a uložte.");
+  }
+
   return (
     <div className="space-y-4 max-w-3xl">
       <div className="flex items-start gap-2.5 border-l-2 border-amber pl-4 py-1">
@@ -848,10 +921,21 @@ function KbEditor({
         <div className="text-sm text-fg-muted">
           <span className="font-semibold text-fg">Znalostní báze displeje.</span> Edituje soubor
           kb.md v kořeni složky displeje. Není to slide — čte ji AI průvodce (chatbot) na tabletu.
+          U nového druhu je předvyplněná šablonou od chatbota; přepište nápovědy vlastním obsahem.
         </div>
       </div>
       <div>
-        <label className="label">Znalostní báze (kb.md)</label>
+        <div className="flex items-center justify-between gap-3">
+          <label className="label">Znalostní báze (kb.md)</label>
+          <button
+            onClick={vlozitSablonu}
+            disabled={!template}
+            className="btn-ghost px-2.5 py-1 text-xs disabled:opacity-50"
+            title="Vložit výchozí šablonu znalostní báze"
+          >
+            <FileText className="h-3.5 w-3.5" strokeWidth={1.75} /> Vložit šablonu
+          </button>
+        </div>
         <textarea
           className="input min-h-[340px] resize-y font-mono text-[13px] leading-relaxed"
           value={value}

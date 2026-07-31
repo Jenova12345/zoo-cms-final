@@ -27,6 +27,7 @@ import {
   SLIDE_TYPY,
   type SlideTyp,
 } from "./displays.js";
+import { KB_TEMPLATE } from "./kbTemplate.js";
 
 const PORT = Number(process.env.PORT ?? 3000);
 const HOST = process.env.HOST ?? "127.0.0.1";
@@ -93,6 +94,11 @@ app.get("/api/me", async (req) => {
   return { username: user === "neznámý" ? null : user };
 });
 
+// Výchozí šablona znalostní báze (nabízí ji editor u prázdného kb.md).
+app.get("/api/kb-template", async () => {
+  return { text: KB_TEMPLATE };
+});
+
 // --- Displeje ---
 app.get("/api/displays", async () => {
   return { displays: await listDisplays() };
@@ -124,27 +130,29 @@ app.put<{ Params: { id: string }; Body: { text?: string } }>(
   },
 );
 
-// Uložení polí info panelu (text.txt jako řádky "Klic: Hodnota").
-app.put<{ Params: { id: string; n: string }; Body: { pole?: Record<string, string> } }>(
-  "/api/displays/:id/slides/:n",
-  async (req, reply) => {
-    const { id } = req.params;
-    const n = Number(req.params.n);
-    if (!validId(id) || !validSlide(n)) return reply.code(400).send({ chyba: "Neplatné parametry." });
-    if (!(await displayExists(id))) return reply.code(404).send({ chyba: "Displej nenalezen." });
-    if (!(await slideExists(id, n))) return reply.code(404).send({ chyba: "Slide nenalezen." });
+// Uložení polí info panelu. Vzniká cs/<slozka>/text.txt (Klic: Hodnota) a táž
+// identita (name, latin_name, category, section) se propíše do meta.json.
+app.put<{
+  Params: { id: string; n: string };
+  Body: { pole?: Record<string, string>; section?: string };
+}>("/api/displays/:id/slides/:n", async (req, reply) => {
+  const { id } = req.params;
+  const n = Number(req.params.n);
+  if (!validId(id) || !validSlide(n)) return reply.code(400).send({ chyba: "Neplatné parametry." });
+  if (!(await displayExists(id))) return reply.code(404).send({ chyba: "Displej nenalezen." });
+  if (!(await slideExists(id, n))) return reply.code(404).send({ chyba: "Slide nenalezen." });
 
-    const pole = req.body?.pole && typeof req.body.pole === "object" ? req.body.pole : {};
-    const res = await writeInfoPole(id, n, pole);
-    if (!res.ok) return reply.code(400).send({ chyba: res.chyba });
-    await appendAudit({
-      uzivatel: currentUser(req),
-      akce: "úprava info panelu",
-      cil: `displej ${id}, slide ${n}`,
-    });
-    return { ok: true };
-  },
-);
+  const pole = req.body?.pole && typeof req.body.pole === "object" ? req.body.pole : {};
+  const section = typeof req.body?.section === "string" ? req.body.section : undefined;
+  const res = await writeInfoPole(id, n, pole, section);
+  if (!res.ok) return reply.code(400).send({ chyba: res.chyba });
+  await appendAudit({
+    uzivatel: currentUser(req),
+    akce: "úprava info panelu",
+    cil: `displej ${id}, slide ${n}`,
+  });
+  return { ok: true, latin: res.latin, latinCorrected: res.latinCorrected };
+});
 
 // Upload fotky (info panel a galerie). Vždy se převádí do PNG kvůli Unity.
 app.post<{ Params: { id: string; n: string } }>(
