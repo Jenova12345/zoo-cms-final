@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
-import Fastify from "fastify";
+import Fastify, { type FastifyRequest } from "fastify";
 import fastifyStatic from "@fastify/static";
 import fastifyCookie from "@fastify/cookie";
 import fastifyMultipart from "@fastify/multipart";
@@ -28,35 +28,82 @@ import {
   type SlideTyp,
 } from "./displays.js";
 import { KB_TEMPLATE } from "./kbTemplate.js";
+import {
+  SESSION_COOKIE,
+  SESSION_TTL_S,
+  nactiNeboZalozKlic,
+  prectiSession,
+  vytvorSession,
+} from "./session.js";
+import { overUdaje, pocetUzivatelu } from "./users.js";
 
 const PORT = Number(process.env.PORT ?? 3000);
 const HOST = process.env.HOST ?? "127.0.0.1";
-const SESSION_COOKIE = "amph_session";
 
 const app = Fastify({ logger: { level: "info" } });
 
-await app.register(fastifyCookie);
+// Klíč pro podpis session cookie (SESSION_SECRET, jinak data/session.key).
+await app.register(fastifyCookie, { secret: await nactiNeboZalozKlic() });
 await app.register(fastifyMultipart, {
   limits: { fileSize: 200 * 1024 * 1024 }, // 200 MB, aby prošlo i mp4 video na slide
 });
 
-// Servírování reálných souborů z /data (obrázky slidů).
+// Servírování reálných souborů slidů (fotky, videa) pro CMS i tablet.
+// Root je záměrně jen DISPLAYS_DIR, ne celý DATA_ROOT: users.json,
+// session.key ani audit.jsonl se přes HTTP stáhnout nedají. Adresy souborů
+// (/data/displeje/...) zůstávají stejné jako dřív.
 await app.register(fastifyStatic, {
-  root: DATA_ROOT,
-  prefix: "/data/",
+  root: DISPLAYS_DIR,
+  prefix: "/data/displeje/",
   decorateReply: false,
 });
 
-// Aktuálně přihlášený uživatel z cookie (pro audit). Demo: bez ověřování.
-function currentUser(req: { cookies: Record<string, string | undefined> }): string {
+// --- Session ---
+
+// Jméno z platné podepsané session, jinak null. Podvržená cookie (nesedící
+// podpis) i vypršená platnost se berou jako nepřihlášený.
+function prihlasenyUzivatel(req: FastifyRequest): string | null {
   const raw = req.cookies[SESSION_COOKIE];
-  if (!raw) return "neznámý";
-  try {
-    return decodeURIComponent(raw);
-  } catch {
-    return "neznámý";
-  }
+  if (!raw) return null;
+  const odpodepsano = req.unsignCookie(raw);
+  if (!odpodepsano.valid || !odpodepsano.value) return null;
+  return prectiSession(odpodepsano.value);
 }
+
+// Jméno do auditu. Na chráněných cestách je vždy vyplněné, protože hook níž
+// pustí dál jen přihlášeného; fallback je pojistka pro veřejné cesty.
+function currentUser(req: FastifyRequest): string {
+  return prihlasenyUzivatel(req) ?? "neznámý";
+}
+
+const COOKIE_NASTAVENI = {
+  path: "/",
+  httpOnly: true, // JavaScript v prohlížeči se k session nedostane
+  sameSite: "lax" as const,
+  signed: true,
+  maxAge: SESSION_TTL_S,
+};
+
+// Veřejné API: přihlašovací tok a čtení obsahu displeje pro náhled tabletu
+// (ten u expozice běží bez přihlášení). Všechno ostatní pod /api vyžaduje
+// platnou session — zamykáme ve výchozím stavu, takže nový endpoint je
+// chráněný automaticky, dokud ho někdo vědomě nepřidá sem.
+const VEREJNE_API = new Set([
+  "POST /api/login",
+  "POST /api/logout",
+  "GET /api/me",
+  "GET /api/displays/:id", // data pro /tablet/:id
+]);
+
+app.addHook("onRequest", async (req, reply) => {
+  if (!req.url.startsWith("/api")) return; // statické soubory a SPA
+  // HEAD se routuje na stejný handler jako GET.
+  const metoda = req.method === "HEAD" ? "GET" : req.method;
+  const cesta = req.routeOptions?.url ?? "";
+  if (VEREJNE_API.has(`${metoda} ${cesta}`)) return;
+  if (prihlasenyUzivatel(req)) return;
+  return reply.code(401).send({ chyba: "Přihlaste se prosím." });
+});
 
 function validId(id: string): boolean {
   return /^\d+$/.test(id);
@@ -69,29 +116,44 @@ function validSlide(n: number): boolean {
 }
 
 // --- Auth ---
+// Ověřuje se proti bcrypt hashům v data/users.json (účty zakládá
+// `npm run useradd`). Heslo se záměrně neořezává — mezera na kraji je jeho
+// součástí, stejně jako při zakládání účtu.
 app.post<{ Body: { username?: string; password?: string } }>("/api/login", async (req, reply) => {
   const username = (req.body?.username ?? "").trim();
-  const password = (req.body?.password ?? "").trim();
+  const password = req.body?.password ?? "";
   if (!username || !password) {
     return reply.code(400).send({ ok: false, chyba: "Vyplňte jméno i heslo." });
   }
-  reply.setCookie(SESSION_COOKIE, encodeURIComponent(username), {
-    path: "/",
-    httpOnly: false,
-    sameSite: "lax",
-  });
-  await appendAudit({ uzivatel: username, akce: "přihlášení", cil: "systém" });
-  return { ok: true, username };
+
+  const user = await overUdaje(username, password);
+  if (!user) {
+    // Jedna společná hláška: z odpovědi nejde poznat, jestli neexistuje jméno,
+    // nebo nesedělo heslo. Pokus se zapíše do auditu i s IP adresou.
+    await appendAudit({
+      uzivatel: username.slice(0, 64),
+      akce: "neúspěšné přihlášení",
+      cil: `systém, IP ${req.ip}`,
+    });
+    return reply.code(401).send({ ok: false, chyba: "Neplatné přihlašovací údaje." });
+  }
+
+  reply.setCookie(SESSION_COOKIE, vytvorSession(user.jmeno), COOKIE_NASTAVENI);
+  await appendAudit({ uzivatel: user.jmeno, akce: "přihlášení", cil: `systém, IP ${req.ip}` });
+  return { ok: true, username: user.jmeno };
 });
 
 app.post("/api/logout", async (req, reply) => {
+  const jmeno = prihlasenyUzivatel(req);
   reply.clearCookie(SESSION_COOKIE, { path: "/" });
+  if (jmeno) {
+    await appendAudit({ uzivatel: jmeno, akce: "odhlášení", cil: "systém" });
+  }
   return { ok: true };
 });
 
 app.get("/api/me", async (req) => {
-  const user = currentUser(req);
-  return { username: user === "neznámý" ? null : user };
+  return { username: prihlasenyUzivatel(req) };
 });
 
 // Výchozí šablona znalostní báze (nabízí ji editor u prázdného kb.md).
@@ -370,6 +432,12 @@ if (existsSync(WEB_DIST)) {
 try {
   if (!existsSync(DISPLAYS_DIR)) {
     app.log.warn(`Datová složka nenalezena (${DISPLAYS_DIR}). Spusť 'npm run seed'.`);
+  }
+  if ((await pocetUzivatelu()) === 0) {
+    app.log.warn(
+      "Žádné účty v data/users.json — do CMS se nedá přihlásit. " +
+        "Založ účet: npm run useradd -- <jmeno> <heslo>",
+    );
   }
   await app.listen({ port: PORT, host: HOST });
   app.log.info(`Amphibiárium · Vzdálený přístup běží na http://${HOST}:${PORT}`);

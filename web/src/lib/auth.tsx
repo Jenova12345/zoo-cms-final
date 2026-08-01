@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
-import { api } from "./api";
+import { api, STORAGE_KEY } from "./api";
 
 interface AuthApi {
   username: string | null;
@@ -8,7 +8,6 @@ interface AuthApi {
 }
 
 const AuthContext = createContext<AuthApi | null>(null);
-const STORAGE_KEY = "amph_user";
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [username, setUsernameState] = useState<string | null>(

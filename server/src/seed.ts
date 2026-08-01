@@ -5,6 +5,7 @@ import { DISPLAYS_DIR, DISPLAY_COUNT } from "./paths.js";
 import { SEED_DISPLAYS, DEFAULT_KB, placeholderSvg, type SeedDisplay } from "./content.js";
 import { serializeInfoText } from "./displays.js";
 import { canonicalizeLatin } from "./latin.js";
+import { VYCHOZI_HESLO, VYCHOZI_JMENO, zalozVychoziUcet } from "./users.js";
 
 // Vygeneruje strukturu složek pro všech 37 displejů ve formátu pro Unity:
 //
@@ -97,6 +98,17 @@ async function main() {
     await seedDisplay(id, SEED_DISPLAYS[id] ?? null);
   }
   console.log("Hotovo. Displeje 1-3 mají obsah (1_info, 2_vid, 3_gal, 4_ai, kb.md), 4-37 jsou Nepřiřazeno.");
+
+  // Účet, aby se dalo přihlásit hned po instalaci. Existující účty se nikdy
+  // nepřepisují — opakovaný seed dat se uživatelů nedotkne.
+  if (await zalozVychoziUcet()) {
+    console.log("");
+    console.log(`Založen výchozí účet:  ${VYCHOZI_JMENO} / ${VYCHOZI_HESLO}`);
+    console.log("Po prvním přihlášení heslo změňte:");
+    console.log(`  npm run useradd -- ${VYCHOZI_JMENO} <noveheslo> --zmenit-heslo`);
+  } else {
+    console.log("Účty v data/users.json ponechány beze změny.");
+  }
 }
 
 main().catch((err) => {

@@ -22,10 +22,42 @@ npm run start      # spustí Fastify, který servíruje API i web
 
 Pak otevři **http://127.0.0.1:3000**
 
-Přihlášení: projdou **jakékoliv neprázdné** údaje.
+Přihlášení po instalaci: **`spravce` / `Amphibiarium2026`** (účet zakládá `npm run seed`).
+Heslo hned změň, viz níž.
 
 > Pořadí je důležité: nejdřív `seed` (vytvoří data), pak `build` (vytvoří web/dist),
 > pak `start`. `start` čte buildnutý web z `web/dist`.
+
+## Účty a přihlášení
+
+Účty kurátorů jsou v **`data/users.json`**, heslo vždy jen jako **bcrypt hash**
+(nikdy v otevřené podobě). Žádná databáze, stejně jako u obsahu.
+
+```bash
+npm run useradd -- jmeno heslo                  # nový účet (heslo min. 8 znaků)
+npm run useradd -- jmeno noveheslo --zmenit-heslo   # změna hesla
+npm run useradd -- --smazat jmeno               # zrušení účtu
+npm run userlist                                # výpis účtů
+```
+
+- Přihlášení drží **podepsaná cookie** (`httpOnly`), platnost **12 hodin**
+  (přepíše se přes `SESSION_TTL_HOURS`).
+- Podpisový klíč je v `data/session.key` (vyrobí se sám při prvním spuštění),
+  nebo se dá zadat přes `SESSION_SECRET`.
+- `data/users.json` ani `data/session.key` **nepatří do gitu** (jsou v `.gitignore`)
+  a neservírují se přes HTTP.
+- Neúspěšné pokusy o přihlášení se zapisují do audit logu i s IP adresou.
+
+**Co je chráněné a co veřejné:**
+
+| | |
+|---|---|
+| **Veřejné** (bez přihlášení) | `/tablet/:id`, `GET /api/displays/:id`, soubory `/data/displeje/...`, `/api/login`, `/api/logout`, `/api/me` |
+| **Chráněné** (401 bez session) | všechny zápisy a mazání, `GET /api/displays`, `GET /api/audit`, `GET /api/kb-template` |
+
+Veřejné je záměrně přesně to, co potřebuje tablet u expozice. Nový endpoint je
+chráněný automaticky, dokud se vědomě nepřidá do seznamu `VEREJNE_API`
+v `server/src/index.ts`.
 
 ### Vývojový režim (volitelné, dva procesy s hot-reloadem)
 
@@ -50,7 +82,12 @@ data/displeje/<cislo>/cs/slide-6/kb.md          AI slide = znalostní báze chat
 data/displeje/<cislo>/cs/slide-<n>/<obrazky>    fotky slidu (víc fotek = galerie)
 data/displeje/<cislo>/cs/slide-<n>/<video>.mp4  video slidu (jedno na slide)
 data/audit.jsonl                                append-only audit log
+data/users.json                                 účty kurátorů (bcrypt hashe hesel)
+data/session.key                                klíč pro podpis session cookie
 ```
+
+> `users.json`, `session.key` ani `audit.jsonl` se neservírují přes HTTP —
+> přes `/data/` jde ven jen složka `displeje`.
 
 Počet a pořadí slidů jsou dané složkami `slide-<n>` na disku, jejich pořadí (a pořadí
 fotek a název videa) drží pole `slidy` v `meta.json`. Když `slidy` chybí (starší data),
@@ -74,7 +111,7 @@ složky slidu se i nadále objeví v CMS i na tabletu.
 
 | Metoda | Cesta | Popis |
 |--------|-------|-------|
-| POST | `/api/login` | přihlášení (jakékoliv neprázdné údaje), session cookie, audit |
+| POST | `/api/login` | přihlášení proti `data/users.json` (bcrypt), podepsaná session cookie, audit |
 | GET | `/api/displays` | seznam displejů |
 | GET | `/api/displays/:id` | meta + 6 slidů |
 | PUT | `/api/displays/:id/slides/:n` | zápis nadpisu a textu, u AI slidu celé kb.md (audit „úprava“) |

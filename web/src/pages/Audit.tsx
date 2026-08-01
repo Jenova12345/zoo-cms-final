@@ -5,6 +5,8 @@ import type { AuditEntry } from "../lib/types";
 
 const ACTION_STYLE: Record<string, string> = {
   přihlášení: "text-fg-muted",
+  odhlášení: "text-fg-muted",
+  "neúspěšné přihlášení": "text-danger",
   úprava: "text-accent",
   upload: "text-amber",
   "odesláno na displej": "text-accent",
@@ -12,6 +14,8 @@ const ACTION_STYLE: Record<string, string> = {
 
 const ACTION_DOT: Record<string, string> = {
   přihlášení: "bg-fg-dim",
+  odhlášení: "bg-fg-dim",
+  "neúspěšné přihlášení": "bg-danger",
   úprava: "bg-accent",
   upload: "bg-amber",
   "odesláno na displej": "bg-accent",

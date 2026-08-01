@@ -16,13 +16,14 @@ export default function Login() {
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    if (!username.trim() || !password.trim()) {
+    if (!username.trim() || !password) {
       toast.error("Vyplňte přihlašovací jméno i heslo.");
       return;
     }
     setBusy(true);
     try {
-      const res = await api.login(username.trim(), password.trim());
+      // Heslo se záměrně neořezává, mezera na kraji je jeho součástí.
+      const res = await api.login(username.trim(), password);
       setUsername(res.username);
       navigate("/dashboard");
     } catch (err) {
@@ -74,7 +75,7 @@ export default function Login() {
         </form>
 
         <p className="mt-6 text-xs text-fg-dim border-t border-line pt-5">
-          Demo: projdou jakékoliv neprázdné údaje.
+          Přístup zřizuje správce systému.
         </p>
       </div>
     </div>

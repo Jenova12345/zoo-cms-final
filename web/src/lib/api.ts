@@ -1,5 +1,18 @@
 import type { AuditEntry, DisplayDetail, DisplaySummary, SlideTyp } from "./types";
 
+// Jméno přihlášeného v localStorage (jen kvůli okamžitému vykreslení; zdrojem
+// pravdy je podepsaná session cookie na serveru).
+export const STORAGE_KEY = "amph_user";
+
+// Session vypršela nebo chybí: zahoď lokální stav a pošli na přihlášení.
+// Náhled tabletu je veřejný, ten nepřesměrováváme.
+function sessionVyprsela() {
+  const cesta = window.location.pathname;
+  if (cesta.startsWith("/tablet") || cesta === "/login") return;
+  localStorage.removeItem(STORAGE_KEY);
+  window.location.href = "/login";
+}
+
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, {
     credentials: "same-origin",
@@ -13,6 +26,7 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
     } catch {
       // ignore
     }
+    if (res.status === 401) sessionVyprsela();
     throw new Error(detail || `Chyba ${res.status}`);
   }
   return (await res.json()) as T;
