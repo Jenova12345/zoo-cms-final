@@ -1,0 +1,437 @@
+# Příručka pro kurátory — Amphibiárium, ZOO Ostrava
+
+Tahle příručka je pro lidi, kteří v CMS připravují obsah displejů v pavilonu.
+Nepotřebujete žádné technické znalosti — stačí prohlížeč a přihlašovací údaje.
+
+Systém se jmenuje **Amphibiárium · Vzdálený přístup**. Každý displej v pavilonu
+má v systému své číslo (1 až 37) a svůj obsah: informace o druhu, fotky, video
+a podklady pro AI průvodce (chatbota).
+
+---
+
+## Obsah
+
+1. [Přihlášení](#1-přihlášení)
+2. [Výběr displeje](#2-výběr-displeje)
+3. [Jak je displej poskládaný](#3-jak-je-displej-poskládaný)
+4. [Info panel — základní údaje o druhu](#4-info-panel--základní-údaje-o-druhu)
+5. [Fotky a mapa výskytu](#5-fotky-a-mapa-výskytu)
+6. [Galerie fotek](#6-galerie-fotek)
+7. [Video](#7-video)
+8. [Přidání, odebrání a přesun slidu](#8-přidání-odebrání-a-přesun-slidu)
+9. [Znalostní báze pro chatbota (kb.md)](#9-znalostní-báze-pro-chatbota-kbmd)
+10. [Uložení a odeslání na displej](#10-uložení-a-odeslání-na-displej)
+11. [Náhled tabletu](#11-náhled-tabletu)
+12. [Audit log — kdo co změnil](#12-audit-log--kdo-co-změnil)
+13. [Časté otázky a drobné potíže](#13-časté-otázky-a-drobné-potíže)
+
+---
+
+## 1. Přihlášení
+
+1. Otevřete v prohlížeči adresu CMS. Na počítači, kde systém běží, je to
+   **http://127.0.0.1:3000**. Pokud pracujete z jiného počítače v pavilonu,
+   adresu vám dá správce systému.
+2. Vyplňte **Přihlašovací jméno** a **Heslo**. Účet vám zřizuje správce —
+   registrace v systému není.
+3. Klikněte na **Přihlásit se**.
+
+Po přihlášení se otevře **Přehled provozu**.
+
+**Dobré vědět:**
+
+- Na velikosti písmen v přihlašovacím jméně nezáleží (`Spravce` i `spravce`
+  fungují stejně). U hesla na velikosti písmen **záleží**.
+- Když se přihlášení nepovede, systém napíše jen „Neplatné přihlašovací údaje."
+  Nepozná se z toho, jestli bylo špatně jméno, nebo heslo — je to schválně.
+- Přihlášení platí **12 hodin**. Potom vás systém pošle znovu na přihlašovací
+  stránku. Nedokončené, neuložené změny se v tu chvíli ztratí — proto ukládejte
+  průběžně.
+- Odhlásíte se tlačítkem **Odhlásit** úplně dole v levém sloupci.
+- Heslo si nezměníte sami — o změnu požádejte správce systému.
+
+### Co je v levém menu
+
+| Položka | K čemu je |
+|---|---|
+| **Přehled** | Statistiky provozu pavilonu. Zatím ukazuje **ukázková čísla** — reálná data přijdou spolu s chatbotem. Pro práci s obsahem ji nepotřebujete. |
+| **Displeje** | Tady se pracuje. Seznam všech 37 displejů. |
+| **Audit log** | Kdo, kdy a co v systému změnil. |
+
+---
+
+## 2. Výběr displeje
+
+Klikněte v levém menu na **Displeje**. Uvidíte dlaždice všech 37 displejů.
+
+Na každé dlaždici je:
+
+- **číslo displeje** (01, 02, 03 …) — odpovídá číslu displeje v pavilonu,
+- **název druhu**. Když je napsaný *kurzívou* jako „Nepřiřazeno", displej zatím
+  žádný druh nemá a je připravený k naplnění,
+- **datum poslední změny**,
+- **barevná tečka** vpravo: zelená = displej je veden jako online, červená = offline.
+
+Nahoře vpravo je políčko **Hledat číslo nebo druh** — napište třeba `axolotl`
+nebo `12` a seznam se zúží.
+
+**Kliknutím na dlaždici otevřete detail displeje**, kde se obsah edituje.
+
+---
+
+## 3. Jak je displej poskládaný
+
+Obsah jednoho displeje je řada **slidů**, které se na tabletu u expozice
+přehrávají za sebou dokola. Slidy jsou čtyř typů:
+
+| Typ slidu | Co na něm je |
+|---|---|
+| **Info panel** | Vyplněné údaje o druhu (sekce, název, latinsky, strava…) a fotky včetně mapy výskytu. |
+| **Video** | Jedno video ve formátu MP4. |
+| **Galerie** | Několik fotek za sebou. |
+| **AI slide** | Místo, kde se návštěvník může zeptat AI průvodce. Nic se do něj nevyplňuje. |
+
+Slidy vidíte v detailu displeje jako **záložky** pod hlavičkou, očíslované
+zleva doprava v pořadí, ve kterém se budou přehrávat:
+
+```
+1 · Info panel     2 · Video     3 · Galerie     4 · AI slide     + Přidat slide          ✦ Znalostní báze (AI)
+```
+
+Úplně vpravo je oranžová záložka **Znalostní báze (AI)**. Ta **není slide** —
+je to text, ze kterého odpovídá chatbot. Platí pro celý displej, ne pro jeden
+slide. Podrobně v [kapitole 9](#9-znalostní-báze-pro-chatbota-kbmd).
+
+Nad hlavičkou je ještě řádek **Jazyk**. Zatím je aktivní jen **Čeština**,
+ostatní jazyky jsou označené „brzy" a nejdou vybrat.
+
+---
+
+## 4. Info panel — základní údaje o druhu
+
+Otevřete záložku slidu **Info panel**. Vlevo je formulář s údaji o druhu.
+
+### Povinná pole
+
+Bez těchto dvou se slide neuloží:
+
+- **Sekce** — vybírá se z rozbalovacího seznamu (nedá se napsat vlastní text).
+  Na výběr je: Listovnice, Caudata, Červoři, Lezci, Madagaskar, Neotenie,
+  Obojživelníci České republiky, Pralesničky, Rozmanitost žab, Šesté vymírání.
+  Sekce říká, do které zóny expozice druh patří.
+- **Název** — český název druhu, například `Axolotl mexický`. Tenhle název se
+  zároveň propíše do seznamu displejů, takže dlaždice přestane být „Nepřiřazeno".
+
+Povinná pole poznáte podle **červené hvězdičky** za jménem pole. Když je
+necháte prázdná a kliknete na uložení, orámují se červeně a nahoře vyskočí
+hláška „Vyplňte prosím povinná pole: Sekce a Název."
+
+### Volitelná pole
+
+Prázdné volitelné pole se neuloží a na tabletu se vůbec nezobrazí — nemusíte
+tedy nic vymýšlet jen proto, aby políčko nebylo prázdné.
+
+- **Latinský název** — například `Ambystoma mexicanum`.
+- **Strava**
+- **Velikost**
+- **Doba líhnutí**
+- **Ohrožení**
+- **Délka života**
+- **Čeleď (taxonomická)** — například `Dendrobatidae`. Tohle pole se
+  **nezobrazuje na tabletu**; slouží jen chatbotovi k rozpoznání druhu.
+
+### Latinský název se automaticky upraví
+
+Latinské jméno musí mít pro chatbota vždycky stejný tvar, proto ho systém sám
+očistí: odebere uvozovky a tečku na konci, spraví velká a malá písmena.
+
+Když do pole napíšete `dendrobates tinctorius "azureus".`, hned pod polem se
+oranžově objeví nápověda:
+
+> Uloží se v kanonickém tvaru: **Dendrobates tinctorius azureus**
+
+Je to v pořádku — nechte to být, po uložení uvidíte upravený tvar. Systém vás
+na úpravu ještě jednou upozorní v hlášce po uložení.
+
+### Uložení
+
+Dole pod formulářem je tlačítko **Uložit a odeslat na displej**. Jedním klikem
+údaje uloží a rovnou je pošle na displej. Viz [kapitola 10](#10-uložení-a-odeslání-na-displej).
+
+---
+
+## 5. Fotky a mapa výskytu
+
+Fotky info panelu jsou v pravé polovině obrazovky, vedle formuláře.
+
+### Nahrání fotky
+
+1. Buď **přetáhněte** soubory myší do rámečku „Přetáhněte fotky sem nebo
+   klikněte", nebo na rámeček **klikněte** a vyberte soubory z počítače.
+2. Můžete vybrat i **víc fotek najednou**.
+3. Fotky nahrávejte jako **JPG nebo PNG**. Systém si je sám převede do formátu,
+   který umí tablet přečíst (PNG), a sám je i správně otočí podle toho, jak
+   byly vyfocené.
+
+> **Fotky se ukládají hned po nahrání.** Nemusíte na nic klikat — jakmile
+> zmizí kolečko načítání a objeví se náhled, fotka je uložená na disku.
+
+### Označení mapy výskytu
+
+Jednu z fotek info panelu můžete označit jako **mapu výskytu**. Tablet ji pak
+zobrazí s popiskem „Mapa výskytu".
+
+1. Najeďte myší na fotku, která je mapou.
+2. Ve spodní liště fotky se objeví dvě ikonky. Klikněte na **ikonku mapy**
+   (vlevo).
+3. Fotka se orámuje oranžově a dostane štítek **mapa výskytu**.
+
+Mapa může být na info panelu **jen jedna**. Když označíte jinou fotku, ta
+původní se automaticky vrátí mezi běžné fotky — nic se nesmaže.
+
+**Zrušení označení:** najeďte na fotku s oranžovým rámečkem a klikněte na
+**křížek**. Z mapy se stane běžná fotka.
+
+### Smazání fotky
+
+Najeďte myší na fotku a klikněte na **ikonku koše**. Fotka se smaže okamžitě
+a nedá se vrátit — systém se na nic neptá.
+
+---
+
+## 6. Galerie fotek
+
+Slide typu **Galerie** je jednodušší: jen fotky, žádná pole a žádná mapa.
+
+1. Otevřete záložku slidu **Galerie**.
+2. Fotky přetáhněte do rámečku nebo na něj klikněte a vyberte je.
+3. Smazání: najeďte na fotku a klikněte na **ikonku koše**.
+
+Fotky se stejně jako u info panelu ukládají hned po nahrání. Tlačítkem
+**Odeslat na displej** dole dáte displeji vědět, že si má obsah načíst znovu.
+
+---
+
+## 7. Video
+
+Slide typu **Video** nese **jedno** video.
+
+1. Otevřete záložku slidu **Video**.
+2. Klikněte na rámeček **Nahrát video (MP4)** a vyberte soubor z počítače.
+3. Video musí být ve formátu **MP4**. Jiný formát systém odmítne hláškou
+   „Nahrajte prosím video ve formátu MP4."
+4. Po nahrání se video rovnou přehraje v náhledu.
+
+**Výměna videa:** klikněte na **Nahradit video** a vyberte nový soubor. Staré
+video se automaticky smaže — na jednom slidu je vždy jen jedno.
+
+**Odebrání videa:** klikněte na **Odebrat video**.
+
+Velké soubory chvíli trvají. Během nahrávání se točí kolečko — počkejte, než
+dotočí, a stránku mezitím nezavírejte.
+
+Nakonec klikněte na **Odeslat na displej**.
+
+---
+
+## 8. Přidání, odebrání a přesun slidu
+
+Pod řadou záložek je proužek, který se týká **právě otevřeného slidu**:
+
+```
+Slide 2 z 4 · Video · složka 2_vid                              ‹   ›   🗑
+```
+
+### Přidání slidu
+
+1. V řadě záložek klikněte na **+ Přidat slide**.
+2. Vyberte typ: **Info panel**, **Video**, **Galerie** nebo **AI slide**.
+3. Nový slide se přidá **na konec** řady a rovnou se otevře. Odtud ho můžete
+   šipkami posunout, kam potřebujete.
+
+### Přesun slidu
+
+Šipkami **‹** a **›** vpravo v proužku posunete otevřený slide o jedno místo
+doleva nebo doprava. Šipka je nedostupná, když už je slide první, respektive
+poslední. Číslování slidů se srovná samo — po přesunu zůstáváte na tom samém
+slidu, jen s novým číslem.
+
+### Odebrání slidu
+
+Klikněte na **ikonku koše** v proužku. Systém se zeptá:
+
+> Opravdu odebrat slide 2 (Video)? Smaže se i jeho složka s obsahem.
+
+Po potvrzení se slide smaže **i se všemi fotkami a videem**, které na něm byly.
+**Nejde to vrátit zpět.** Zbylé slidy se automaticky přečíslují, aby řada
+nikde nechyběla.
+
+---
+
+## 9. Znalostní báze pro chatbota (kb.md)
+
+Znalostní báze je text, ze kterého **AI průvodce (chatbot) odpovídá
+návštěvníkům** na dotazy o daném druhu. Otevřete ji oranžovou záložkou
+**Znalostní báze (AI)** úplně vpravo v řadě záložek. (Stejně se tam dostanete
+z AI slidu tlačítkem **Otevřít znalostní bázi (AI)**.)
+
+Znalostní báze je **jedna pro celý displej**, ne pro jednotlivé slidy.
+
+### Šablona
+
+U nového druhu, kde ještě žádný text není, se editor **sám předvyplní
+šablonou** — připraveným rozvržením s nadpisy a nápovědami. Šablonu si můžete
+vložit i kdykoliv později tlačítkem **Vložit šablonu** vpravo nad textovým
+polem. Pokud už v poli něco máte, systém se nejdřív zeptá, jestli to opravdu
+chce přepsat.
+
+> Šablona se do souboru zapíše až ve chvíli, kdy kliknete na **Uložit
+> znalostní bázi**. Existující vyplněný text vám nikdy nic nepřepíše samo.
+
+### Co šablona obsahuje
+
+Šablona má tyhle sekce (nadpisy nechte, jak jsou, jen pod ně pište obsah):
+
+| Sekce | Co do ní patří |
+|---|---|
+| **Popis** | Jak druh vypadá, jak je velký, čím je nápadný. |
+| **Potrava** | Čím se živí ve volné přírodě a čím u nás. |
+| **Habitat a výskyt** | Kde žije — země, oblast, typ prostředí, podmínky. |
+| **Chování** | Denní/noční aktivita, sociální chování, komunikace. |
+| **Rozmnožování** | Období, námluvy, kladení vajíček, péče o mláďata. |
+| **Zajímavosti** | To, co si návštěvník odnese. Klidně po bodech. |
+| **Ohrožení a ochrana** | Zda je druh ohrožený, čím, a jak se chrání. |
+| **V naší expozici** | Konkrétně k našim jedincům — kolik jich je, kdy je nejlépe vidět. |
+
+Nahoře v šabloně je i krátký návod „Jak to funguje" — ten před uložením klidně
+smažte, do znalostní báze pro chatbota nepatří.
+
+### Šest zásad, jak psát dobrou znalostní bázi
+
+1. **Pište pro laika, ne odborně.** Tón si chatbot přizpůsobí sám podle toho,
+   jestli se ptá dítě, nebo dospělý. Vy dodáváte fakta.
+2. **Jedna myšlenka = jeden odstavec.** Krátké odstavce chatbot lépe najde než
+   dlouhé bloky textu.
+3. **Fakta konkrétně.** „Dožívá se 10–15 let" je lepší než „žije poměrně dlouho".
+4. **Nadpisy neměňte.** Pomáhají chatbotovi najít správnou pasáž.
+5. **Co nevíte, nevymýšlejte.** Chatbot odpovídá **jen** z tohoto textu. Co tu
+   není, o tom neřekne — a raději přizná, že to neví, než aby si vymyslel.
+6. **Nemusíte vyplnit všechny sekce.** Když k druhu není co dodat, sekci klidně
+   vynechte. Ale čím víc kvalitního obsahu, tím lepší odpovědi.
+
+### Uložení
+
+Klikněte na **Uložit znalostní bázi**. Objeví se potvrzení „Znalostní báze
+uložena".
+
+Znalostní báze se **neodesílá tlačítkem na displej** — je to podklad pro
+chatbota, ne obsah slidu.
+
+---
+
+## 10. Uložení a odeslání na displej
+
+Systém rozlišuje tři věci a je dobré vědět, která se ukládá kdy:
+
+| Co měníte | Kdy se to uloží |
+|---|---|
+| **Fotky, video, přidání/odebrání/přesun slidu** | **Hned.** Jakmile akce doběhne, je zapsaná na disku. |
+| **Pole info panelu** (Sekce, Název, Strava…) | Až kliknutím na **Uložit a odeslat na displej**. |
+| **Znalostní báze (kb.md)** | Až kliknutím na **Uložit znalostní bázi**. |
+
+Takže: **napsaný text, který jste neuložili, se ztratí**, když stránku zavřete
+nebo přejdete na jiný displej. Fotky a videa ne — ty jsou uložené hned.
+
+### Tlačítko „Uložit a odeslat na displej"
+
+Na info panelu je jedno tlačítko, které dělá obojí najednou: uloží vyplněná
+pole a hned potom pošle displeji pokyn, aby si obsah načetl znovu. Po úspěchu
+se vpravo nahoře objeví zelená hláška „Uloženo a odesláno na displej 1".
+
+Když systém upravil latinský název do kanonického tvaru, dozvíte se to
+v téže hlášce.
+
+### Tlačítko „Odeslat na displej"
+
+U galerie a videa je samostatné tlačítko **Odeslat na displej** — fotky a
+videa už uložená jsou, tímhle jen dáte displeji vědět, aby se obnovil.
+
+Každé odeslání se zapíše do audit logu.
+
+---
+
+## 11. Náhled tabletu
+
+V pravém horním rohu detailu displeje je tlačítko **Náhled tabletu**. Otevře
+se v nové záložce a ukáže přesně to, co uvidí návštěvník u expozice.
+
+V náhledu:
+
+- slidy se **samy přepínají** zhruba po 8 sekundách (u videa se čeká, až
+  dohraje),
+- **kliknutím do plochy** přehrávání pozastavíte; dole se objeví „Pozastaveno ·
+  klikněte pro pokračování". Dalším kliknutím se rozjede zas,
+- **velké šipky** po stranách přepínají slidy, malé šipky dole uvnitř fotky
+  přepínají fotky v rámci jednoho slidu,
+- ovládat jde i **šipkami na klávesnici**,
+- **tečky dole** ukazují, kolikátý slide běží; kliknutím na tečku skočíte přímo
+  na slide,
+- **ikonka obnovení** vpravo nahoře načte obsah znovu z disku — hodí se, když
+  jste zrovna v CMS něco změnili a chcete výsledek vidět,
+- **křížek** vpravo nahoře náhled zavře a vrátí vás do editace displeje.
+
+---
+
+## 12. Audit log — kdo co změnil
+
+V levém menu klikněte na **Audit log**. Je to seznam všech akcí v systému,
+nejnovější nahoře: čas, uživatel, akce a čeho se týkala.
+
+Zaznamenává se mimo jiné: přihlášení a odhlášení, **neúspěšné pokusy
+o přihlášení**, úpravy info panelu i znalostní báze, nahrání a mazání fotek a
+videí, označení mapy výskytu, přidání, odebrání a přesun slidů a odeslání na
+displej.
+
+Záznamy se jen přidávají — nedají se smazat ani přepsat. Tlačítkem **Obnovit**
+vpravo nahoře si vyžádáte čerstvý výpis.
+
+---
+
+## 13. Časté otázky a drobné potíže
+
+**Systém mě vyhodil na přihlašovací stránku.**
+Vypršelo dvanáctihodinové přihlášení. Přihlaste se znovu. Rozepsaný a neuložený
+text bohužel obnovit nejde — proto ukládejte průběžně.
+
+**Nejde uložit info panel, pole svítí červeně.**
+Chybí **Sekce** nebo **Název**. Sekci vybírejte z rozbalovacího seznamu, vlastní
+text do ní napsat nejde.
+
+**Displej se v seznamu jmenuje „Nepřiřazeno".**
+Ještě nemá vyplněný info panel. Otevřete ho, vyplňte Sekci a Název a uložte —
+název se hned objeví i na dlaždici.
+
+**Fotka se nenahrála.**
+Systém přijímá běžné obrázky (JPG, PNG). Fotky z iPhonu ve formátu HEIC nemusí
+projít — v takovém případě je před nahráním převeďte na JPG (v aplikaci Fotky
+přes Exportovat, nebo je pošlete e-mailem, což je převede samo).
+
+**Video se nenahrálo.**
+Musí být **MP4**. Formáty MOV, AVI nebo MKV systém odmítne — je potřeba je
+nejdřív převést.
+
+**Smazal/a jsem něco omylem.**
+Smazané fotky, videa i celé slidy se vrátit nedají. Napište správci systému —
+možná půjde obsah obnovit ze zálohy.
+
+**Text ze znalostní báze se neobjevil na tabletu.**
+A neobjeví. Znalostní báze je podklad pro **chatbota**, ne text slidu. Co má
+vidět návštěvník na obrazovce, patří do info panelu, galerie nebo videa.
+
+**Přehled provozu ukazuje divná čísla.**
+Ta stránka zatím běží na ukázkových datech — je u nich napsáno „Demo data,
+reálná data přijdou s chatbotem". Reálné statistiky budou fungovat, až se
+napojí chatbot.
+
+**Potřebuju změnit heslo nebo nový účet pro kolegu.**
+To dělá správce systému, v CMS to zatím nejde.

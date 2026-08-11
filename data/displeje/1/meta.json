@@ -1,7 +1,7 @@
 {
   "druh": "Axolotl mexický",
   "stav": "online",
-  "posledniZmena": "2026-07-08T09:11:15.267Z",
+  "posledniZmena": "2026-08-02T14:49:32.917Z",
   "slidy": [
     {
       "slozka": "1_info",
@@ -22,5 +22,6 @@
   ],
   "name": "Axolotl mexický",
   "latin_name": "Ambystoma mexicanum",
-  "category": "Neotenie"
+  "category": "Neotenie",
+  "section": "Ambystomatidae"
 }

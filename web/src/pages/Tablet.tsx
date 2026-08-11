@@ -8,9 +8,42 @@ import { LogoMark } from "../components/Logo";
 const AUTO_ADVANCE_MS = 8000;
 const MEDIA_ADVANCE_MS = 5000;
 
+// Reálné zařízení u expozice: Unity běží na fixním rozlišení 1200 × 800 (3:2).
+// Náhled proto sázíme přesně do těchto rozměrů a celý rám jen zmenšíme, aby se
+// vešel do okna prohlížeče (letterbox okolo). Kurátor tak vidí i to, jestli se
+// text na displej vejde — ne layout, který se přizpůsobí jeho monitoru.
+//
+// Uvnitř rámu se proto zásadně nepoužívají responzivní varianty (lg:...): ty
+// reagují na šířku okna, ne na šířku rámu, a náhled by se rozešel se zařízením.
+const SIRKA = 1200;
+const VYSKA = 800;
+
 interface MediaItem {
   typ: "video" | "foto" | "mapa";
   url: string;
+}
+
+// Měřítko, ve kterém se rám 1200 × 800 vejde do dostupné plochy. Nikdy
+// nezvětšujeme nad 100 %, ať zůstane náhled ostrý a odpovídá zařízení 1:1.
+//
+// Element bereme přes callback ref (ne useRef): plocha náhledu se vykreslí až
+// po načtení dat, takže v okamžiku prvního efektu ještě neexistuje. Se stavem
+// se efekt spustí znovu, jakmile se element objeví.
+function useMeritko(obal: HTMLDivElement | null): number {
+  const [meritko, setMeritko] = useState(1);
+  useEffect(() => {
+    if (!obal) return;
+    const prepocti = () => {
+      const { width, height } = obal.getBoundingClientRect();
+      if (!width || !height) return;
+      setMeritko(Math.min(width / SIRKA, height / VYSKA, 1));
+    };
+    prepocti();
+    const ro = new ResizeObserver(prepocti);
+    ro.observe(obal);
+    return () => ro.disconnect();
+  }, [obal]);
+  return meritko;
 }
 
 export default function Tablet() {
@@ -19,6 +52,8 @@ export default function Tablet() {
   const [error, setError] = useState<string | null>(null);
   const [index, setIndex] = useState(0);
   const [paused, setPaused] = useState(false);
+  const [obal, setObal] = useState<HTMLDivElement | null>(null);
+  const meritko = useMeritko(obal);
 
   const load = useCallback(async () => {
     try {
@@ -84,9 +119,9 @@ export default function Tablet() {
   const prirazeno = druh !== NEPRIRAZENO;
 
   return (
-    <div className="fixed inset-0 bg-bg text-fg flex flex-col select-none">
-      {/* Horní lišta kiosku */}
-      <div className="flex items-center justify-between px-8 py-4 border-b border-line bg-surface">
+    <div className="fixed inset-0 bg-canvas text-fg flex flex-col select-none">
+      {/* Lišta náhledu (nástroje CMS, na zařízení není) */}
+      <div className="shrink-0 flex items-center justify-between px-8 py-4 border-b border-line bg-surface">
         <div className="flex items-center gap-3">
           <LogoMark size={38} />
           <div>
@@ -116,39 +151,41 @@ export default function Tablet() {
         </div>
       </div>
 
-      {/* Plocha slidu */}
-      <div className="flex-1 relative overflow-hidden bg-surface" onClick={() => setPaused((p) => !p)}>
-        {!slide ? (
-          <EmptySlide />
-        ) : slide.typ === "ai" ? (
-          <AiPlaceholder druh={prirazeno ? druh : null} />
-        ) : slide.typ === "info" ? (
-          <InfoSlide slide={slide} />
-        ) : slide.typ === "gal" ? (
-          <GalSlide slide={slide} />
-        ) : (
-          <VidSlide slide={slide} onEnded={next} />
-        )}
+      {/* Letterbox: rám zařízení 3:2 vycentrovaný na volné ploše */}
+      <div ref={setObal} className="flex-1 min-h-0 relative grid place-items-center px-20 py-6">
+        <div className="relative" style={{ width: SIRKA * meritko, height: VYSKA * meritko }}>
+          <div
+            onClick={() => setPaused((p) => !p)}
+            className="absolute left-0 top-0 origin-top-left overflow-hidden rounded-lg border border-line bg-surface shadow-cardHover"
+            style={{ width: SIRKA, height: VYSKA, transform: `scale(${meritko})` }}
+          >
+            {!slide ? (
+              <EmptySlide />
+            ) : slide.typ === "ai" ? (
+              <AiPlaceholder druh={prirazeno ? druh : null} />
+            ) : slide.typ === "info" ? (
+              <InfoSlide slide={slide} />
+            ) : slide.typ === "gal" ? (
+              <GalSlide slide={slide} />
+            ) : (
+              <VidSlide slide={slide} onEnded={next} />
+            )}
+          </div>
+        </div>
 
-        {/* Navigační šipky */}
+        {/* Navigace mezi slidy je záměrně mimo rám, ať nepřekrývá obsah displeje */}
         {total > 1 && (
           <>
             <button
-              onClick={(e) => {
-                e.stopPropagation();
-                prev();
-              }}
-              className="absolute left-5 top-1/2 -translate-y-1/2 h-14 w-14 grid place-items-center rounded-full border border-line bg-surface/90 backdrop-blur text-fg-muted hover:text-fg hover:border-accent/40 shadow-card transition"
+              onClick={prev}
+              className="absolute left-5 top-1/2 -translate-y-1/2 h-14 w-14 grid place-items-center rounded-full border border-line bg-surface text-fg-muted hover:text-fg hover:border-accent/40 shadow-card transition"
               aria-label="Předchozí"
             >
               <ChevronLeft className="h-7 w-7" strokeWidth={1.5} />
             </button>
             <button
-              onClick={(e) => {
-                e.stopPropagation();
-                next();
-              }}
-              className="absolute right-5 top-1/2 -translate-y-1/2 h-14 w-14 grid place-items-center rounded-full border border-line bg-surface/90 backdrop-blur text-fg-muted hover:text-fg hover:border-accent/40 shadow-card transition"
+              onClick={next}
+              className="absolute right-5 top-1/2 -translate-y-1/2 h-14 w-14 grid place-items-center rounded-full border border-line bg-surface text-fg-muted hover:text-fg hover:border-accent/40 shadow-card transition"
               aria-label="Další"
             >
               <ChevronRight className="h-7 w-7" strokeWidth={1.5} />
@@ -157,25 +194,30 @@ export default function Tablet() {
         )}
       </div>
 
-      {/* Indikátory slidů */}
-      <div className="flex items-center justify-center gap-2.5 py-5 border-t border-line bg-surface">
-        {detail.slides.map((s, i) => (
-          <button
-            key={s.n}
-            onClick={() => setIndex(i)}
-            className={`h-2.5 rounded-full transition-all ${
-              i === index ? (s.typ === "ai" ? "w-8 bg-amber" : "w-8 bg-accent") : "w-2.5 bg-line hover:bg-fg-dim"
-            }`}
-            aria-label={`Slide ${i + 1}`}
-          />
-        ))}
-      </div>
-
-      {paused && (
-        <div className="absolute bottom-20 left-1/2 -translate-x-1/2 text-xs text-fg-muted bg-surface border border-line px-3 py-1.5 rounded-full shadow-card">
-          Pozastaveno · klikněte pro pokračování
+      {/* Indikátory slidů a údaj o měřítku náhledu */}
+      <div className="shrink-0 flex flex-col items-center gap-2.5 py-4 border-t border-line bg-surface">
+        <div className="flex items-center justify-center gap-2.5">
+          {detail.slides.map((s, i) => (
+            <button
+              key={s.n}
+              onClick={() => setIndex(i)}
+              className={`h-2.5 rounded-full transition-all ${
+                i === index ? (s.typ === "ai" ? "w-8 bg-amber" : "w-8 bg-accent") : "w-2.5 bg-line hover:bg-fg-dim"
+              }`}
+              aria-label={`Slide ${i + 1}`}
+            />
+          ))}
         </div>
-      )}
+        <div className="text-[11px] text-fg-dim tnum">
+          {paused ? (
+            <span className="text-fg-muted">Pozastaveno · klikněte do náhledu pro pokračování</span>
+          ) : (
+            <>
+              Náhled zařízení {SIRKA} × {VYSKA} px (3:2) · zobrazeno na {Math.round(meritko * 100)} %
+            </>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -208,7 +250,7 @@ function InfoSlide({ slide }: { slide: SlideContent }) {
   if (!hasContent) return <EmptySlide />;
 
   return (
-    <div className="h-full grid grid-cols-1 lg:grid-cols-2">
+    <div className="h-full grid grid-cols-2">
       {/* Fotky */}
       <div className="relative bg-bg grid place-items-center overflow-hidden">
         {media.length > 0 ? (
@@ -218,23 +260,21 @@ function InfoSlide({ slide }: { slide: SlideContent }) {
         )}
       </div>
       {/* Pole info panelu */}
-      <div className="flex flex-col justify-center px-10 lg:px-16 py-10 overflow-y-auto">
+      <div className="flex flex-col justify-center px-14 py-10 overflow-y-auto">
         <span className="text-xs font-semibold uppercase tracking-[0.18em] text-accent">
           {sekce || "Amphibiárium"}
         </span>
-        <h2 className="mt-3 font-display text-3xl lg:text-5xl font-bold tracking-tight text-fg">
-          {nazev}
-        </h2>
-        {latinsky && <p className="mt-2 text-lg lg:text-xl italic text-fg-muted">{latinsky}</p>}
+        <h2 className="mt-3 font-display text-4xl font-bold tracking-tight text-fg">{nazev}</h2>
+        {latinsky && <p className="mt-2 text-xl italic text-fg-muted">{latinsky}</p>}
         <div className="mt-5 h-1 w-14 rounded-full bg-accent" />
         {detaily.length > 0 && (
-          <dl className="mt-8 space-y-4 max-w-xl">
+          <dl className="mt-7 space-y-3.5 max-w-xl">
             {detaily.map((d) => (
-              <div key={d.klic} className="grid grid-cols-[140px_1fr] gap-4 items-baseline">
+              <div key={d.klic} className="grid grid-cols-[130px_1fr] gap-4 items-baseline">
                 <dt className="text-xs font-semibold uppercase tracking-wider text-fg-dim">
                   {d.label}
                 </dt>
-                <dd className="text-base lg:text-lg text-fg-muted">{slide.pole[d.klic]}</dd>
+                <dd className="text-base text-fg-muted">{slide.pole[d.klic]}</dd>
               </div>
             ))}
           </dl>
@@ -301,7 +341,7 @@ function MediaCarousel({ items, alt }: { items: MediaItem[]; alt: string }) {
       )}
 
       {/* Ovládání fotek v rámci slidu: malé šipky + tečky.
-          Záměrně menší a oddělené od velkých bočních šipek (ty přepínají slidy). */}
+          Záměrně menší a oddělené od velkých šipek vedle rámu (ty přepínají slidy). */}
       {items.length > 1 && (
         <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-3">
           <button
@@ -354,7 +394,7 @@ function AiPlaceholder({ druh }: { druh: string | null }) {
         <div className="mx-auto h-20 w-20 rounded-3xl bg-accent-soft border border-accent/20 grid place-items-center">
           <Sparkles className="h-10 w-10 text-accent" strokeWidth={1.5} />
         </div>
-        <h2 className="mt-6 font-display text-3xl lg:text-5xl font-bold tracking-tight text-fg">
+        <h2 className="mt-6 font-display text-4xl font-bold tracking-tight text-fg">
           Zeptejte se průvodce
         </h2>
         <p className="mt-4 text-lg text-fg-muted">

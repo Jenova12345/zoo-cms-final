@@ -1,7 +1,7 @@
 {
   "druh": "Rosnička zelená",
   "stav": "online",
-  "posledniZmena": "2026-07-08T09:11:15.333Z",
+  "posledniZmena": "2026-08-02T14:49:32.920Z",
   "slidy": [
     {
       "slozka": "1_info",
@@ -22,5 +22,6 @@
   ],
   "name": "Rosnička zelená",
   "latin_name": "Hyla arborea",
-  "category": "Obojživelníci České republiky"
+  "category": "Obojživelníci České republiky",
+  "section": "Hylidae"
 }
