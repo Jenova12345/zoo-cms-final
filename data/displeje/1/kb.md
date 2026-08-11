@@ -1,6 +1,6 @@
 # Znalostní báze: Axolotl mexický
 
-Tato sekce slouží jako podklad pro budoucího AI průvodce u displeje. Obsahuje fakta, na která se návštěvníci nejčastěji ptají.
+Tato sekce slouží jako podklad pro budoucího AI průvodce u displeje. fakta, na která se návštěvníci nejčastěji ptají.
 
 ## Základní fakta
 - Druh: Axolotl mexický (Ambystoma mexicanum)

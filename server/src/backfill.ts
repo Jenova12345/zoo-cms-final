@@ -3,6 +3,7 @@ import path from "node:path";
 import { DISPLAYS_DIR } from "./paths.js";
 import { parseInfoText } from "./displays.js";
 import { canonicalizeLatin } from "./latin.js";
+import { writeFileAtomic } from "./atomic.js";
 
 // Jednorázově doplní identifikaci pro chatbota (name, latin_name, category) do
 // existujících meta.json z polí info panelu (cs/*_info/text.txt). Bezpečné a
@@ -66,7 +67,7 @@ async function backfillDisplay(id: string): Promise<void> {
     console.log(`Displej ${id}: identifikace už kompletní, beze změny.`);
     return;
   }
-  await fs.writeFile(path.join(root, "meta.json"), JSON.stringify(meta, null, 2) + "\n", "utf8");
+  await writeFileAtomic(path.join(root, "meta.json"), JSON.stringify(meta, null, 2) + "\n");
   console.log(`Displej ${id}: doplněno ${zmeny.join(", ")} (latin_name=${meta.latin_name ?? "-"}).`);
 }
 

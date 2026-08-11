@@ -6,6 +6,7 @@ import { SEED_DISPLAYS, DEFAULT_KB, placeholderSvg, type SeedDisplay } from "./c
 import { serializeInfoText } from "./displays.js";
 import { canonicalizeLatin } from "./latin.js";
 import { VYCHOZI_HESLO, VYCHOZI_JMENO, zalozVychoziUcet } from "./users.js";
+import { writeFileAtomic } from "./atomic.js";
 
 // Vygeneruje strukturu složek pro všech 37 displejů ve formátu pro Unity:
 //
@@ -32,14 +33,14 @@ async function seedDisplay(id: number, seed: SeedDisplay | null) {
   // Pár displejů offline kvůli realistickému status boardu.
   const stav: "online" | "offline" = id % 11 === 0 ? "offline" : "online";
 
-  await fs.writeFile(path.join(root, "kb.md"), seed ? seed.kb : DEFAULT_KB, "utf8");
+  await writeFileAtomic(path.join(root, "kb.md"), seed ? seed.kb : DEFAULT_KB);
 
   const slidy: { slozka: string; typ: string }[] = [];
   if (seed) {
     // 1_info: pole + hlavní foto + mapa výskytu
     const info = path.join(root, "cs", "1_info");
     await fs.mkdir(info, { recursive: true });
-    await fs.writeFile(path.join(info, "text.txt"), serializeInfoText(seed.pole), "utf8");
+    await writeFileAtomic(path.join(info, "text.txt"), serializeInfoText(seed.pole));
     await fs.writeFile(
       path.join(info, "foto-uvod.png"),
       await pngPlaceholder(seed.druh, seed.barva, "Amphibiárium · ZOO Ostrava"),
@@ -88,7 +89,7 @@ async function seedDisplay(id: number, seed: SeedDisplay | null) {
     if (seed.pole.Sekce) meta.category = seed.pole.Sekce;
     meta.section = seed.celed;
   }
-  await fs.writeFile(path.join(root, "meta.json"), JSON.stringify(meta, null, 2) + "\n", "utf8");
+  await writeFileAtomic(path.join(root, "meta.json"), JSON.stringify(meta, null, 2) + "\n");
 }
 
 async function main() {

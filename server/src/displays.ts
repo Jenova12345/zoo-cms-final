@@ -5,6 +5,7 @@ import sharp from "sharp";
 import { DISPLAYS_DIR } from "./paths.js";
 import { canonicalizeLatin } from "./latin.js";
 import { notifyReingest } from "./reingest.js";
+import { writeFileAtomic } from "./atomic.js";
 
 // Zdroj pravdy pro Unity je struktura složek na disku:
 //
@@ -113,11 +114,12 @@ export async function readMeta(id: string): Promise<DisplayMeta | null> {
   }
 }
 
+// Atomicky (tmp + rename): meta.json čte chatbot přes file watcher, useknutý
+// JSON by mu spadl na JSON.parse.
 async function writeMeta(id: string, meta: DisplayMeta): Promise<void> {
-  await fs.writeFile(
+  await writeFileAtomic(
     path.join(displayDir(id), "meta.json"),
     JSON.stringify(meta, null, 2) + "\n",
-    "utf8",
   );
 }
 
@@ -243,11 +245,10 @@ export async function writeInfoPole(
   const chyba = validateInfoPole(cleaned);
   if (chyba) return { ok: false, chyba, latin, latinCorrected };
 
-  // 1) Fakta do cs/<slozka>/text.txt (formát Klic: Hodnota).
-  await fs.writeFile(
+  // 1) Fakta do cs/<slozka>/text.txt (formát Klic: Hodnota), atomicky.
+  await writeFileAtomic(
     path.join(slideDirPath(id, slide.slozka), "text.txt"),
     serializeInfoText(cleaned),
-    "utf8",
   );
 
   // 2) Táž identita se propíše do meta.json, ať se soubory nerozejdou.
@@ -327,10 +328,9 @@ export async function readKb(id: string): Promise<string> {
 
 export async function writeKb(id: string, text: string): Promise<void> {
   const body = text.replace(/\r\n/g, "\n");
-  await fs.writeFile(
+  await writeFileAtomic(
     path.join(displayDir(id), "kb.md"),
     body.endsWith("\n") ? body : body + "\n",
-    "utf8",
   );
   await touchDisplay(id);
   // Signál chatbotu, že se změnila znalostní báze (zatím vypnuto).

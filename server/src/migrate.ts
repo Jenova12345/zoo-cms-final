@@ -3,6 +3,7 @@ import path from "node:path";
 import { DISPLAYS_DIR } from "./paths.js";
 import { SEED_DISPLAYS, DEFAULT_KB } from "./content.js";
 import { serializeInfoText, convertToPng, NEPRIRAZENO, type SlideTyp } from "./displays.js";
+import { writeFileAtomic } from "./atomic.js";
 
 // Jednorázová migrace staré struktury (cs/slide-1..6, text.md, kb.md ve
 // slide-6) na nový formát pro Unity (cs/<n>_<typ>, text.txt, kb.md v kořeni).
@@ -114,7 +115,7 @@ async function migrateDisplay(id: string): Promise<void> {
       kb += `\n### ${s.nadpis || `Slide ${s.n}`}\n${s.text}\n`;
     }
   }
-  await fs.writeFile(path.join(root, "kb.md"), kb.endsWith("\n") ? kb : kb + "\n", "utf8");
+  await writeFileAtomic(path.join(root, "kb.md"), kb.endsWith("\n") ? kb : kb + "\n");
 
   const slidy: { slozka: string; typ: SlideTyp }[] = [];
   if (prirazeno) {
@@ -123,7 +124,7 @@ async function migrateDisplay(id: string): Promise<void> {
     const pole = seed ? seed.pole : { Nazev: druh };
     const info = path.join(csDir, "1_info");
     await fs.mkdir(info, { recursive: true });
-    await fs.writeFile(path.join(info, "text.txt"), serializeInfoText(pole), "utf8");
+    await writeFileAtomic(path.join(info, "text.txt"), serializeInfoText(pole));
     await copyImagesAsPng(oldSlides[0]?.images ?? [], info, "foto");
 
     // 3) 2_vid: první nalezené MP4.
@@ -159,7 +160,7 @@ async function migrateDisplay(id: string): Promise<void> {
     posledniZmena: new Date().toISOString(),
     slidy,
   };
-  await fs.writeFile(path.join(root, "meta.json"), JSON.stringify(newMeta, null, 2) + "\n", "utf8");
+  await writeFileAtomic(path.join(root, "meta.json"), JSON.stringify(newMeta, null, 2) + "\n");
   console.log(`Displej ${id}: zmigrováno (${druh}${prirazeno ? `, slidů: ${slidy.length}` : ", bez slidů"}).`);
 }
 

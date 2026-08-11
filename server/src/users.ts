@@ -2,6 +2,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { compare, hash } from "bcryptjs";
 import { DATA_ROOT } from "./paths.js";
+import { writeFileAtomic } from "./atomic.js";
 
 // Účty kurátorů. Stejná filozofie jako zbytek CMS: žádná databáze, jen soubor
 // na disku — data/users.json vedle složek displejů.
@@ -77,20 +78,13 @@ export async function readUsers(): Promise<User[]> {
   }
 }
 
-// Zápis přes dočasný soubor + rename, ať se users.json nerozbije, když proces
-// spadne uprostřed zápisu. Práva 0600 (na Windows se ignorují, na Linuxu/macOS
-// soubor schovají před ostatními účty).
+// Zápis přes dočasný soubor + rename (writeFileAtomic), ať se users.json
+// nerozbije, když proces spadne uprostřed zápisu. Práva 0600 (na Windows se
+// ignorují, na Linuxu/macOS soubor schovají před ostatními účty).
 async function writeUsers(uzivatele: User[]): Promise<void> {
   await fs.mkdir(DATA_ROOT, { recursive: true });
   const data: UsersFile = { verze: 1, uzivatele };
-  const tmp = `${USERS_FILE}.tmp`;
-  await fs.writeFile(tmp, JSON.stringify(data, null, 2) + "\n", { encoding: "utf8", mode: 0o600 });
-  await fs.rename(tmp, USERS_FILE);
-  try {
-    await fs.chmod(USERS_FILE, 0o600);
-  } catch {
-    // na Windows nebo síťovém disku nemusí jít, není to kritické
-  }
+  await writeFileAtomic(USERS_FILE, JSON.stringify(data, null, 2) + "\n", { mode: 0o600 });
 }
 
 export async function najdiUzivatele(jmeno: string): Promise<User | null> {
