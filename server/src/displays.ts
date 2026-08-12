@@ -79,6 +79,9 @@ export interface SlideContent {
 export interface DisplaySummary {
   id: string;
   druh: string;
+  // Kvůli párování s analytikou chatbota (jeho species_latin proti našemu
+  // latin_name); u nepřiřazeného displeje chybí, proto null.
+  latin_name: string | null;
   stav: string;
   posledniZmena: string;
   thumbnail: string | null;
@@ -562,6 +565,7 @@ export async function listDisplays(): Promise<DisplaySummary[]> {
     out.push({
       id,
       druh: meta.druh,
+      latin_name: meta.latin_name ?? null,
       stav: meta.stav,
       posledniZmena: meta.posledniZmena,
       thumbnail: await thumbnailFor(id),

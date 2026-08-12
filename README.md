@@ -125,6 +125,8 @@ složky slidu se i nadále objeví v CMS i na tabletu.
 | PUT | `/api/displays/:id/slides/reorder` | změna pořadí slidů (`{poradi:[...]}`) |
 | POST | `/api/displays/:id/refresh` | mock odeslání na displej (audit) |
 | GET | `/api/audit` | audit log |
+| GET | `/api/analytics/questions` | dotazy návštěvníků z chatbota (proxy, `since`/`limit`/`answered`) |
+| GET | `/api/analytics/summary` | souhrn dotazů z chatbota (proxy, `since`) |
 | GET | `/data/...` | servírování souborů (fotky, video) |
 
 ## Poznámky
@@ -132,3 +134,7 @@ složky slidu se i nadále objeví v CMS i na tabletu.
 - `data/audit.jsonl` je runtime artefakt (v `.gitignore`).
 - Pro reset demo dat: `rm -rf data/displeje data/audit.jsonl && npm run seed`.
 - Datový root lze přepsat proměnnou `DATA_ROOT`, port proměnnou `PORT`.
+- Dashboard („Přehled provozu") čte dotazy návštěvníků z analytiky chatbota.
+  Adresa se nastavuje proměnnou `ANALYTICS_URL` (default `http://127.0.0.1:8000`).
+  Když backend neběží, dashboard to napíše a funguje dál — viz
+  `docs/provoz-a-udrzba.md`, kapitola 10.

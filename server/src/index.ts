@@ -28,6 +28,7 @@ import {
   type SlideTyp,
 } from "./displays.js";
 import { KB_TEMPLATE } from "./kbTemplate.js";
+import { LIMIT_MAX, ziskejQuestions, ziskejSummary } from "./analytics.js";
 import {
   SESSION_COOKIE,
   SESSION_TTL_S,
@@ -405,6 +406,53 @@ app.post<{ Params: { id: string } }>("/api/displays/:id/refresh", async (req, re
     cil: `displej ${id}`,
   });
   return { ok: true };
+});
+
+// --- Analytika chatbota (Danielův backend) ---
+// Frontend cizí službu neoslovuje, jde to přes nás: jedno místo na adresu,
+// timeout, očištění odpovědi a hlášku, když backend ještě neběží. Endpointy
+// nejsou ve VEREJNE_API, takže je chrání přihlášení jako ostatní /api.
+//
+// Odpověď je i při nedostupném chatbotovi HTTP 200 s obálkou
+// { dostupne: false, duvod } — dashboard tak nemá důvod padat a rozliší
+// "analytika zatím není" od skutečné chyby požadavku (400/401).
+
+// Volitelný ISO čas; nesmyslnou hodnotu odmítáme, ať se nehádá s backendem.
+function neplatneSince(raw: string | undefined): boolean {
+  return raw !== undefined && raw !== "" && Number.isNaN(Date.parse(raw));
+}
+
+app.get<{ Querystring: { since?: string; limit?: string; answered?: string } }>(
+  "/api/analytics/questions",
+  async (req, reply) => {
+    const { since, limit, answered } = req.query;
+    if (neplatneSince(since)) return reply.code(400).send({ chyba: "Neplatný parametr since." });
+
+    let cislo: number | undefined;
+    if (limit !== undefined && limit !== "") {
+      cislo = Number(limit);
+      if (!Number.isFinite(cislo) || cislo < 1) {
+        return reply.code(400).send({ chyba: "Neplatný parametr limit." });
+      }
+      cislo = Math.min(Math.trunc(cislo), LIMIT_MAX); // strop z kontraktu
+    }
+
+    if (answered !== undefined && answered !== "" && answered !== "true" && answered !== "false") {
+      return reply.code(400).send({ chyba: "Neplatný parametr answered." });
+    }
+
+    return ziskejQuestions({
+      since: since || undefined,
+      limit: cislo,
+      answered: answered === "true" ? true : answered === "false" ? false : undefined,
+    });
+  },
+);
+
+app.get<{ Querystring: { since?: string } }>("/api/analytics/summary", async (req, reply) => {
+  const { since } = req.query;
+  if (neplatneSince(since)) return reply.code(400).send({ chyba: "Neplatný parametr since." });
+  return ziskejSummary(since || undefined);
 });
 
 // --- Audit ---

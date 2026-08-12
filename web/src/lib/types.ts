@@ -1,6 +1,7 @@
 export interface DisplaySummary {
   id: string;
   druh: string;
+  latin_name: string | null; // párování s analytikou chatbota (species_latin)
   stav: string;
   posledniZmena: string;
   thumbnail: string | null;
@@ -42,6 +43,47 @@ export interface AuditEntry {
   akce: string;
   cil: string;
 }
+
+// --- Analytika chatbota (Danielův backend) ---
+// Tvar podle jeho kontraktu; k nám to chodí přes náš proxy endpoint
+// /api/analytics/... (viz server/src/analytics.ts), který zaručí, že chybějící
+// pole ani nedostupný backend dashboard neshodí.
+
+export interface AnalyticsQuestion {
+  timestamp: string;
+  session_id: string;
+  display_id: number | null; // může být null, druh párujeme přes species_latin
+  species_latin: string;
+  species_name: string;
+  user_message: string;
+  answered: boolean;
+  language: string;
+  mode: string;
+}
+
+export interface AnalyticsQuestions {
+  questions: AnalyticsQuestion[];
+  total: number;
+  since: string;
+}
+
+export interface AnalyticsSpecies {
+  species_latin: string;
+  species_name: string;
+  display_id: number | null;
+  count: number;
+}
+
+export interface AnalyticsSummary {
+  since: string;
+  total_questions: number;
+  answered: number;
+  unanswered: number;
+  per_species: AnalyticsSpecies[];
+}
+
+// Buď data, nebo důvod, proč nejsou — chatbot backend nemusí běžet.
+export type Analytika<T> = { dostupne: true; data: T } | { dostupne: false; duvod: string };
 
 export const NEPRIRAZENO = "Nepřiřazeno";
 

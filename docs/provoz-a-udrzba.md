@@ -20,11 +20,12 @@ Uživatelskou část najdete v [prirucka-kurator.md](prirucka-kurator.md).
 7. [Struktura pro Unity](#7-struktura-pro-unity)
 8. [Audit log](#8-audit-log)
 9. [Reingest signál pro chatbota](#9-reingest-signál-pro-chatbota)
-10. [API a ochrana endpointů](#10-api-a-ochrana-endpointů)
-11. [Údržbové skripty](#11-údržbové-skripty)
-12. [Zálohování a obnova](#12-zálohování-a-obnova)
-13. [Řešení potíží](#13-řešení-potíží)
-14. [Známá omezení](#14-známá-omezení)
+10. [Analytika chatbota v dashboardu](#10-analytika-chatbota-v-dashboardu)
+11. [API a ochrana endpointů](#11-api-a-ochrana-endpointů)
+12. [Údržbové skripty](#12-údržbové-skripty)
+13. [Zálohování a obnova](#13-zálohování-a-obnova)
+14. [Řešení potíží](#14-řešení-potíží)
+15. [Známá omezení](#15-známá-omezení)
 
 ---
 
@@ -93,6 +94,8 @@ Všechny se čtou při startu procesu; konfigurační soubor systém nemá.
 | `REINGEST_ENABLED` | `false` | Řetězec `"true"` zapne odesílání reingest signálu chatbotovi. |
 | `REINGEST_URL` | — | Cílová URL reingest webhooku. Bez ní se nic neodesílá ani při `REINGEST_ENABLED=true`. |
 | `REINGEST_TOKEN` | prázdný | Posílá se v hlavičce `X-Reingest-Token`. |
+| `ANALYTICS_URL` | `http://127.0.0.1:8000` | Adresa analytického backendu chatbota (Daniel). **Tohle je ta jedna proměnná, která se nastaví, až bude adresa známá.** Koncové lomítko se ořeže. |
+| `ANALYTICS_TIMEOUT_MS` | `4000` | Kolik milisekund se čeká na odpověď analytiky. Neplatná nebo nekladná hodnota = výchozí. |
 
 Příklad nasazení na síť s daty mimo repozitář:
 
@@ -425,7 +428,79 @@ chatbota jsou relevantní jen fakta a identifikace druhu.
 
 ---
 
-## 10. API a ochrana endpointů
+## 10. Analytika chatbota v dashboardu
+
+Dashboard („Přehled provozu") ukazuje reálné dotazy návštěvníků na AI. Data
+nepočítáme my — dodává je **analytický backend chatbota (Daniel)**, který běží
+na stejném serveru. Naše strana je jen čtení (`server/src/analytics.ts`).
+
+### Adresa a zapnutí
+
+Nic se nezapíná, stačí adresa:
+
+```bash
+ANALYTICS_URL=http://127.0.0.1:8000   # výchozí, chatbot na stejném stroji
+```
+
+Výchozí hodnota počítá s tím, že chatbot poslouchá na portu 8000 lokálně. Když
+poběží jinde, nastaví se celá adresa včetně portu (např.
+`ANALYTICS_URL=http://192.168.1.50:8000`).
+
+### Kontrakt, který čteme
+
+| Metoda | Cesta na straně chatbota | Parametry |
+|---|---|---|
+| GET | `/analytics/questions` | `since` (ISO, volitelný, default 24 h), `limit` (default 500, max 2000), `answered` (`true`/`false`) |
+| GET | `/analytics/summary` | `since` (ISO, volitelný) |
+
+Bez autentizace. `questions` vrací `{questions[], total, since}`, `summary`
+vrací `{since, total_questions, answered, unanswered, per_species[]}`.
+
+**`display_id` může být `null`.** Druh se proto páruje primárně přes
+`species_latin` proti `latin_name` v našich `meta.json` (obě strany se
+kanonizují stejnými pravidly, viz [kapitola 6](#6-formáty-souborů)), a
+`display_id` je až záložní klíč. Druh, který se nepodaří napárovat na žádný
+displej, dashboard nezamlčí — napíše ho pod heat mapou, ať se dá opravit
+latinský název v info panelu.
+
+### Proxy na naší straně
+
+Prohlížeč cizí službu nevolá. Náš server má vlastní endpointy
+`GET /api/analytics/questions` a `GET /api/analytics/summary`, které jsou
+**chráněné přihlášením** jako ostatní `/api`, a navíc:
+
+- ověří vstupní parametry (nesmyslné `since`, `limit`, `answered` → `400`),
+- srazí `limit` na strop 2000 z kontraktu,
+- ohlídají timeout (`ANALYTICS_TIMEOUT_MS`),
+- očistí odpověď, aby chybějící pole na straně chatbota neshodilo dashboard.
+
+### Když chatbot neběží
+
+Odpověď je **vždy `HTTP 200`** s obálkou, ne chyba:
+
+```json
+{ "dostupne": true, "data": { … } }
+{ "dostupne": false, "duvod": "Analytika chatbota není dostupná na http://127.0.0.1:8000." }
+```
+
+Dashboard z toho vykreslí hlášku „Analytika chatbota zatím není připojená" i s
+důvodem a jinak funguje dál — stránka se normálně otevře, heat mapa ukáže
+displeje z CMS bez intenzity, KPI karty se nezobrazí (radši nic než vymyšlené
+číslo). Do konzole serveru se zapíše `[analytika] … selhalo: …`.
+
+Prázdná odpověď (chatbot běží, ale za období nejsou dotazy) se hlásí jako
+„Zatím žádné dotazy.", ne jako nula bez kontextu.
+
+### Co dashboard nezobrazuje
+
+**Stav tabletů (online/offline) v dashboardu není.** Monitoring zařízení nemáme
+z čeho číst (přijde od Michala), takže se nesimuluje — proužek displejů je
+označený jako přehled z CMS a rozlišuje jen „obsah přiřazen" / „nepřiřazeno“.
+`stav` v `meta.json` je editovatelný příznak CMS, **ne** živý stav zařízení.
+
+---
+
+## 11. API a ochrana endpointů
 
 Hook `onRequest` se vztahuje **jen na cesty začínající `/api`**. Ve výchozím
 stavu je vše zamčené; veřejné je pouze to, co je vyjmenované v množině
@@ -443,7 +518,7 @@ automaticky, dokud ho někdo vědomě nepřidá do seznamu.
 
 | Metoda | Cesta | Popis |
 |---|---|---|
-| GET | `/api/displays` | seznam displejů (id, druh, stav, poslední změna, náhledová fotka) |
+| GET | `/api/displays` | seznam displejů (id, druh, `latin_name`, stav, poslední změna, náhledová fotka) |
 | PUT | `/api/displays/:id/slides/:n` | uložení polí info panelu — tělo `{pole, section}`, vrací `{ok, latin, latinCorrected}` |
 | PUT | `/api/displays/:id/kb` | zápis `kb.md` — tělo `{text}` |
 | POST | `/api/displays/:id/slides/:n/image` | multipart upload fotky (konverze na PNG) |
@@ -457,6 +532,8 @@ automaticky, dokud ho někdo vědomě nepřidá do seznamu.
 | POST | `/api/displays/:id/refresh` | odeslání na displej |
 | GET | `/api/audit` | audit log |
 | GET | `/api/kb-template` | výchozí šablona `kb.md` |
+| GET | `/api/analytics/questions` | dotazy návštěvníků z chatbota — `since`, `limit`, `answered`, viz [kapitola 10](#10-analytika-chatbota-v-dashboardu) |
+| GET | `/api/analytics/summary` | souhrn dotazů z chatbota — `since` |
 
 Chyby se vrací jako JSON `{"chyba": "..."}`; frontend tuto hlášku zobrazuje
 uživateli. Na `401` klient smaže lokální stav a přesměruje na `/login` (kromě
@@ -473,7 +550,7 @@ adresy typu `/displeje/12`). Nenalezené cesty pod `/api` a `/data` vrací
 
 ---
 
-## 11. Údržbové skripty
+## 12. Údržbové skripty
 
 Spouštějí se z kořene repozitáře a **respektují `DATA_ROOT`**.
 
@@ -492,7 +569,7 @@ rm -rf data/displeje data/audit.jsonl && npm run seed
 
 ---
 
-## 12. Zálohování a obnova
+## 13. Zálohování a obnova
 
 Celý stav systému je **jedna složka** — `DATA_ROOT`. Záloha je tedy prosté
 zkopírování:
@@ -513,7 +590,7 @@ všichni odhlásí.
 
 ---
 
-## 13. Řešení potíží
+## 14. Řešení potíží
 
 **`Web build nenalezen (…/web/dist). Spusť 'npm run build'.`**
 Chybí buildnutý web. API běží, ale `/` vrátí 404. Řešení: `npm run build`
@@ -565,15 +642,18 @@ Chybí nebo je poškozený `meta.json`, případně složka nemá čistě číse
 
 ---
 
-## 14. Známá omezení
+## 15. Známá omezení
 
 Stav k srpnu 2026, otevřené body jsou i v `handoff.md`.
 
 - **Odeslání na displej je mock** — `/api/displays/:id/refresh` jen zapíše audit.
 - **Reingest chatbota je vypnutý**, dokud se nedomluví rozhraní s chatbotem.
 - **`stav` (online/offline) není živý** — hodnotu zapisuje jen `seed`/`migrate`,
-  žádný monitoring tablety nekontroluje. Totéž platí pro celou stránku
-  **Přehled provozu**, která běží na demo datech.
+  žádný monitoring tablety nekontroluje. **Přehled provozu proto stav zařízení
+  vůbec neukazuje** (dřív ho simuloval); monitoring přijde od Michala.
+- **Čísla v Přehledu provozu jsou reálná, ale ze chatbota** — dokud jeho
+  analytika neběží, stránka to napíše a zbytek CMS funguje bez omezení, viz
+  [kapitola 10](#10-analytika-chatbota-v-dashboardu).
 - **Náhled tabletu není v poměru 3:2.** Unity jede fix 1200 × 800; přizpůsobení
   náhledu a servírování fotek ve vhodném rozměru je fáze B.
 - **Správa účtů je jen z příkazové řádky**, v UI zatím není.

@@ -54,7 +54,7 @@ Po přihlášení se otevře **Přehled provozu**.
 
 | Položka | K čemu je |
 |---|---|
-| **Přehled** | Statistiky provozu pavilonu. Zatím ukazuje **ukázková čísla** — reálná data přijdou spolu s chatbotem. Pro práci s obsahem ji nepotřebujete. |
+| **Přehled** | Dotazy návštěvníků na AI: kolik jich bylo, na co chatbot neodpověděl a u kterých druhů se lidé ptají nejvíc. Čísla dodává chatbot — když jeho služba neběží, stránka to napíše místo čísel. Pro práci s obsahem ji nepotřebujete. |
 | **Displeje** | Tady se pracuje. Seznam všech 37 displejů. |
 | **Audit log** | Kdo, kdy a co v systému změnil. |
 
@@ -428,10 +428,22 @@ možná půjde obsah obnovit ze zálohy.
 A neobjeví. Znalostní báze je podklad pro **chatbota**, ne text slidu. Co má
 vidět návštěvník na obrazovce, patří do info panelu, galerie nebo videa.
 
-**Přehled provozu ukazuje divná čísla.**
-Ta stránka zatím běží na ukázkových datech — je u nich napsáno „Demo data,
-reálná data přijdou s chatbotem". Reálné statistiky budou fungovat, až se
-napojí chatbot.
+**Přehled provozu píše „Analytika chatbota zatím není připojená".**
+Čísla o dotazech návštěvníků dodává chatbot. Když jeho služba neběží (nebo ještě
+není nasazená), stránka to takhle napíše místo čísel — není to chyba a zbytek
+CMS to nijak neomezuje. Až chatbot pojede, čísla se objeví sama; stačí kliknout
+na **Obnovit**.
+
+**V Přehledu provozu není vidět, který tablet je zapnutý.**
+Schválně. Živý stav zařízení v pavilonu systém zatím nemá odkud číst, takže ho
+neukazuje — dřív tam bylo jen ukázkové barvení, které mohlo mást. Proužek dole
+je přehled displejů založených v CMS: barevně odlišuje jen to, jestli má displej
+přiřazený druh, nebo je zatím **Nepřiřazeno**.
+
+**Druh mi chybí v mapě dotazů.**
+Dotazy se na displej párují podle **latinského názvu**. Když se druh z chatbota
+nespojí s žádným displejem, systém ho vypíše pod mapou — zkontrolujte pole
+**Latinský název** v info panelu (i drobná odchylka v pravopisu stačí).
 
 **Potřebuju změnit heslo nebo nový účet pro kolegu.**
 To dělá správce systému, v CMS to zatím nejde.

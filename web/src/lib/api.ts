@@ -1,4 +1,12 @@
-import type { AuditEntry, DisplayDetail, DisplaySummary, SlideTyp } from "./types";
+import type {
+  Analytika,
+  AnalyticsQuestions,
+  AnalyticsSummary,
+  AuditEntry,
+  DisplayDetail,
+  DisplaySummary,
+  SlideTyp,
+} from "./types";
 
 // Jméno přihlášeného v localStorage (jen kvůli okamžitému vykreslení; zdrojem
 // pravdy je podepsaná session cookie na serveru).
@@ -157,7 +165,37 @@ export const api = {
     const data = await request<{ entries: AuditEntry[] }>("/api/audit");
     return data.entries;
   },
+
+  // Souhrn dotazů na chatbota (KPI karty a intenzita heat mapy).
+  async analyticsSummary(): Promise<Analytika<AnalyticsSummary>> {
+    return analytika<AnalyticsSummary>("/api/analytics/summary");
+  },
+
+  // Jednotlivé dotazy. answered=false = co AI nezvládla.
+  async analyticsQuestions(
+    filtr: { limit?: number; answered?: boolean } = {},
+  ): Promise<Analytika<AnalyticsQuestions>> {
+    const params = new URLSearchParams();
+    if (filtr.limit !== undefined) params.set("limit", String(filtr.limit));
+    if (filtr.answered !== undefined) params.set("answered", String(filtr.answered));
+    const qs = params.toString();
+    return analytika<AnalyticsQuestions>(`/api/analytics/questions${qs ? `?${qs}` : ""}`);
+  },
 };
+
+// Analytika chatbota se nikdy nevrací jako výjimka: náš server posílá obálku
+// { dostupne } i když Danielův backend neběží, a když selže i naše strana
+// (nebo síť), udělá se obálka tady. Dashboard tak vždycky jen vypíše hlášku.
+async function analytika<T>(url: string): Promise<Analytika<T>> {
+  try {
+    return await request<Analytika<T>>(url);
+  } catch (e) {
+    return {
+      dostupne: false,
+      duvod: e instanceof Error ? e.message : "Analytiku se nepodařilo načíst.",
+    };
+  }
+}
 
 // Z URL fotky (/data/.../soubor.jpg) vytáhne čistý název souboru.
 export function nazevSouboru(url: string): string {
