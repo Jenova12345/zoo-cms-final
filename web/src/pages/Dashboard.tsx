@@ -55,6 +55,12 @@ function cisloCs(n: number): string {
   return n.toLocaleString("cs-CZ");
 }
 
+function pocetDotazu(n: number): string {
+  if (n === 1) return "1 dotaz";
+  if (n >= 2 && n <= 4) return `${n} dotazy`;
+  return `${cisloCs(n)} dotazů`;
+}
+
 function druhLabel(q: { species_name: string; species_latin: string }): string {
   return q.species_name || q.species_latin || "neurčený druh";
 }
@@ -66,60 +72,89 @@ function nejnovejsi(questions: AnalyticsQuestion[], kolik: number): AnalyticsQue
     .slice(0, kolik);
 }
 
-// --- Heat mapa: čistý půdorys haly, bez rámečku ---
+// --- Heat mapa nad reálným půdorysem pavilonu ---
 
 interface HeatNode {
   id: string;
   n: number; // číslo displeje
-  popis: string; // druh (z analytiky, jinak z CMS)
-  x: number;
-  y: number;
+  popis: string; // druh z našich meta.json (záloha: druh z analytiky)
+  x: number; // % šířky půdorysu
+  y: number; // % výšky půdorysu
   count: number; // dotazů za sledované období
   score: number; // 0–1, intenzita pro barvu a velikost
 }
 
-// Schematické rozmístění displejů: vnější obvod haly + expoziční ostrov
-// uprostřed. Jsou to orientační pozice pro čtení mapy, ne zaměřené souřadnice —
-// skutečné rozmístění tabletů v pavilonu nikde v datech nemáme.
-function pozice(pocet: number): { x: number; y: number }[] {
-  const nodes: { x: number; y: number }[] = [];
-  const ring = (count: number, x0: number, y0: number, x1: number, y1: number) => {
-    const w = x1 - x0;
-    const h = y1 - y0;
-    const per = 2 * (w + h);
-    for (let i = 0; i < count; i++) {
-      const t = (i / count) * per;
-      let x: number, y: number;
-      if (t < w) {
-        x = x0 + t;
-        y = y0;
-      } else if (t < w + h) {
-        x = x1;
-        y = y0 + (t - w);
-      } else if (t < 2 * w + h) {
-        x = x1 - (t - w - h);
-        y = y1;
-      } else {
-        x = x0;
-        y = y1 - (t - 2 * w - h);
-      }
-      x += Math.sin(i * 2.3 + 1) * 1.6;
-      y += Math.cos(i * 1.7) * 1.8;
-      nodes.push({ x, y });
-    }
-  };
-  const vnejsi = Math.min(pocet, 24);
-  ring(vnejsi, 8, 12, 92, 86);
-  if (pocet > vnejsi) ring(pocet - vnejsi, 33, 33, 67, 67);
-  return nodes;
-}
+// Oficiální půdorys pavilonu od ZOO — verze S ČÍSLY DISPLEJŮ (17. 8. 2026).
+// Kopie podklady/Amphibiarium_mapa 1.png, servíruje se z web/public. Poměr
+// stran drží mapu ve správném tvaru při jakékoli šířce okna.
+const PUDORYS = "/pavilon-pudorys.png";
+const PUDORYS_POMER = "6459 / 6434";
 
+// ┌─ POZICE DISPLEJŮ NA PŮDORYSU ────────────────────────────────────────────┐
+// │ Tady se souřadnice ladí. x a y jsou procenta šířky a výšky obrázku       │
+// │ (levý horní roh = 0, 0), takže se body škálují s velikostí mapy.         │
+// │ Bod displeje N leží na obdélníčku s číslem N.                            │
+// └─────────────────────────────────────────────────────────────────────────┘
+//
+// Jak souřadnice vznikly: v plánku je u každé vitríny natištěné číslo displeje
+// (1–31). Středy obdélníčků jsou odečtené z obrázku detekcí barevných ploch
+// (spojité komponenty jedné barvy) a k nim přiřazená čísla přečtená z plánku.
+// Kolečka s čísly 1–11 jsou sekce (skupiny displejů), ty tu nejsou. Bez čísla
+// jsou na plánku i tři tvary, které tedy displeje nejsou: kruhová nádrž
+// u sekce 1, zelený pruh u stěny a prostřední fialový box u sekce 8.
+// Komentáře u skupin uvádějí barvu a číslo sekce z plánku, jen pro orientaci.
+const PUDORYS_BODY: { displej: number; x: number; y: number }[] = [
+  // tyrkysová, sekce 1
+  { displej: 1, x: 17.4, y: 58.0 },
+  // lososová, sekce 2
+  { displej: 2, x: 27.2, y: 66.6 },
+  { displej: 3, x: 29.5, y: 70.4 },
+  { displej: 4, x: 33.1, y: 73.4 },
+  { displej: 5, x: 37.3, y: 77.0 },
+  { displej: 6, x: 42.0, y: 79.1 },
+  { displej: 7, x: 47.7, y: 79.1 },
+  // žlutá, sekce 3
+  { displej: 8, x: 13.5, y: 77.7 },
+  { displej: 9, x: 17.6, y: 81.6 },
+  { displej: 10, x: 21.8, y: 85.1 },
+  { displej: 11, x: 25.7, y: 88.4 },
+  // malinová, sekce 4
+  { displej: 12, x: 29.4, y: 93.0 },
+  { displej: 13, x: 43.7, y: 95.6 },
+  { displej: 14, x: 51.2, y: 93.8 },
+  // oranžová, sekce 7
+  { displej: 15, x: 73.5, y: 67.3 },
+  { displej: 16, x: 77.2, y: 63.7 },
+  { displej: 17, x: 79.0, y: 59.3 },
+  { displej: 18, x: 78.9, y: 54.3 },
+  // fialová, sekce 8 (prostřední box strip nemá číslo, displej to není)
+  { displej: 19, x: 94.7, y: 46.7 },
+  { displej: 20, x: 94.8, y: 35.6 },
+  // modrá, sekce 9 — vnější stěna severovýchodní chodby
+  { displej: 21, x: 92.8, y: 27.8 },
+  { displej: 22, x: 88.9, y: 24.1 },
+  { displej: 23, x: 83.5, y: 18.7 },
+  // modrá, sekce 9 — vnitřní stěna téže chodby
+  { displej: 24, x: 79.4, y: 33.5 },
+  { displej: 25, x: 75.7, y: 29.9 },
+  { displej: 26, x: 72.2, y: 26.5 },
+  // hnědá, sekce 10
+  { displej: 27, x: 71.0, y: 6.2 },
+  { displej: 28, x: 65.2, y: 4.1 },
+  { displej: 29, x: 58.5, y: 4.2 },
+  { displej: 30, x: 58.9, y: 17.9 },
+  // zelená, sekce 11
+  { displej: 31, x: 50.9, y: 17.9 },
+];
+
+// Nízká návštěvnost zelená → vysoká červená. Stejné zastávky má i legenda
+// pod mapou (HEAT_GRADIENT), ať se barvy nerozejdou.
 function heatColor(score: number): string {
   const stops: [number, [number, number, number]][] = [
-    [0.0, [199, 224, 218]],
-    [0.45, [15, 118, 110]],
-    [0.75, [194, 116, 12]],
-    [1.0, [220, 38, 38]],
+    [0.0, [134, 196, 138]], // světle zelená
+    [0.35, [21, 128, 61]], // zelená
+    [0.7, [194, 116, 12]], // oranžová
+    [1.0, [220, 38, 38]], // červená
   ];
   for (let i = 0; i < stops.length - 1; i++) {
     const [s0, c0] = stops[i];
@@ -133,20 +168,24 @@ function heatColor(score: number): string {
   return "rgb(220, 38, 38)";
 }
 
-// Bez analytiky se body kreslí neutrálně — heat mapa bez dat nemá co barvit.
-const NEUTRAL = "#DDE3E1";
+const HEAT_GRADIENT = "linear-gradient(90deg, #86C48A, #15803D 35%, #C2740C 70%, #DC2626)";
+
+// Bez analytiky se body kreslí neutrálně šedě — heat mapa bez dat nemá co barvit.
+const NEUTRAL = "#A3ADAA";
 
 interface MapaData {
   nodes: HeatNode[];
   maxNode: HeatNode | null; // displej s nejvíc dotazy
   nenaparovano: AnalyticsSpecies[]; // druhy z analytiky bez displeje u nás
+  mimoPudorys: number[]; // displeje z CMS, které na plánku nejsou
+  chybiVCms: number[]; // displeje z plánku, které v CMS nejsou
 }
 
 // Párování analytiky na displeje: primárně přes species_latin proti latin_name
 // z našich meta.json (obojí kanonizované stejnými pravidly), display_id jen
 // jako záloha — podle kontraktu může být null.
 function naparuj(displays: DisplaySummary[], summary: AnalyticsSummary | null): MapaData {
-  const body = pozice(displays.length);
+  const podleCisla = new Map(displays.map((d) => [Number(d.id), d]));
 
   const podleLatiny = new Map<string, { count: number; species_name: string }>();
   const podleId = new Map<number, { count: number; species_name: string }>();
@@ -171,22 +210,35 @@ function naparuj(displays: DisplaySummary[], summary: AnalyticsSummary | null): 
   const pouziteLatiny = new Set<string>();
   const pouziteId = new Set<number>();
 
-  const bezScore = displays.map((d, i) => {
+  // Párování se počítá pro VŠECHNY displeje z CMS, i pro ty mimo půdorys —
+  // jinak by druh napárovaný na displej 35 hlásil, že nemá displej.
+  const zasahy = new Map<number, { count: number; species_name: string } | undefined>();
+  for (const d of displays) {
     const latin = canonicalizeLatin(d.latin_name ?? "");
     const podleJmena = latin ? podleLatiny.get(latin) : undefined;
     const zaloha = podleJmena ? undefined : podleId.get(Number(d.id));
     if (podleJmena) pouziteLatiny.add(latin);
     if (zaloha) pouziteId.add(Number(d.id));
-    const zasah = podleJmena ?? zaloha;
+    zasahy.set(Number(d.id), podleJmena ?? zaloha);
+  }
+
+  // Body kreslíme podle půdorysu; displej, který v CMS není, se vynechá.
+  const bezScore = PUDORYS_BODY.flatMap((bod) => {
+    const d = podleCisla.get(bod.displej);
+    if (!d) return [];
+    const zasah = zasahy.get(bod.displej);
+    // Druh bere přednostně z našich meta.json, jméno z analytiky je záloha.
     const cmsDruh = d.druh === NEPRIRAZENO ? "" : d.druh;
-    return {
-      id: d.id,
-      n: Number(d.id),
-      popis: zasah?.species_name || cmsDruh || NEPRIRAZENO,
-      x: body[i]?.x ?? 50,
-      y: body[i]?.y ?? 50,
-      count: zasah?.count ?? 0,
-    };
+    return [
+      {
+        id: d.id,
+        n: bod.displej,
+        popis: cmsDruh || zasah?.species_name || NEPRIRAZENO,
+        x: bod.x,
+        y: bod.y,
+        count: zasah?.count ?? 0,
+      },
+    ];
   });
 
   const max = bezScore.reduce((a, b) => Math.max(a, b.count), 0);
@@ -202,10 +254,14 @@ function naparuj(displays: DisplaySummary[], summary: AnalyticsSummary | null): 
     return true;
   });
 
+  const naPudorysu = new Set(PUDORYS_BODY.map((b) => b.displej));
+
   return {
     nodes,
     maxNode: max > 0 ? nodes.reduce((a, b) => (b.count > a.count ? b : a), nodes[0]) : null,
     nenaparovano,
+    mimoPudorys: displays.map((d) => Number(d.id)).filter((n) => !naPudorysu.has(n)),
+    chybiVCms: PUDORYS_BODY.filter((b) => !podleCisla.has(b.displej)).map((b) => b.displej),
   };
 }
 
@@ -315,7 +371,7 @@ export default function Dashboard() {
           <div>
             <div className="kicker">Mapa dotazů na AI</div>
             <h2 className="font-display text-lg font-semibold text-fg mt-1.5">
-              Půdorys haly, schéma
+              Půdorys pavilonu
             </h2>
           </div>
           {mapa.maxNode && (
@@ -341,42 +397,53 @@ export default function Dashboard() {
 
         {displays && displays.length > 0 && (
           <>
+            {/* Půdorys drží poměr stran, body jsou umístěné v procentech, takže
+                se mapa i body škálují se šířkou okna. */}
             <div
-              className="relative mx-auto w-full"
-              style={{ aspectRatio: "16 / 7" }}
+              className="relative mx-auto w-full max-w-[760px]"
+              style={{ aspectRatio: PUDORYS_POMER }}
               onMouseLeave={() => setHover(null)}
             >
-              {/* obrys haly a expozičního ostrova jen vlasovými linkami */}
-              <div className="absolute inset-[5%] rounded-[20px] border border-line" />
-              <div className="absolute inset-[34%] rounded-xl border border-lineSoft" />
+              {/* Plánek je jen tichý obrys: odbarvený a ztlumený, ať barevné
+                  zóny nepřebíjejí body návštěvnosti. */}
+              <img
+                src={PUDORYS}
+                alt="Půdorys pavilonu Amphibiárium"
+                draggable={false}
+                className="pointer-events-none absolute inset-0 h-full w-full select-none object-contain"
+                style={{ filter: "grayscale(1)", opacity: 0.35 }}
+              />
 
               {mapa.nodes.map((node) => {
-                const jsouData = summaryData !== null;
-                const r = 9 + node.score * 16;
-                const color = jsouData && node.count > 0 ? heatColor(node.score) : NEUTRAL;
+                const zvyraznit = summaryData !== null && node.count > 0;
+                const color = zvyraznit ? heatColor(node.score) : NEUTRAL;
                 const active = hover?.id === node.id;
+                // Velikost v procentech mapy, ať bod zůstane v poměru k plánku.
+                const velikost = 2.2 + node.score * 2.8;
                 return (
                   <button
                     key={node.id}
                     onMouseEnter={() => setHover(node)}
-                    className="absolute -translate-x-1/2 -translate-y-1/2 rounded-full transition-transform"
+                    className="absolute rounded-full border-2 border-white transition-transform"
                     style={{
                       left: `${node.x}%`,
                       top: `${node.y}%`,
-                      width: r,
-                      height: r,
+                      width: `${velikost}%`,
+                      height: `${velikost}%`,
                       background: color,
-                      boxShadow:
-                        jsouData && node.count > 0
-                          ? `0 0 ${5 + node.score * 14}px ${node.score * 3}px ${color}55`
-                          : "none",
-                      border: active ? "2px solid #0F766E" : "1px solid rgba(16,40,34,0.10)",
-                      transform: `translate(-50%, -50%) scale(${active ? 1.3 : 1})`,
+                      boxShadow: [
+                        "0 1px 3px rgba(16,40,34,0.3)",
+                        active ? "0 0 0 3px rgba(15,118,110,0.55)" : "",
+                        zvyraznit ? `0 0 ${8 + node.score * 18}px ${node.score * 4}px ${color}55` : "",
+                      ]
+                        .filter(Boolean)
+                        .join(", "),
+                      transform: `translate(-50%, -50%) scale(${active ? 1.2 : 1})`,
                       zIndex: active ? 20 : 1,
                     }}
                     aria-label={
                       summaryData
-                        ? `Displej ${node.n}, ${node.popis}, ${node.count} dotazů`
+                        ? `Displej ${node.n}, ${node.popis}, ${pocetDotazu(node.count)}`
                         : `Displej ${node.n}, ${node.popis}`
                     }
                   />
@@ -385,33 +452,35 @@ export default function Dashboard() {
 
               {hover && (
                 <div
-                  className="absolute z-30 pointer-events-none -translate-x-1/2 -translate-y-full rounded-lg border border-line bg-surface px-3 py-2 shadow-cardHover"
-                  style={{ left: `${hover.x}%`, top: `calc(${hover.y}% - 14px)` }}
+                  className="absolute z-30 pointer-events-none rounded-lg border border-line bg-surface px-3 py-2 shadow-cardHover"
+                  style={{
+                    left: `${hover.x}%`,
+                    top: `${hover.y}%`,
+                    maxWidth: 220,
+                    // U kraje mapy se bublina zarovná dovnitř, ať nevylézá z plochy.
+                    transform: `translate(${
+                      hover.x > 78 ? "-88%" : hover.x < 22 ? "-12%" : "-50%"
+                    }, ${hover.y < 18 ? "18px" : "calc(-100% - 18px)"})`,
+                  }}
                 >
                   <div className="font-display text-sm font-semibold text-fg tnum">
                     Displej {hover.n}
                   </div>
                   <div className="text-[11px] text-fg-muted">{hover.popis}</div>
                   {summaryData && (
-                    <div className="text-[11px] text-fg-muted tnum">
-                      {cisloCs(hover.count)} dotazů
-                    </div>
+                    <div className="text-[11px] text-fg-muted tnum">{pocetDotazu(hover.count)}</div>
                   )}
                 </div>
               )}
             </div>
 
+            {/* Legenda a poznámky zarovnané pod mapu */}
+            <div className="mx-auto w-full max-w-[760px] space-y-2.5">
             {summaryData ? (
               <>
                 <div className="flex items-center gap-3 text-[11px] text-fg-dim max-w-md">
                   <span>Méně</span>
-                  <div
-                    className="h-1.5 flex-1 rounded-full"
-                    style={{
-                      background:
-                        "linear-gradient(90deg, #C7E0DA, #0F766E 45%, #C2740C 75%, #DC2626)",
-                    }}
-                  />
+                  <div className="h-1.5 flex-1 rounded-full" style={{ background: HEAT_GRADIENT }} />
                   <span>Více</span>
                 </div>
                 {mapa.nenaparovano.length > 0 && (
@@ -433,9 +502,33 @@ export default function Dashboard() {
             ) : (
               <Hlaska
                 text={NEPRIPOJENO}
-                detail="Body ukazují displeje z CMS, intenzita se dokreslí, až začne chatbot vracet dotazy."
+                detail="Body ukazují displeje na půdorysu, intenzita se dokreslí, až začne chatbot vracet dotazy."
               />
             )}
+
+            {/* Kolečka na plánku jsou zóny expozice — ať si je nikdo neplete
+                s čísly displejů. */}
+            <p className="text-[11px] text-fg-dim">
+              Body leží na obdélníčcích s čísly displejů z plánku od ZOO (číslo, druh a počet
+              dotazů ukáže nájezd myší). Kolečka s čísly 1–11 na plánku jsou sekce, tedy skupiny
+              displejů — ty v mapě body nemají.
+            </p>
+
+            {/* Plánek od ZOO zachycuje 31 displejů, v CMS jich může být víc. */}
+            {mapa.mimoPudorys.length > 0 && (
+              <p className="text-[11px] text-fg-dim">
+                Půdorys od ZOO zachycuje displeje 1–{PUDORYS_BODY.length}. V CMS jsou navíc displeje{" "}
+                <span className="tnum">{mapa.mimoPudorys.join(", ")}</span>, na plánku nejsou — v
+                mapě se proto nezobrazují.
+              </p>
+            )}
+            {mapa.chybiVCms.length > 0 && (
+              <p className="text-[11px] text-fg-dim">
+                Displeje <span className="tnum">{mapa.chybiVCms.join(", ")}</span> jsou na půdorysu,
+                ale v CMS chybí.
+              </p>
+            )}
+            </div>
           </>
         )}
       </section>

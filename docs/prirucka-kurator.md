@@ -54,7 +54,7 @@ Po přihlášení se otevře **Přehled provozu**.
 
 | Položka | K čemu je |
 |---|---|
-| **Přehled** | Dotazy návštěvníků na AI: kolik jich bylo, na co chatbot neodpověděl a u kterých druhů se lidé ptají nejvíc. Čísla dodává chatbot — když jeho služba neběží, stránka to napíše místo čísel. Pro práci s obsahem ji nepotřebujete. |
+| **Přehled** | Dotazy návštěvníků na AI: kolik jich bylo, na co chatbot neodpověděl a u kterých druhů se lidé ptají nejvíc. Je tu i **mapa dotazů na půdorysu pavilonu** — barevné body jsou displeje, čím teplejší barva, tím víc dotazů; nájezdem myši se ukáže číslo displeje, druh a počet dotazů. Čísla dodává chatbot — když jeho služba neběží, stránka to napíše místo čísel. Pro práci s obsahem ji nepotřebujete. |
 | **Displeje** | Tady se pracuje. Seznam všech 37 displejů. |
 | **Audit log** | Kdo, kdy a co v systému změnil. |
 

@@ -544,6 +544,63 @@ displeje z CMS bez intenzity, KPI karty se nezobrazí (radši nic než vymyšlen
 Prázdná odpověď (chatbot běží, ale za období nejsou dotazy) se hlásí jako
 „Zatím žádné dotazy.", ne jako nula bez kontextu.
 
+### Heat mapa nad půdorysem pavilonu
+
+Mapa dotazů kreslí body na **oficiální půdorys pavilonu od ZOO**:
+`web/public/pavilon-pudorys.png` (kopie `podklady/Amphibiarium_mapa 1.png`,
+6459 × 6434 px, verze s čísly displejů). Obrázek se servíruje jako statický soubor z `web/dist`, mapa
+i body drží poměr stran a škálují se se šířkou okna (souřadnice jsou v %).
+
+**Souřadnice displejů jsou v `web/src/pages/Dashboard.tsx` v poli
+`PUDORYS_BODY`** — jeden řádek na displej:
+
+```ts
+{ displej: 8, x: 13.5, y: 77.7 },
+```
+
+`x`, `y` = procenta šířky a výšky obrázku (levý horní roh = 0, 0). Ruční
+doladění je otázka změny čísla, nic dalšího se nepřepočítává. Skupiny jsou
+v komentářích označené barvou a číslem sekce z plánku, jen pro orientaci.
+
+#### Jak souřadnice vznikly
+
+Aktuální plánek (od 17. 8. 2026) má **u každé vitríny natištěné číslo
+displeje 1–31**, takže se nic nedohaduje:
+
+1. Detekcí barevných ploch v obrázku se našly středy všech obdélníčků (spojité
+   komponenty jedné barvy; vyřazená kolečka sekcí, tenké linky a obrysy).
+2. Z výřezů kolem každého středu se přečetlo natištěné číslo a přiřadilo se
+   k souřadnici. Každé číslo 1–31 padlo právě jednou, nic nechybí a nic
+   nepřebývá.
+3. Kontrola: body se s čísly vykreslily zpět na plánek a porovnaly s natištěnými
+   čísly (i naživo v prohlížeči nad neztlumeným plánkem).
+
+**Kolečka s čísly 1–11 jsou sekce** (skupiny displejů), ne displeje — body
+nemají. Bez čísla jsou na plánku tři tvary, které tedy displeje nejsou:
+kruhová nádrž u sekce 1, tenký zelený pruh u stěny a **prostřední box
+fialového trojbloku** u sekce 8.
+
+> Starší verze plánku čísla neměla a pozice se odhadovaly z pořadí sekcí. Tahle
+> verze ten odhad ruší — pokud se v mapě někdy objeví bod mimo vitrínu, je to
+> chyba souřadnice, ne domněnky.
+
+#### Vzhled mapy
+
+- Plánek je na pozadí **odbarvený a ztlumený** (`grayscale(1)`, `opacity 0.35`),
+  aby jeho barevné zóny nepřebíjely body návštěvnosti. Ladí se u `<img>`
+  v sekci mapy.
+- Body mají bílý okraj a velikost podle počtu dotazů (2,2 % až 5 % šířky mapy),
+  barvu podle intenzity: **nízká zelená → vysoká červená** (`heatColor`,
+  legendu drží stejné zastávky v `HEAT_GRADIENT`).
+
+#### Intenzita a stavy
+
+- Intenzita (barva i velikost bodu) jde ze stejného zdroje jako dřív:
+  `per_species.count` z `/analytics/summary`, napárováno na displeje.
+- Bez dat z chatbota se body kreslí **neutrálně** — žádná vymyšlená intenzita.
+- Displeje, které v CMS jsou, ale na plánku nejsou (v CMS je 37 složek, plánek
+  má 31), dashboard vypíše pod mapou. Stejně tak obráceně.
+
 ### Co dashboard nezobrazuje
 
 **Stav tabletů (online/offline) v dashboardu není.** Monitoring zařízení nemáme
