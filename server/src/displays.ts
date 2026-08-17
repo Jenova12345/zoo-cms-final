@@ -7,7 +7,8 @@ import { canonicalizeLatin } from "./latin.js";
 import { notifyReingest } from "./reingest.js";
 import { writeFileAtomic } from "./atomic.js";
 
-// Zdroj pravdy pro Unity je struktura složek na disku:
+// Zdroj pravdy pro Unity je struktura složek na disku. Finální struktura od
+// Michala: pevných pět typů slidů (_info, _ai, _3d, _vid, _gal).
 //
 //   data/displeje/<id>/
 //     kb.md                 znalostní báze pro chatbota (NENÍ slide)
@@ -15,16 +16,34 @@ import { writeFileAtomic } from "./atomic.js";
 //     cs/
 //       1_info/text.txt     info panel: řádky "Klic: Hodnota" + fotky .png
 //       1_info/mapa.png     volitelná mapa výskytu (přesně tento název)
-//       2_vid/<video>.mp4   jedno video
-//       3_gal/<fotky>.png   galerie
-//       4_ai/               prázdná složka = AI slide
+//       1_info/<video>.mp4  volitelné video (Michal ho řadí na začátek galerie)
+//       2_ai/               prázdná složka = AI slide
+//       3_3d/001.png…       3D model: sekvence snímků, číslovaná od 001
+//       4_vid/<video>.mp4   jedno video
+//       5_gal/text.txt      zajímavost: "Popis: <dlouhý odstavec>"
+//       5_gal/<fotka>.png   zajímavost: jedna fotka (na zařízení vpravo)
 //
 // Typ slidu určuje suffix názvu složky, pořadí číslo na začátku. Při změně
 // pořadí nebo odebrání slidu se prefixy složek přečíslují na souvislou řadu.
+//
+// POZOR: `_gal` je podle finální struktury ZAJÍMAVOST (text + jedna fotka),
+// ne galerie fotek. Název suffixu zůstal kvůli kompatibilitě s Unity.
 
-export type SlideTyp = "info" | "vid" | "gal" | "ai";
+export type SlideTyp = "info" | "ai" | "3d" | "vid" | "gal";
 
-export const SLIDE_TYPY: SlideTyp[] = ["info", "vid", "gal", "ai"];
+// Pořadí = pořadí v nabídce "Přidat slide".
+export const SLIDE_TYPY: SlideTyp[] = ["info", "ai", "3d", "vid", "gal"];
+
+// Suffix složky pro nově zakládaný slide. Pro 3D model bere Michalovo Unity
+// obojí (`_3d` i `_mod`); zakládáme `_3d`, existující `_mod` se zachová.
+const SUFFIX_ALIAS: Record<string, SlideTyp> = {
+  info: "info",
+  ai: "ai",
+  "3d": "3d",
+  mod: "3d",
+  vid: "vid",
+  gal: "gal",
+};
 
 // Klíče polí info panelu v pořadí, ve kterém se zapisují do text.txt.
 export const INFO_KLICE = [
@@ -53,6 +72,18 @@ export const SEKCE = [
 
 export const MAPA_SOUBOR = "mapa.png";
 
+// Zajímavost (_gal): text.txt s jedním klíčem. Zapisujeme "Popis", při čtení
+// bereme i "Text" — Michal používá obojí.
+export const ZAJIMAVOST_KLIC = "Popis";
+const ZAJIMAVOST_RE = /^\s*(?:Popis|Text)\s*:\s?(.*)$/i;
+
+// 3D model (_3d): sekvence snímků 001.png, 002.png, … Unity je řadí podle čísla.
+const SEKVENCE_RE = /^(\d{3,})\.png$/i;
+
+function sekvencniNazev(poradi: number): string {
+  return `${String(poradi).padStart(3, "0")}.png`;
+}
+
 export interface DisplayMeta {
   druh: string; // CMS-interní český název (řídí přehled a stav "Nepřiřazeno")
   // Identifikace pro chatbota (Daniel). Jeden zdroj = pole info panelu; při
@@ -70,10 +101,12 @@ export interface DisplayMeta {
 export interface SlideContent {
   n: number; // pořadí = číselný prefix složky
   typ: SlideTyp;
+  slozka: string; // skutečný název složky na disku (kvůli variantě _mod)
   pole: Record<string, string>; // jen info: obsah text.txt
-  obrazky: string[]; // URL do /data (info: hlavní fotky bez mapy; gal: galerie)
+  text: string; // jen gal (zajímavost): dlouhý odstavec z text.txt
+  obrazky: string[]; // URL do /data (info: fotky bez mapy; gal: jedna; 3d: sekvence)
   mapa: string | null; // jen info: URL mapa.png
-  video: string | null; // jen vid: URL videa
+  video: string | null; // vid: video slidu; info: volitelné video
 }
 
 export interface DisplaySummary {
@@ -89,7 +122,7 @@ export interface DisplaySummary {
 
 export const NEPRIRAZENO = "Nepřiřazeno";
 
-const SLIDE_DIR_RE = /^(\d+)_(info|vid|gal|ai)$/;
+const SLIDE_DIR_RE = /^(\d+)_(info|vid|gal|ai|3d|mod)$/;
 
 function displayDir(id: string): string {
   return path.join(DISPLAYS_DIR, id);
@@ -141,6 +174,7 @@ export async function touchDisplay(id: string): Promise<void> {
 interface SlideDirInfo {
   n: number;
   typ: SlideTyp;
+  suffix: string; // suffix složky na disku ("3d" i "mod" znamenají typ "3d")
   slozka: string; // název složky, např. "1_info"
 }
 
@@ -151,7 +185,9 @@ async function listSlides(id: string): Promise<SlideDirInfo[]> {
       .filter((e) => e.isDirectory())
       .map((e) => {
         const m = SLIDE_DIR_RE.exec(e.name);
-        return m ? { n: Number(m[1]), typ: m[2] as SlideTyp, slozka: e.name } : null;
+        if (!m) return null;
+        const suffix = m[2].toLowerCase();
+        return { n: Number(m[1]), typ: SUFFIX_ALIAS[suffix], suffix, slozka: e.name };
       })
       .filter((s): s is SlideDirInfo => s !== null)
       .sort((a, b) => a.n - b.n);
@@ -213,6 +249,51 @@ async function readInfoPole(id: string, slozka: string): Promise<Record<string, 
   } catch {
     return {};
   }
+}
+
+// --- text.txt zajímavosti (_gal): jeden dlouhý odstavec pod klíčem Popis ---
+
+// Zapisujeme "Popis: <text>", čteme i "Text:". Odstavec může na disku
+// pokračovat na dalších řádcích — bereme všechno za klíčem. Soubor bez klíče
+// (ruční zásah) čteme celý jako holý odstavec, ať se obsah neztratí.
+export function parseZajimavostText(raw: string): string {
+  const lines = raw.replace(/\r\n/g, "\n").split("\n");
+  const idx = lines.findIndex((l) => ZAJIMAVOST_RE.test(l));
+  if (idx === -1) return raw.replace(/\r\n/g, "\n").trim();
+  const prvni = ZAJIMAVOST_RE.exec(lines[idx])![1];
+  return [prvni, ...lines.slice(idx + 1)].join("\n").trim();
+}
+
+export function serializeZajimavostText(text: string): string {
+  const t = text.replace(/\r\n/g, "\n").trim();
+  return t ? `${ZAJIMAVOST_KLIC}: ${t}\n` : "";
+}
+
+async function readZajimavost(id: string, slozka: string): Promise<string> {
+  try {
+    return parseZajimavostText(await fs.readFile(path.join(slideDirPath(id, slozka), "text.txt"), "utf8"));
+  } catch {
+    return "";
+  }
+}
+
+export async function writeZajimavost(
+  id: string,
+  n: number,
+  text: string,
+): Promise<{ ok: boolean; chyba?: string }> {
+  const slide = await findSlide(id, n);
+  if (!slide || slide.typ !== "gal") {
+    return { ok: false, chyba: "Slide není typu zajímavost." };
+  }
+  await writeFileAtomic(
+    path.join(slideDirPath(id, slide.slozka), "text.txt"),
+    serializeZajimavostText(text),
+  );
+  await touchDisplay(id);
+  // Zajímavost je souvislý text o druhu, chatbot ho může použít jako podklad.
+  void notifyReingest(id, `cs/${slide.slozka}/text.txt`);
+  return { ok: true };
 }
 
 // Validace povinných polí; vrací text chyby, nebo null když je vše v pořádku.
@@ -282,11 +363,24 @@ export async function writeInfoPole(
 
 // --- Obsah slidů pro API ---
 
+// Snímky 3D sekvence seřazené podle čísla v názvu (001.png, 002.png, …).
+// Soubor s jiným názvem se ignoruje, ať se do sekvence nedostane nepořádek.
+async function sekvence(id: string, slozka: string): Promise<string[]> {
+  const files = await listFiles(id, slozka, ".png");
+  return files
+    .map((f) => ({ f, m: SEKVENCE_RE.exec(f) }))
+    .filter((x): x is { f: string; m: RegExpExecArray } => x.m !== null)
+    .sort((a, b) => Number(a.m[1]) - Number(b.m[1]))
+    .map((x) => x.f);
+}
+
 async function toContent(id: string, s: SlideDirInfo): Promise<SlideContent> {
   const content: SlideContent = {
     n: s.n,
     typ: s.typ,
+    slozka: s.slozka,
     pole: {},
+    text: "",
     obrazky: [],
     mapa: null,
     video: null,
@@ -298,10 +392,16 @@ async function toContent(id: string, s: SlideDirInfo): Promise<SlideContent> {
       .filter((f) => f !== MAPA_SOUBOR)
       .map((f) => slideFileUrl(id, s.slozka, f));
     if (pngs.includes(MAPA_SOUBOR)) content.mapa = slideFileUrl(id, s.slozka, MAPA_SOUBOR);
+    // Volitelné video info panelu (Michal ho řadí na začátek galerie fotek).
+    const videa = await listFiles(id, s.slozka, ".mp4");
+    content.video = videa.length ? slideFileUrl(id, s.slozka, videa[0]) : null;
   } else if (s.typ === "gal") {
-    content.obrazky = (await listFiles(id, s.slozka, ".png")).map((f) =>
-      slideFileUrl(id, s.slozka, f),
-    );
+    // Zajímavost: dlouhý text a jedna fotka.
+    content.text = await readZajimavost(id, s.slozka);
+    const pngs = await listFiles(id, s.slozka, ".png");
+    content.obrazky = pngs.length ? [slideFileUrl(id, s.slozka, pngs[0])] : [];
+  } else if (s.typ === "3d") {
+    content.obrazky = (await sekvence(id, s.slozka)).map((f) => slideFileUrl(id, s.slozka, f));
   } else if (s.typ === "vid") {
     const videos = await listFiles(id, s.slozka, ".mp4");
     content.video = videos.length ? slideFileUrl(id, s.slozka, videos[0]) : null;
@@ -353,14 +453,30 @@ function uniquePngName(): string {
   return `foto-${Date.now().toString(36)}-${randomBytes(3).toString("hex")}.png`;
 }
 
+// Sekvence 3D modelu musí být souvislá řada od 001 — po přidání i smazání
+// snímku ji srovnáme. Dvoufázově (přes dočasné názvy), ať se nesrazí cíle.
+async function renumberSequence(id: string, slozka: string): Promise<void> {
+  const dir = slideDirPath(id, slozka);
+  const soubory = await sekvence(id, slozka);
+  const cile = soubory.map((f, i) => ({ from: f, to: sekvencniNazev(i + 1) }));
+  const meni = cile.filter((t) => t.from !== t.to);
+  if (meni.length === 0) return;
+  for (const t of meni) {
+    await fs.rename(path.join(dir, t.from), path.join(dir, `.tmp-${t.to}`));
+  }
+  for (const t of meni) {
+    await fs.rename(path.join(dir, `.tmp-${t.to}`), path.join(dir, t.to));
+  }
+}
+
 export async function saveImage(
   id: string,
   n: number,
   data: Buffer,
 ): Promise<{ ok: boolean; url?: string; chyba?: string }> {
   const slide = await findSlide(id, n);
-  if (!slide || (slide.typ !== "info" && slide.typ !== "gal")) {
-    return { ok: false, chyba: "Fotky lze nahrát jen na info panel nebo do galerie." };
+  if (!slide || (slide.typ !== "info" && slide.typ !== "gal" && slide.typ !== "3d")) {
+    return { ok: false, chyba: "Fotky patří jen na info panel, zajímavost nebo 3D model." };
   }
   let png: Buffer;
   try {
@@ -368,8 +484,31 @@ export async function saveImage(
   } catch {
     return { ok: false, chyba: "Obrázek se nepodařilo převést do PNG. Použijte JPG nebo PNG." };
   }
-  const nazev = uniquePngName();
-  await fs.writeFile(path.join(slideDirPath(id, slide.slozka), nazev), png);
+
+  const dir = slideDirPath(id, slide.slozka);
+  let nazev: string;
+
+  if (slide.typ === "3d") {
+    // Snímek jde na konec sekvence; číslo bereme z nejvyššího, ne z počtu,
+    // ať se netrefíme do existujícího souboru po ručním zásahu do složky.
+    const cisla = (await sekvence(id, slide.slozka)).map((f) => Number(SEKVENCE_RE.exec(f)![1]));
+    nazev = sekvencniNazev((cisla.length ? Math.max(...cisla) : 0) + 1);
+  } else {
+    // Zajímavost má právě jednu fotku — předchozí nahradíme.
+    if (slide.typ === "gal") {
+      for (const old of await listFiles(id, slide.slozka, ".png")) {
+        try {
+          await fs.unlink(path.join(dir, old));
+        } catch {
+          // soubor mezitím zmizel, nevadí
+        }
+      }
+    }
+    nazev = uniquePngName();
+  }
+
+  await fs.writeFile(path.join(dir, nazev), png);
+  if (slide.typ === "3d") await renumberSequence(id, slide.slozka);
   await touchDisplay(id);
   return { ok: true, url: slideFileUrl(id, slide.slozka, nazev) };
 }
@@ -384,6 +523,8 @@ export async function deleteImage(id: string, n: number, filename: string): Prom
   } catch {
     return false;
   }
+  // Po vyjmutí snímku ze sekvence srovnáme čísla zpět na souvislou řadu.
+  if (slide.typ === "3d") await renumberSequence(id, slide.slozka);
   await touchDisplay(id);
   return true;
 }
@@ -432,7 +573,7 @@ export async function setMapa(
   return { ok: true };
 }
 
-// --- Video (jedno MP4 ve složce _vid) ---
+// --- Video (jedno MP4 ve složce _vid, volitelně i na info panelu) ---
 
 function sanitizeFilename(name: string): string {
   const base = path
@@ -448,8 +589,8 @@ export async function saveVideo(
   data: Buffer,
 ): Promise<{ ok: boolean; url?: string; chyba?: string }> {
   const slide = await findSlide(id, n);
-  if (!slide || slide.typ !== "vid") {
-    return { ok: false, chyba: "Video patří jen na video slide." };
+  if (!slide || (slide.typ !== "vid" && slide.typ !== "info")) {
+    return { ok: false, chyba: "Video patří jen na video slide nebo info panel." };
   }
   const dir = slideDirPath(id, slide.slozka);
   // Jedno video na slide: starší mp4 odstraníme.
@@ -490,7 +631,8 @@ async function renumberSlides(id: string, ordered: SlideDirInfo[]): Promise<void
   const dir = csDir(id);
   const tmp: { from: string; to: string }[] = [];
   ordered.forEach((s, i) => {
-    tmp.push({ from: s.slozka, to: `${i + 1}_${s.typ}` });
+    // Suffix se zachová takový, jaký je na disku (kvůli variantě _mod).
+    tmp.push({ from: s.slozka, to: `${i + 1}_${s.suffix}` });
   });
   const changing = tmp.filter((t) => t.from !== t.to);
   if (changing.length === 0) return;

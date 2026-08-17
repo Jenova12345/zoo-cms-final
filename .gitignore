@@ -11,3 +11,4 @@ data/audit.jsonl
 # artefakty s tajemstvím — do gitu nepatří.
 data/users.json
 data/session.key
+podklady/**/*.zip

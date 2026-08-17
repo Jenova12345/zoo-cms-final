@@ -8,7 +8,10 @@ export interface DisplaySummary {
 }
 
 // Typ slidu = suffix názvu složky na disku (<n>_<typ>), pořadí = číselný prefix.
-export type SlideTyp = "info" | "vid" | "gal" | "ai";
+// Finální struktura od Michala má pevných pět typů. Pozor: "gal" je
+// ZAJÍMAVOST (dlouhý text + jedna fotka), ne galerie — suffix zůstal kvůli
+// Unity. Typ "3d" má na disku suffix _3d nebo _mod, server čte obojí.
+export type SlideTyp = "info" | "ai" | "3d" | "vid" | "gal";
 
 export interface DisplayMeta {
   druh: string;
@@ -24,10 +27,12 @@ export interface DisplayMeta {
 export interface SlideContent {
   n: number; // číselný prefix složky slidu
   typ: SlideTyp;
+  slozka: string; // název složky na disku (u 3D modelu i varianta <n>_mod)
   pole: Record<string, string>; // jen info: obsah text.txt ("Klic: Hodnota")
-  obrazky: string[]; // URL fotek (info: hlavní fotky, gal: galerie)
+  text: string; // jen gal (zajímavost): dlouhý odstavec z text.txt
+  obrazky: string[]; // URL fotek (info: fotky; gal: jedna; 3d: sekvence snímků)
   mapa: string | null; // jen info: URL mapa.png
-  video: string | null; // jen vid: URL mp4
+  video: string | null; // vid: video slidu; info: volitelné video
 }
 
 export interface DisplayDetail {
@@ -102,26 +107,86 @@ export const SEKCE = [
 ];
 
 // Pole info panelu: klíč přesně tak, jak se zapisuje do text.txt.
+//
+// `hint` je nápověda pro kurátora pod polem — Michalovo Unity má pevné
+// rozvržení a dlouhý text se na tabletu ořízne, proto u polí s limitem
+// hlásíme doporučenou délku (`limitZnaku`). Limit je jen doporučení: nikdy
+// neblokuje uložení, jen se u počítadla rozsvítí oranžově.
 export interface InfoPoleDef {
   klic: string;
   label: string;
   povinne: boolean;
+  hint: string;
+  limitZnaku?: number;
 }
 
+// Metadata druhu se na tablet vejdou jen heslovitě (jeden až dva krátké řádky
+// v mřížce vedle fotky), proto stejný limit u všech.
+const METADATA_LIMIT = 60;
+const METADATA_HINT = "Pište heslovitě, ne větu (např. 3 až 4 cm).";
+
 export const INFO_POLE: InfoPoleDef[] = [
-  { klic: "Sekce", label: "Sekce", povinne: true },
-  { klic: "Nazev", label: "Název", povinne: true },
-  { klic: "Latinsky", label: "Latinský název", povinne: false },
-  { klic: "Strava", label: "Strava", povinne: false },
-  { klic: "Velikost", label: "Velikost", povinne: false },
-  { klic: "DobaLihnuti", label: "Doba líhnutí", povinne: false },
-  { klic: "Ohrozeni", label: "Ohrožení", povinne: false },
-  { klic: "DelkaZivota", label: "Délka života", povinne: false },
+  {
+    klic: "Sekce",
+    label: "Sekce",
+    povinne: true,
+    hint: "Vyberte sekci, určuje barvu na tabletu.",
+  },
+  {
+    klic: "Nazev",
+    label: "Název",
+    povinne: true,
+    hint: "Krátký název, vejde se na 1 až 2 řádky.",
+    limitZnaku: 40,
+  },
+  {
+    klic: "Latinsky",
+    label: "Latinský název",
+    povinne: false,
+    hint: "Latinský název, systém ho upraví do správného tvaru.",
+    limitZnaku: 40,
+  },
+  { klic: "Strava", label: "Strava", povinne: false, hint: METADATA_HINT, limitZnaku: METADATA_LIMIT },
+  { klic: "Velikost", label: "Velikost", povinne: false, hint: METADATA_HINT, limitZnaku: METADATA_LIMIT },
+  {
+    klic: "DobaLihnuti",
+    label: "Doba líhnutí",
+    povinne: false,
+    hint: METADATA_HINT,
+    limitZnaku: METADATA_LIMIT,
+  },
+  { klic: "Ohrozeni", label: "Ohrožení", povinne: false, hint: METADATA_HINT, limitZnaku: METADATA_LIMIT },
+  {
+    klic: "DelkaZivota",
+    label: "Délka života",
+    povinne: false,
+    hint: METADATA_HINT,
+    limitZnaku: METADATA_LIMIT,
+  },
 ];
 
+// Doporučená délka textu zajímavosti (slide _gal). Delší text se na tabletu
+// ořízne — pole neroluje.
+export const ZAJIMAVOST_LIMIT_SLOV = 200;
+
+// České názvy typů podle finální struktury (stejné popisky jako tlačítka na
+// zařízení). Pořadí = pořadí v nabídce "Přidat slide".
+export const SLIDE_TYPY: SlideTyp[] = ["info", "ai", "3d", "vid", "gal"];
+
 export const SLIDE_TYP_LABEL: Record<SlideTyp, string> = {
-  info: "Info panel",
+  info: "Infopanel",
+  ai: "AI otázky",
+  "3d": "3D model",
   vid: "Video",
-  gal: "Galerie",
-  ai: "AI slide",
+  gal: "Zajímavost",
+};
+
+// Krátké vysvětlení pro kurátora, co který typ slidu na tabletu dělá
+// (nabídka „Přidat slide").
+export const SLIDE_TYP_POPIS: Record<SlideTyp, string> = {
+  info: "Základní info o druhu: název, strava, velikost a fotky.",
+  ai: "Chat s AI průvodcem. Nic se sem nevyplňuje.",
+  "3d": "Otočení modelu ze sekvence fotek.",
+  vid: "Velké video na celou obrazovku.",
+  gal: "Delší text o druhu s jednou fotkou.",
 };

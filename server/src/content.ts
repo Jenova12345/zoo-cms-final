@@ -1,12 +1,14 @@
 // Reálný český obsah pro displeje 1-3 v novém formátu pro Unity:
 // 1_info (pole do text.txt), 2_vid (prázdné, video nahraje kurátor),
-// 3_gal (placeholder fotky), 4_ai (prázdná složka) a kb.md v kořeni.
+// 3_gal (zajímavost: text.txt + jedna fotka), 4_ai (prázdná složka)
+// a kb.md v kořeni.
 
 export interface SeedDisplay {
   druh: string;
   barva: string; // pozadí PNG placeholderů
   celed: string; // taxonomická čeleď -> meta.section
   pole: Record<string, string>; // info panel: řádky "Klic: Hodnota" do text.txt
+  zajimavost: string; // slide _gal: dlouhý odstavec do "Popis: …"
   kb: string; // znalostní báze kb.md v kořeni displeje
 }
 
@@ -25,6 +27,8 @@ export const SEED_DISPLAYS: Record<number, SeedDisplay> = {
       Ohrozeni: "kriticky ohrožený",
       DelkaZivota: "10 až 15 let",
     },
+    zajimavost:
+      "Axolotl má mimořádnou schopnost regenerace: dokáže obnovit ztracené končetiny, ocas, části srdce i míchy bez vzniku jizev. Jev, kdy zůstává celý život v larvální formě i s vnějšími keříčkovitými žábrami, se nazývá neotenie. V přírodě dnes přežívají poslední populace jen v kanálech Xochimilca poblíž hlavního města Mexika.",
     kb: `# Znalostní báze: Axolotl mexický
 
 Tato sekce slouží jako podklad pro AI průvodce u displeje. Obsahuje fakta, na která se návštěvníci nejčastěji ptají.
@@ -70,6 +74,8 @@ Přátelský, stručný, vhodný pro děti i dospělé. Bez latinských termín�
       Ohrozeni: "zvláště chráněný druh",
       DelkaZivota: "přes 20 let",
     },
+    zajimavost:
+      "Mlok skvrnitý nerodí vajíčka, ale rovnou živé larvy, které samice klade do chladné tekoucí vody. Žlutočerné zbarvení je u každého jedince trochu jiné, takže funguje jako otisk prstu a podle kresby se dá poznat konkrétní zvíře. Výrazné barvy nejsou pro ozdobu: varují predátory, že kůže vylučuje jedovatý sekret.",
     kb: `# Znalostní báze: Mlok skvrnitý
 
 Podklad pro AI průvodce u displeje.
@@ -115,6 +121,8 @@ Přátelský a poučný, zdůraznit ochranu druhu a jeho biotopu.
       Ohrozeni: "zvláště chráněný druh",
       DelkaZivota: "až 15 let",
     },
+    zajimavost:
+      "Samci rosničky mají velký hrdelní rezonátor a jejich hlasité sborové kvákání je slyšet do daleka. Lidé je dříve chovali ve sklenici jako živé barometry, protože před změnou počasí volaly víc. Přísavné terčíky na prstech jí dovolí šplhat po hladkých listech i po skle.",
     kb: `# Znalostní báze: Rosnička zelená
 
 Podklad pro AI průvodce u displeje.

@@ -189,15 +189,19 @@ Vše je pod `DATA_ROOT` (výchozí `<repo>/data`):
       meta.json                 metadata displeje
       kb.md                     znalostní báze pro chatbota (NENÍ slide)
       cs/
-        1_info/                 slide typu info
+        1_info/                 Infopanel
           text.txt              pole "Klic: Hodnota"
           mapa.png              volitelná mapa výskytu (přesně tento název)
           foto-*.png            ostatní fotky info panelu
-        2_vid/
+          <nazev>.mp4           volitelné video (řadí se před fotky)
+        2_ai/                   prázdná složka = AI otázky
+        3_3d/                   3D model (i varianta 3_mod)
+          001.png, 002.png, …   sekvence snímků, číslovaná od 001
+        4_vid/
           <nazev>.mp4           jedno video
-        3_gal/
-          *.png                 fotky galerie
-        4_ai/                   prázdná složka = AI slide
+        5_gal/                  Zajímavost (NE galerie)
+          text.txt              "Popis: <dlouhý odstavec>"
+          foto-*.png            jedna fotka (na zařízení vpravo)
   audit.jsonl                   append-only audit log
   users.json                    účty kurátorů (bcrypt hashe), práva 0600
   session.key                   klíč pro podpis session cookie, práva 0600
@@ -260,9 +264,10 @@ DelkaZivota: 10 až 15 let
   "posledniZmena": "2026-07-08T09:11:15.267Z",
   "slidy": [
     { "slozka": "1_info", "typ": "info" },
-    { "slozka": "2_vid",  "typ": "vid"  },
-    { "slozka": "3_gal",  "typ": "gal"  },
-    { "slozka": "4_ai",   "typ": "ai"   }
+    { "slozka": "2_ai",   "typ": "ai"   },
+    { "slozka": "3_3d",   "typ": "3d"   },
+    { "slozka": "4_vid",  "typ": "vid"  },
+    { "slozka": "5_gal",  "typ": "gal"  }
   ],
   "name": "Axolotl mexický",
   "latin_name": "Ambystoma mexicanum",
@@ -285,6 +290,35 @@ DelkaZivota: 10 až 15 let
 Displej bez čitelného `meta.json` se v seznamu `GET /api/displays` vůbec
 neobjeví — soubor je tedy povinný.
 
+### `text.txt` — zajímavost (slide `_gal`)
+
+Jeden dlouhý odstavec o druhu, na zařízení vlevo vedle fotky:
+
+```
+Popis: Axolotl má mimořádnou schopnost regenerace: dokáže obnovit ztracené
+končetiny, ocas, části srdce i míchy bez vzniku jizev…
+```
+
+- **Zapisuje se vždy klíč `Popis:`**, při čtení se bere i `Text:` (Michal
+  používá obojí). Text může na disku pokračovat na dalších řádcích — server
+  bere všechno za klíčem.
+- Soubor **bez klíče** (ruční zásah) se přečte celý jako holý odstavec, ať se
+  obsah neztratí.
+- Prázdný text = prázdný soubor.
+- Píše se přes `PUT /api/displays/:id/slides/:n/text` (tělo `{text}`).
+- Text se na displeji **neroluje** — doporučený limit je 150–200 slov, editor
+  průběžně počítá slova.
+
+### Sekvence 3D modelu (slide `_3d`)
+
+- Snímky se ukládají jako **`001.png`, `002.png`, …** (tři a víc číslic),
+  Unity je řadí podle čísla.
+- Pořadí = pořadí nahrání. Když se nahraje víc souborů najednou, seřadí se
+  podle názvu (snímky z renderu bývají `frame_001…`).
+- Po smazání snímku se zbytek **přečísluje** na souvislou řadu (dvoufázově,
+  přes `.tmp-*`).
+- Soubor s jiným názvem než `NNN.png` se do sekvence nepočítá a ignoruje se.
+
 ### `kb.md` — znalostní báze
 
 Markdown v **kořeni složky displeje**, ne ve slidu. Čte ho chatbot, CMS ho jen
@@ -304,11 +338,15 @@ nepřepisuje automaticky.
   přejmenuje; předchozí `mapa.png` se vrátí mezi běžné fotky pod novým názvem.
   Mapa je jen na slidu typu `info`.
 - Fotky se čtou jen s příponou `.png`, řazené abecedně podle názvu souboru.
+- **Zajímavost (`_gal`) má právě jednu fotku** — nová nahraná předchozí smaže.
+- **3D model (`_3d`)** má místo unikátních názvů číslovanou sekvenci, viz výš.
 
 ### Video
 
 - Přijímá se **jen MP4** (kontroluje se MIME `video/mp4` nebo přípona `.mp4`),
   konverze se nedělá.
+- Video patří na slide **`_vid`** a nově i volitelně na **`_info`** (Michal ho
+  na zařízení řadí na začátek galerie fotek info panelu).
 - Na slidu je vždy **jedno** video — starší `.mp4` se před zápisem smažou.
 - Název souboru se očistí (ponechá písmena včetně české diakritiky, číslice,
   tečku, pomlčku, podtržítko a mezeru) a přípona se vynutí na `.mp4`.
@@ -327,9 +365,23 @@ strukturu bez ručního zásahu. Kontrakt je:
 cs/<pořadí>_<typ>/
 ```
 
-- **Typ slidu** = suffix názvu složky: `info`, `vid`, `gal`, `ai`.
+- **Typ slidu** = suffix názvu složky. Finální struktura od Michala má pevných
+  **pět typů**:
+
+  | Suffix | Typ v CMS | Obsah složky |
+  |---|---|---|
+  | `_info` | Infopanel | `text.txt` (Klic: Hodnota), fotky `.png`, volitelně `mapa.png` a jedno `.mp4` |
+  | `_ai` | AI otázky | prázdná složka |
+  | `_3d` (i `_mod`) | 3D model | sekvence `001.png`, `002.png`, … |
+  | `_vid` | Video | jedno `.mp4` |
+  | `_gal` | Zajímavost | `text.txt` (`Popis: …`) + jedna `.png` |
+
 - **Pořadí** = číselný prefix. Složka musí odpovídat regulárnímu výrazu
-  `^(\d+)_(info|vid|gal|ai)$`, jinak ji server ignoruje.
+  `^(\d+)_(info|vid|gal|ai|3d|mod)$`, jinak ji server ignoruje.
+- **`_gal` je Zajímavost, ne galerie fotek.** Suffix zůstal kvůli Unity, obsah
+  se ale změnil na finální strukturu: dlouhý text vlevo, jedna fotka vpravo.
+- **`_3d` i `_mod`** znamenají 3D model. Nově zakládaný slide dostane `_3d`;
+  existující `_mod` se zachová i při změně pořadí (nepřejmenovává se).
 - **AI slide** je prázdná složka `<n>_ai` — její existence říká tabletu, že se
   na tomto místě má zobrazit AI průvodce. Žádný obsah nemá.
 - **`kb.md` a `meta.json`** jsou v kořeni displeje, mimo `cs/`.
@@ -370,6 +422,7 @@ Zaznamenávané akce (řetězce, na které se váže i obarvení v UI):
 | `přihlášení`, `odhlášení` | `systém, IP <adresa>` (u odhlášení jen `systém`) |
 | `neúspěšné přihlášení` | `systém, IP <adresa>`, `uzivatel` = zadané jméno (ořezáno na 64 znaků) |
 | `úprava info panelu` | `displej <id>, slide <n>` |
+| `úprava zajímavosti` | `displej <id>, slide <n>` |
 | `úprava znalostní báze` | `displej <id>` |
 | `upload`, `smazání fotky` | `displej <id>, slide <n>: <soubor>` |
 | `označení mapy výskytu`, `zrušení mapy výskytu` | `displej <id>, slide <n>` |
@@ -521,12 +574,13 @@ automaticky, dokud ho někdo vědomě nepřidá do seznamu.
 | GET | `/api/displays` | seznam displejů (id, druh, `latin_name`, stav, poslední změna, náhledová fotka) |
 | PUT | `/api/displays/:id/slides/:n` | uložení polí info panelu — tělo `{pole, section}`, vrací `{ok, latin, latinCorrected}` |
 | PUT | `/api/displays/:id/kb` | zápis `kb.md` — tělo `{text}` |
-| POST | `/api/displays/:id/slides/:n/image` | multipart upload fotky (konverze na PNG) |
+| PUT | `/api/displays/:id/slides/:n/text` | text zajímavosti (`_gal`) — tělo `{text}`, na disk jako `Popis: …` |
+| POST | `/api/displays/:id/slides/:n/image` | multipart upload fotky (konverze na PNG); `_gal` nahradí jedinou fotku, `_3d` přidá snímek na konec sekvence |
 | DELETE | `/api/displays/:id/slides/:n/images/:nazev` | smazání fotky |
 | PUT | `/api/displays/:id/slides/:n/images/mapa` | označení mapy — tělo `{nazev}`, `null` značení zruší |
-| POST | `/api/displays/:id/slides/:n/video` | multipart upload MP4 |
+| POST | `/api/displays/:id/slides/:n/video` | multipart upload MP4 (slide `_vid` i `_info`) |
 | DELETE | `/api/displays/:id/slides/:n/video` | smazání videa |
-| POST | `/api/displays/:id/slides` | přidání slidu — tělo `{typ}` (`info`/`vid`/`gal`/`ai`) |
+| POST | `/api/displays/:id/slides` | přidání slidu — tělo `{typ}` (`info`/`ai`/`3d`/`vid`/`gal`) |
 | DELETE | `/api/displays/:id/slides/:n` | odebrání slidu |
 | PUT | `/api/displays/:id/slides/reorder` | změna pořadí — tělo `{poradi: [n, …]}` |
 | POST | `/api/displays/:id/refresh` | odeslání na displej |
@@ -556,7 +610,7 @@ Spouštějí se z kořene repozitáře a **respektují `DATA_ROOT`**.
 
 | Příkaz | Co dělá |
 |---|---|
-| `npm run seed` | **Destruktivní.** Smaže a znovu vygeneruje `data/displeje/1..37`. Displeje 1–3 dostanou obsah (`1_info`, `2_vid`, `3_gal`, `4_ai`, `kb.md`), 4–37 jsou `Nepřiřazeno` bez slidů. Displeje s číslem dělitelným 11 dostanou `stav: "offline"`. Zakládá výchozí účet, pokud žádný neexistuje. |
+| `npm run seed` | **Destruktivní.** Smaže a znovu vygeneruje `data/displeje/1..37`. Displeje 1–3 dostanou obsah (`1_info`, `2_vid`, `3_gal` se zajímavostí, `4_ai`, `kb.md`), 4–37 jsou `Nepřiřazeno` bez slidů. Displeje s číslem dělitelným 11 dostanou `stav: "offline"`. Zakládá výchozí účet, pokud žádný neexistuje. |
 | `npm run migrate` | Jednorázová migrace staré struktury (`cs/slide-1..6`, `text.md`, `kb.md` uvnitř slidu) na formát pro Unity. Zachová média (obrázky se převedou na PNG, první MP4 jde do `2_vid`), texty starých slidů připojí do `kb.md`. **Idempotentní** — displej bez složek `slide-*` přeskočí. |
 | `npm run backfill --workspace server` | Doplní do existujících `meta.json` identifikaci pro chatbota (`name`, `druh`, `latin_name`, `category`) z `text.txt`. Idempotentní, médií ani textů se nedotýká. `section` (čeleď) nezná — tu doplní kurátor v UI. V kořenovém `package.json` zkratka není. |
 | `npm run useradd -- …` / `npm run userlist` | Správa účtů, viz [kapitola 4](#4-účty-a-přihlašování). |

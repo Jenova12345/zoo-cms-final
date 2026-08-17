@@ -16,7 +16,7 @@ a podklady pro AI průvodce (chatbota).
 3. [Jak je displej poskládaný](#3-jak-je-displej-poskládaný)
 4. [Info panel — základní údaje o druhu](#4-info-panel--základní-údaje-o-druhu)
 5. [Fotky a mapa výskytu](#5-fotky-a-mapa-výskytu)
-6. [Galerie fotek](#6-galerie-fotek)
+6. [Zajímavost a 3D model](#6-zajímavost-a-3d-model)
 7. [Video](#7-video)
 8. [Přidání, odebrání a přesun slidu](#8-přidání-odebrání-a-přesun-slidu)
 9. [Znalostní báze pro chatbota (kb.md)](#9-znalostní-báze-pro-chatbota-kbmd)
@@ -82,21 +82,29 @@ nebo `12` a seznam se zúží.
 ## 3. Jak je displej poskládaný
 
 Obsah jednoho displeje je řada **slidů**, které se na tabletu u expozice
-přehrávají za sebou dokola. Slidy jsou čtyř typů:
+přehrávají za sebou dokola. Slidy jsou **pěti typů** (stejných jako tlačítka
+dole na tabletu):
 
 | Typ slidu | Co na něm je |
 |---|---|
-| **Info panel** | Vyplněné údaje o druhu (sekce, název, latinsky, strava…) a fotky včetně mapy výskytu. |
+| **Infopanel** | Vyplněné údaje o druhu (sekce, název, latinsky, strava…), fotky včetně mapy výskytu a nepovinně jedno video. |
+| **AI otázky** | Místo, kde se návštěvník může zeptat AI průvodce. Nic se do něj nevyplňuje. |
+| **3D model** | Sekvence snímků, kterými se model na tabletu otáčí. |
 | **Video** | Jedno video ve formátu MP4. |
-| **Galerie** | Několik fotek za sebou. |
-| **AI slide** | Místo, kde se návštěvník může zeptat AI průvodce. Nic se do něj nevyplňuje. |
+| **Zajímavost** | Delší text o druhu a k němu jedna fotka. |
 
 Slidy vidíte v detailu displeje jako **záložky** pod hlavičkou, očíslované
 zleva doprava v pořadí, ve kterém se budou přehrávat:
 
 ```
-1 · Info panel     2 · Video     3 · Galerie     4 · AI slide     + Přidat slide          ✦ Znalostní báze (AI)
+1 · Infopanel   2 · AI otázky   3 · 3D model   4 · Video   5 · Zajímavost   + Přidat slide      ✦ Znalostní báze (AI)
 ```
+
+**Displej, který ještě nemá obsah** (v seznamu je jako „Nepřiřazeno") žádné
+záložky slidů nemá. Místo nich systém napíše „Tento displej zatím nemá obsah"
+a nabídne tlačítko **Přidat Infopanel** — tím je nejlepší začít. Když displej
+slidy má, ale ještě nemá vyplněný název druhu, upozorní na to oranžový pruh
+pod hlavičkou.
 
 Úplně vpravo je oranžová záložka **Znalostní báze (AI)**. Ta **není slide** —
 je to text, ze kterého odpovídá chatbot. Platí pro celý displej, ne pro jeden
@@ -109,7 +117,7 @@ ostatní jazyky jsou označené „brzy" a nejdou vybrat.
 
 ## 4. Info panel — základní údaje o druhu
 
-Otevřete záložku slidu **Info panel**. Vlevo je formulář s údaji o druhu.
+Otevřete záložku slidu **Infopanel**. Vlevo je formulář s údaji o druhu.
 
 ### Povinná pole
 
@@ -122,9 +130,26 @@ Bez těchto dvou se slide neuloží:
 - **Název** — český název druhu, například `Axolotl mexický`. Tenhle název se
   zároveň propíše do seznamu displejů, takže dlaždice přestane být „Nepřiřazeno".
 
-Povinná pole poznáte podle **červené hvězdičky** za jménem pole. Když je
-necháte prázdná a kliknete na uložení, orámují se červeně a nahoře vyskočí
-hláška „Vyplňte prosím povinná pole: Sekce a Název."
+Povinná pole poznáte podle červeného štítku **POVINNÉ** za jménem pole. Když
+je necháte prázdná a kliknete na uložení:
+
+- pole se orámuje červeně a pod ním se objeví „Tohle pole je potřeba vyplnit.",
+- nad tlačítkem uložení se vypíše, co přesně chybí („Ještě chybí vyplnit:
+  Sekce, Název."),
+- kurzor sám skočí do prvního nevyplněného pole.
+
+Nic se přitom neztratí — rozepsaný obsah zůstává, jen se neuloží, dokud povinná
+pole nevyplníte.
+
+### Nápovědy a počítadla pod poli
+
+Pod každým polem je **šedá nápověda**, co do něj patří. U polí s limitem je
+vpravo navíc **počítadlo** (např. „44 / 60 znaků"). Když doporučenou délku
+překročíte, počítadlo zoranžoví a připíše „na tabletu se může zkrátit".
+
+Je to **doporučení, ne zákaz** — uložit jde i delší text. Displej v pavilonu má
+ale pevné rozvržení, takže co se nevejde, tablet ořízne. Vždycky se vyplatí
+kouknout na **Náhled tabletu**, jak text ve skutečnosti vypadá.
 
 ### Volitelná pole
 
@@ -189,6 +214,12 @@ zobrazí s popiskem „Mapa výskytu".
 Mapa může být na info panelu **jen jedna**. Když označíte jinou fotku, ta
 původní se automaticky vrátí mezi běžné fotky — nic se nesmaže.
 
+### Video na info panelu (nepovinné)
+
+Pod fotkami je ještě blok **Video info panelu**. Sem se dá nahrát jedno MP4
+přímo k info panelu — na tabletu se zařadí **před fotky**. Není povinné a se
+samostatným slidem **Video** nemá nic společného: klidně můžete mít obojí.
+
 **Zrušení označení:** najeďte na fotku s oranžovým rámečkem a klikněte na
 **křížek**. Z mapy se stane běžná fotka.
 
@@ -199,22 +230,45 @@ a nedá se vrátit — systém se na nic neptá.
 
 ---
 
-## 6. Galerie fotek
+## 6. Zajímavost a 3D model
 
-Slide typu **Galerie** je jednodušší: jen fotky, žádná pole a žádná mapa.
+### Zajímavost
 
-1. Otevřete záložku slidu **Galerie**.
-2. Fotky přetáhněte do rámečku nebo na něj klikněte a vyberte je.
-3. Smazání: najeďte na fotku a klikněte na **ikonku koše**.
+Slide **Zajímavost** je delší povídání o druhu a k němu jedna fotka. Na tabletu
+je text vlevo a fotka vpravo.
 
-Fotky se stejně jako u info panelu ukládají hned po nahrání. Tlačítkem
-**Odeslat na displej** dole dáte displeji vědět, že si má obsah načíst znovu.
+1. Otevřete záložku slidu **Zajímavost**.
+2. Vlevo do velkého pole napište text. Pod polem se průběžně počítají slova —
+   text se na displeji **neroluje**, takže se držte do **150–200 slov**.
+3. Vpravo nahrajte **jednu** fotku (přetažením nebo kliknutím do rámečku).
+   Když nahrajete další, ta původní se nahradí.
+4. Klikněte na **Uložit a odeslat na displej**. Fotka se ukládá hned po
+   nahrání, text až tímto tlačítkem.
+
+### 3D model
+
+Slide **3D model** není soubor modelu, ale **sekvence obrázků** — snímky, jak
+se model postupně otáčí. Tablet mezi nimi přepíná, takže to vypadá jako
+otáčení.
+
+1. Otevřete záložku slidu **3D model**.
+2. Přetáhněte do rámečku **všechny snímky najednou**. Seřadí se podle názvu
+   souboru, takže snímky z renderu (`frame_001.png`, `frame_002.png`…) přijdou
+   ve správném pořadí.
+3. Systém je uloží pod názvy `001.png`, `002.png`… Nad každým snímkem vidíte
+   jeho pořadové číslo.
+4. Smazání: najeďte na snímek a klikněte na **ikonku koše**. Zbylé snímky se
+   automaticky přečíslují, v sekvenci nezůstane díra.
+
+V náhledu tabletu se sekvence sama nepřehrává — snímky projdete **šipkami** po
+stranách, dole vpravo je vidět, kolikátý snímek se dívá.
 
 ---
 
 ## 7. Video
 
-Slide typu **Video** nese **jedno** video.
+Slide typu **Video** nese **jedno** video. (Jedno video se dá nahrát i přímo
+k info panelu, viz [kapitola 5](#5-fotky-a-mapa-výskytu) — postup je stejný.)
 
 1. Otevřete záložku slidu **Video**.
 2. Klikněte na rámeček **Nahrát video (MP4)** a vyberte soubor z počítače.
@@ -245,25 +299,37 @@ Slide 2 z 4 · Video · složka 2_vid                              ‹   ›   �
 ### Přidání slidu
 
 1. V řadě záložek klikněte na **+ Přidat slide**.
-2. Vyberte typ: **Info panel**, **Video**, **Galerie** nebo **AI slide**.
+2. Vyberte typ: **Infopanel**, **AI otázky**, **3D model**, **Video** nebo
+   **Zajímavost**.
+   U každého typu je krátký popis, co na tabletu dělá.
 3. Nový slide se přidá **na konec** řady a rovnou se otevře. Odtud ho můžete
-   šipkami posunout, kam potřebujete.
+   přetáhnout nebo posunout šipkami, kam potřebujete.
 
 ### Přesun slidu
 
-Šipkami **‹** a **›** vpravo v proužku posunete otevřený slide o jedno místo
-doleva nebo doprava. Šipka je nedostupná, když už je slide první, respektive
-poslední. Číslování slidů se srovná samo — po přesunu zůstáváte na tom samém
-slidu, jen s novým číslem.
+Dvě možnosti, obě dělají totéž:
+
+- **Přetažením:** chytněte záložku slidu myší a táhněte ji na jiné místo v řadě.
+  Svislá zelená čárka ukazuje, kam se slide pustí; tažená záložka je zesvětlená.
+  Když tažení zrušíte (klávesa **Esc** nebo puštění mimo řadu), pořadí zůstane.
+- **Šipkami ‹ a ›** vpravo v proužku posunete otevřený slide o jedno místo
+  doleva nebo doprava. Šipka je nedostupná, když je slide první, respektive
+  poslední.
+
+Číslování slidů se srovná samo — po přesunu zůstáváte na tom samém slidu, jen
+s novým číslem.
 
 ### Odebrání slidu
 
-Klikněte na **ikonku koše** v proužku. Systém se zeptá:
+Klikněte na **ikonku koše** v proužku. Objeví se potvrzovací okno:
 
-> Opravdu odebrat slide 2 (Video)? Smaže se i jeho složka s obsahem.
+> **Opravdu smazat?** Tato akce je nevratná a smaže obsah slidu z disku —
+> slide 2 (Video), složka 2_vid. Fotky, video ani text z tohoto slidu už
+> nepůjde vrátit.
 
-Po potvrzení se slide smaže **i se všemi fotkami a videem**, které na něm byly.
-**Nejde to vrátit zpět.** Zbylé slidy se automaticky přečíslují, aby řada
+Zrušíte ho tlačítkem **Zrušit** nebo klávesou **Esc** — omylem se tedy nic
+nesmaže. Po kliknutí na **Smazat slide** se slide smaže **i se všemi fotkami
+a videem**, které na něm byly. Zbylé slidy se automaticky přečíslují, aby řada
 nikde nechyběla.
 
 ---
@@ -353,8 +419,10 @@ v téže hlášce.
 
 ### Tlačítko „Odeslat na displej"
 
-U galerie a videa je samostatné tlačítko **Odeslat na displej** — fotky a
-videa už uložená jsou, tímhle jen dáte displeji vědět, aby se obnovil.
+U 3D modelu a videa je samostatné tlačítko **Odeslat na displej** — snímky
+a videa už uložené jsou, tímhle jen dáte displeji vědět, aby se obnovil.
+U zajímavosti tlačítko **Uložit a odeslat na displej** uloží text a rovnou
+displej obnoví.
 
 Každé odeslání se zapíše do audit logu.
 
@@ -426,7 +494,7 @@ možná půjde obsah obnovit ze zálohy.
 
 **Text ze znalostní báze se neobjevil na tabletu.**
 A neobjeví. Znalostní báze je podklad pro **chatbota**, ne text slidu. Co má
-vidět návštěvník na obrazovce, patří do info panelu, galerie nebo videa.
+vidět návštěvník na obrazovce, patří do info panelu, zajímavosti nebo videa.
 
 **Přehled provozu píše „Analytika chatbota zatím není připojená".**
 Čísla o dotazech návštěvníků dodává chatbot. Když jeho služba neběží (nebo ještě

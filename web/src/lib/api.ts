@@ -85,6 +85,15 @@ export const api = {
     );
   },
 
+  // Text zajímavosti (slide _gal). Na disku vznikne text.txt s "Popis: …".
+  async saveSlideText(id: string, n: number, text: string): Promise<void> {
+    await request(`/api/displays/${id}/slides/${n}/text`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+    });
+  },
+
   // Výchozí šablona znalostní báze (kb.md) pro nový/prázdný druh.
   async kbTemplate(): Promise<string> {
     const d = await request<{ text: string }>("/api/kb-template");

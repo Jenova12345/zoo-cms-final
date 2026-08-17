@@ -98,14 +98,19 @@ export default function Tablet() {
     if (total && index >= total) setIndex(0);
   }, [total, index]);
 
-  const slideHasVideo = detail?.slides[index]?.typ === "vid" && !!detail?.slides[index]?.video;
+  // Slidy, které si čas drží samy: video (ať dohraje) a 3D sekvence (kurátor
+  // jí prochází šipkami, přeskočení uprostřed by mu to zbouralo).
+  const aktualni = detail?.slides[index];
+  const drziSlide =
+    (aktualni?.typ === "vid" && !!aktualni.video) ||
+    (aktualni?.typ === "3d" && aktualni.obrazky.length > 1);
 
-  // Auto-advance. U slidu s videem nepřepínáme, ať se video stihne přehrát.
+  // Auto-advance.
   useEffect(() => {
-    if (!total || paused || slideHasVideo) return;
+    if (!total || paused || drziSlide) return;
     const t = setInterval(next, AUTO_ADVANCE_MS);
     return () => clearInterval(t);
-  }, [total, paused, slideHasVideo, next, index]);
+  }, [total, paused, drziSlide, next, index]);
 
   // Ovládání šipkami z klávesnice.
   useEffect(() => {
@@ -241,12 +246,13 @@ export default function Tablet() {
 
 // --- Zařízení: společná kostra všech slidů podle Michalových předloh ---
 
-// Spodní lišta má na zařízení pevnou sadu tlačítek. Naše typy slidů se na ně
-// mapují takto; "3D model" v CMS protějšek nemá a je vždy neaktivní.
+// Spodní lišta má na zařízení pevnou sadu tlačítek. Po finální struktuře od
+// Michala má každý typ slidu své tlačítko, včetně 3D modelu.
 type Tlacitko = "domu" | "ai" | "3d" | "video" | "zajimavost";
 
 function tlacitkoProSlide(typ: SlideContent["typ"] | null): Tlacitko {
   if (typ === "ai") return "ai";
+  if (typ === "3d") return "3d";
   if (typ === "vid") return "video";
   if (typ === "gal") return "zajimavost";
   return "domu";
@@ -298,7 +304,9 @@ function Zarizeni({
       ) : slide.typ === "info" ? (
         <ObsahInfo slide={slide} onPrev={onPrev} onNext={onNext} />
       ) : slide.typ === "gal" ? (
-        <ObsahGalerie slide={slide} identita={id} />
+        <ObsahZajimavost slide={slide} identita={id} />
+      ) : slide.typ === "3d" ? (
+        <ObsahModel slide={slide} identita={id} />
       ) : slide.typ === "vid" ? (
         <ObsahVideo slide={slide} identita={id} onEnded={onEnded} />
       ) : (
@@ -372,10 +380,10 @@ function Hlavicka({
       >
         {nazev || " "}
       </div>
+      {/* Latinský název záměrně bez kurzívy: Rustica přišla jen v řezu Regular,
+          prohlížeč by italiku dopočítal a od zařízení by se náhled rozešel. */}
       {latinsky && (
-        <div style={{ fontSize: 18, fontStyle: "italic", color: "#fff", marginTop: 12 }}>
-          {latinsky}
-        </div>
+        <div style={{ fontSize: 18, color: "#fff", marginTop: 12 }}>{latinsky}</div>
       )}
       {cara && <div style={{ width: 238, height: 2, background: "#fff", marginTop: 18 }} />}
     </div>
@@ -399,9 +407,13 @@ function ObsahInfo({
     (d) => !["Sekce", "Nazev", "Latinsky"].includes(d.klic) && (slide.pole[d.klic] ?? "").trim(),
   );
 
+  // Volitelné video info panelu jde podle Michala na začátek galerie fotek.
   const fotky = useMemo<MediaItem[]>(
-    () => slide.obrazky.map((url) => ({ typ: "foto" as const, url })),
-    [slide.obrazky],
+    () => [
+      ...(slide.video ? [{ typ: "video" as const, url: slide.video }] : []),
+      ...slide.obrazky.map((url) => ({ typ: "foto" as const, url })),
+    ],
+    [slide.video, slide.obrazky],
   );
 
   return (
@@ -495,22 +507,102 @@ function ObsahInfo({
   );
 }
 
-// Galerie: fotka přes celou plochu, hlavička přes ni (jako předloha "Video – 1").
-function ObsahGalerie({ slide, identita }: { slide: SlideContent; identita: Identita }) {
-  const fotky = useMemo<MediaItem[]>(
-    () => slide.obrazky.map((url) => ({ typ: "foto" as const, url })),
-    [slide.obrazky],
-  );
-  if (fotky.length === 0) return <PrazdnyObsah />;
+// Zajímavost (_gal) podle předlohy "Text + schéma – 1.png": vlevo dlouhý text,
+// svislá bílá linka, vpravo jedna fotka. Pozice odměřené z předlohy
+// (linka x = 765 px, text končí na 700 px, obsah od y = 225 do 915 px).
+function ObsahZajimavost({ slide, identita }: { slide: SlideContent; identita: Identita }) {
+  const fotka = slide.obrazky[0] ?? null;
+  if (!slide.text.trim() && !fotka) return <PrazdnyObsah />;
+
   return (
-    <>
-      <div className="absolute inset-0">
-        <Carousel key={slide.n} items={fotky} alt="Fotka galerie" />
+    <div className="absolute inset-0">
+      {/* Hlavička smí být širší než odstavec (v předloze název přesahuje za
+          svislou linku), text pod ní končí před linkou. */}
+      <div className="absolute top-0" style={{ left: OKRAJ, width: 620 }}>
+        <Hlavicka {...identita} cara={false} />
+        {slide.text.trim() ? (
+          <div
+            style={{
+              width: 429,
+              fontSize: 19,
+              color: "#fff",
+              marginTop: 26,
+              lineHeight: 1.55,
+              whiteSpace: "pre-wrap",
+            }}
+          >
+            {slide.text}
+          </div>
+        ) : (
+          <div style={{ fontSize: 19, color: "#666", marginTop: 26 }}>Bez textu</div>
+        )}
       </div>
+
+      <div className="absolute" style={{ left: 540, top: 164, bottom: 135, width: 2, background: "#fff" }} />
+
+      <div className="absolute" style={{ left: 580, right: 40, top: 150, bottom: 135 }}>
+        {fotka ? (
+          <img
+            src={fotka}
+            alt="Fotka zajímavosti"
+            className="h-full w-full"
+            style={{ objectFit: "contain" }}
+          />
+        ) : (
+          <div className="h-full w-full grid place-items-center">
+            <span style={{ color: "#666", fontSize: 20 }}>Bez fotky</span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// 3D model (_3d) podle předlohy "3D model – 1.png": model uprostřed tmavé
+// plochy, hlavička vlevo nahoře. Sekvence snímků se v náhledu nepřehrává sama
+// (na zařízení s ní otáčí návštěvník) — kurátor jí prochází šipkami.
+function ObsahModel({ slide, identita }: { slide: SlideContent; identita: Identita }) {
+  const [snimek, setSnimek] = useState(0);
+  const pocet = slide.obrazky.length;
+  const aktualni = pocet ? slide.obrazky[Math.min(snimek, pocet - 1)] : null;
+
+  const krok = (smer: -1 | 1) => setSnimek((i) => (pocet ? (i + smer + pocet) % pocet : 0));
+
+  return (
+    <div className="absolute inset-0" style={{ background: "#2E2E2E" }}>
+      <div className="absolute" style={{ left: 380, right: 40, top: 130, bottom: 120 }}>
+        {aktualni ? (
+          <img src={aktualni} alt="3D model" className="h-full w-full" style={{ objectFit: "contain" }} />
+        ) : (
+          <div className="h-full w-full grid place-items-center text-center">
+            <div>
+              <img src={`${G}/ikona-3d.png`} alt="" style={{ width: 96, height: 96, margin: "0 auto", opacity: 0.5 }} />
+              <div style={{ color: "#9a9a9a", fontSize: 20, marginTop: 18 }}>
+                Sekvence snímků zatím není nahraná
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
       <div className="absolute top-0" style={{ left: OKRAJ, width: 620 }}>
         <Hlavicka {...identita} cara={false} />
       </div>
-    </>
+
+      {pocet > 1 && (
+        <>
+          <SipkaZarizeni smer="vlevo" onClick={() => krok(-1)} style={{ left: 336, top: 369 }} />
+          <SipkaZarizeni smer="vpravo" onClick={() => krok(1)} style={{ right: 22, top: 369 }} />
+          {/* Pomůcka CMS (na zařízení není): kolikátý snímek sekvence je vidět. */}
+          <div
+            className="absolute tnum"
+            style={{ right: 40, bottom: 104, color: "rgba(255,255,255,0.6)", fontSize: 15 }}
+          >
+            snímek {Math.min(snimek, pocet - 1) + 1} / {pocet}
+          </div>
+        </>
+      )}
+    </div>
   );
 }
 
@@ -641,9 +733,21 @@ function SipkaZarizeni({
   );
 }
 
-// Vlajky jazyků vlevo dole. V podkladech nebyly jako soubory, kreslíme je
-// jako SVG podle předlohy (CZ aktivní se žlutým kroužkem). Středy jsou pevně
+// Vlajky jazyků vlevo dole (CZ aktivní se žlutým kroužkem). Středy jsou pevně
 // na 87,5 / 152,5 / 217 px, jak je odměřeno z předlohy.
+//
+// Přednost mají soubory od Michala ve web/public/michal (vlajka-cz.png,
+// vlajka-pl.png, vlajka-en.png). Dokud tam nejsou, kreslí se záložní SVG podle
+// předlohy — náhled tak funguje i bez nich a po nakopírování souborů se přepne
+// sám, bez zásahu do kódu.
+const VLAJKA_SOUBOR: Record<KodJazyka, string> = {
+  cz: `${G}/vlajka-cz.png`,
+  pl: `${G}/vlajka-pl.png`,
+  en: `${G}/vlajka-en.png`,
+};
+
+type KodJazyka = "cz" | "pl" | "en";
+
 function Vlajky() {
   return (
     <>
@@ -659,12 +763,15 @@ function Vlajka({
   stred,
   aktivni = false,
 }: {
-  kod: "cz" | "pl" | "en";
+  kod: KodJazyka;
   stred: number;
   aktivni?: boolean;
 }) {
   const d = 40;
   const vnejsi = aktivni ? 57 : d;
+  // Soubor chybí (nebo se nedá načíst) → záložní SVG.
+  const [chybiSoubor, setChybiSoubor] = useState(false);
+
   return (
     <div
       className="absolute grid place-items-center rounded-full"
@@ -676,6 +783,14 @@ function Vlajka({
         border: aktivni ? `3px solid ${ZLUTA}` : undefined,
       }}
     >
+      {!chybiSoubor ? (
+        <img
+          src={VLAJKA_SOUBOR[kod]}
+          alt={kod.toUpperCase()}
+          onError={() => setChybiSoubor(true)}
+          style={{ width: d, height: d, borderRadius: "50%", objectFit: "cover" }}
+        />
+      ) : (
       <svg width={d} height={d} viewBox="0 0 60 60" aria-label={kod.toUpperCase()}>
         <defs>
           <clipPath id={`kruh-${kod}`}>
@@ -707,6 +822,7 @@ function Vlajka({
           )}
         </g>
       </svg>
+      )}
     </div>
   );
 }
@@ -773,18 +889,34 @@ function Carousel({ items, alt }: { items: MediaItem[]; alt: string }) {
   const [i, setI] = useState(0);
   const safe = Math.min(i, items.length - 1);
   const current = items[safe];
+  const dalsi = () => setI((x) => (items.length ? (x + 1) % items.length : 0));
 
   useEffect(() => {
     if (items.length <= 1) return;
+    // Video se nepřepíná časovačem, čeká se na jeho konec (onEnded).
+    if (items[Math.min(i, items.length - 1)]?.typ === "video") return;
     const t = setInterval(() => setI((x) => (x + 1) % items.length), MEDIA_ADVANCE_MS);
     return () => clearInterval(t);
-  }, [items.length, safe]);
+  }, [items, i]);
 
   if (!current) return null;
 
   return (
     <div className="relative h-full w-full">
-      <img src={current.url} alt={alt} className="h-full w-full object-cover" />
+      {current.typ === "video" ? (
+        <video
+          key={current.url}
+          src={current.url}
+          className="h-full w-full object-cover"
+          autoPlay
+          muted
+          playsInline
+          loop={items.length === 1}
+          onEnded={dalsi}
+        />
+      ) : (
+        <img src={current.url} alt={alt} className="h-full w-full object-cover" />
+      )}
       {/* Tečky fotek uvnitř slidu. Na zařízení se fotky střídají samy, tohle je
           drobná pomůcka navíc, ať kurátor doklikne na konkrétní fotku. */}
       {items.length > 1 && (

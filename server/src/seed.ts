@@ -3,7 +3,7 @@ import path from "node:path";
 import sharp from "sharp";
 import { DISPLAYS_DIR, DISPLAY_COUNT } from "./paths.js";
 import { SEED_DISPLAYS, DEFAULT_KB, placeholderSvg, type SeedDisplay } from "./content.js";
-import { serializeInfoText } from "./displays.js";
+import { serializeInfoText, serializeZajimavostText } from "./displays.js";
 import { canonicalizeLatin } from "./latin.js";
 import { VYCHOZI_HESLO, VYCHOZI_JMENO, zalozVychoziUcet } from "./users.js";
 import { writeFileAtomic } from "./atomic.js";
@@ -14,7 +14,7 @@ import { writeFileAtomic } from "./atomic.js";
 //   <id>/meta.json            doplněk (druh, stav, poslední změna)
 //   <id>/cs/1_info/text.txt   pole "Klic: Hodnota" + fotky .png + mapa.png
 //   <id>/cs/2_vid/            video slide (mp4 nahraje kurátor)
-//   <id>/cs/3_gal/*.png       galerie
+//   <id>/cs/3_gal/text.txt    zajímavost: "Popis: …" + jedna fotka
 //   <id>/cs/4_ai/             prázdná složka = AI slide
 //
 // Displeje 1-3 s obsahem, 4-37 jako "Nepřiřazeno" bez slidů (kurátor je
@@ -53,16 +53,13 @@ async function seedDisplay(id: number, seed: SeedDisplay | null) {
     // 2_vid: prázdné, mp4 nahraje kurátor
     await fs.mkdir(path.join(root, "cs", "2_vid"), { recursive: true });
 
-    // 3_gal: pár placeholder fotek
+    // 3_gal: zajímavost — dlouhý text a jedna fotka (finální struktura)
     const gal = path.join(root, "cs", "3_gal");
     await fs.mkdir(gal, { recursive: true });
+    await writeFileAtomic(path.join(gal, "text.txt"), serializeZajimavostText(seed.zajimavost));
     await fs.writeFile(
-      path.join(gal, "foto-galerie-1.png"),
-      await pngPlaceholder(seed.druh, seed.barva, "Galerie · fotka 1"),
-    );
-    await fs.writeFile(
-      path.join(gal, "foto-galerie-2.png"),
-      await pngPlaceholder(seed.druh, seed.barva, "Galerie · fotka 2"),
+      path.join(gal, "foto-zajimavost.png"),
+      await pngPlaceholder(seed.druh, seed.barva, "Zajímavost"),
     );
 
     // 4_ai: prázdná složka

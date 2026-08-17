@@ -14,6 +14,7 @@ import {
   readKb,
   writeKb,
   writeInfoPole,
+  writeZajimavost,
   saveImage,
   deleteImage,
   setMapa,
@@ -217,7 +218,29 @@ app.put<{
   return { ok: true, latin: res.latin, latinCorrected: res.latinCorrected };
 });
 
-// Upload fotky (info panel a galerie). Vždy se převádí do PNG kvůli Unity.
+// Text zajímavosti (slide _gal): jeden dlouhý odstavec, na disku
+// cs/<slozka>/text.txt jako "Popis: …".
+app.put<{ Params: { id: string; n: string }; Body: { text?: string } }>(
+  "/api/displays/:id/slides/:n/text",
+  async (req, reply) => {
+    const { id } = req.params;
+    const n = Number(req.params.n);
+    if (!validId(id) || !validSlide(n)) return reply.code(400).send({ chyba: "Neplatné parametry." });
+    if (!(await slideExists(id, n))) return reply.code(404).send({ chyba: "Slide nenalezen." });
+
+    const res = await writeZajimavost(id, n, req.body?.text ?? "");
+    if (!res.ok) return reply.code(400).send({ chyba: res.chyba });
+    await appendAudit({
+      uzivatel: currentUser(req),
+      akce: "úprava zajímavosti",
+      cil: `displej ${id}, slide ${n}`,
+    });
+    return { ok: true };
+  },
+);
+
+// Upload fotky (info panel, zajímavost, snímek 3D sekvence). Vždy se převádí
+// do PNG kvůli Unity.
 app.post<{ Params: { id: string; n: string } }>(
   "/api/displays/:id/slides/:n/image",
   async (req, reply) => {
