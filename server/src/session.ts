@@ -50,24 +50,29 @@ export async function nactiNeboZalozKlic(): Promise<string> {
   return novy;
 }
 
-interface SessionData {
+export interface SessionData {
   u: string; // jméno přihlášeného
   exp: number; // čas vypršení (ms od epochy)
+  v: string; // serial účtu (zmeneno/vytvoreno) — zneplatní session po změně hesla
 }
 
-// Obsah cookie (ještě před podpisem, ten přidá @fastify/cookie).
-export function vytvorSession(jmeno: string): string {
-  const data: SessionData = { u: jmeno, exp: Date.now() + SESSION_TTL_MS };
+// Obsah cookie (ještě před podpisem, ten přidá @fastify/cookie). `serial` je
+// razítko účtu z users.json; při ověření se porovnává, takže změna hesla i
+// smazání účtu starou session zneplatní.
+export function vytvorSession(jmeno: string, serial: string): string {
+  const data: SessionData = { u: jmeno, exp: Date.now() + SESSION_TTL_MS, v: serial };
   return Buffer.from(JSON.stringify(data), "utf8").toString("base64url");
 }
 
-// Vrátí jméno z platné (nevypršené) session, jinak null.
-export function prectiSession(hodnota: string): string | null {
+// Vrátí data platné (nevypršené) session, jinak null. Ověření proti účtu
+// (existence + serial) dělá volající, protože k tomu potřebuje users.json.
+export function prectiSession(hodnota: string): SessionData | null {
   try {
     const data = JSON.parse(Buffer.from(hodnota, "base64url").toString("utf8")) as SessionData;
     if (typeof data.u !== "string" || !data.u) return null;
     if (typeof data.exp !== "number" || Date.now() > data.exp) return null;
-    return data.u;
+    if (typeof data.v !== "string") return null; // starší cookie bez serialu = neplatná
+    return data;
   } catch {
     return null;
   }

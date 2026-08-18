@@ -38,12 +38,21 @@ import {
   prectiSession,
   vytvorSession,
 } from "./session.js";
-import { overUdaje, pocetUzivatelu } from "./users.js";
+import { najdiUzivatele, overUdaje, pocetUzivatelu } from "./users.js";
+
+// Jméno přihlášeného kurátora zjištěné v onRequest hooku (viz níž). Chráněné
+// handlery ho čtou přes currentUser() do auditu, ať se users.json nečte podruhé.
+declare module "fastify" {
+  interface FastifyRequest {
+    uzivatel: string | null;
+  }
+}
 
 const PORT = Number(process.env.PORT ?? 3000);
 const HOST = process.env.HOST ?? "127.0.0.1";
 
 const app = Fastify({ logger: { level: "info" } });
+app.decorateRequest("uzivatel", null);
 
 // Klíč pro podpis session cookie (SESSION_SECRET, jinak data/session.key).
 await app.register(fastifyCookie, { secret: await nactiNeboZalozKlic() });
@@ -66,20 +75,27 @@ await app.register(fastifyStatic, {
 
 // --- Session ---
 
-// Jméno z platné podepsané session, jinak null. Podvržená cookie (nesedící
-// podpis) i vypršená platnost se berou jako nepřihlášený.
-function prihlasenyUzivatel(req: FastifyRequest): string | null {
+// Jméno z platné podepsané session, jinak null. Kromě podpisu a expirace se
+// ověřuje i proti users.json: účet musí pořád existovat a jeho serial
+// (zmeneno/vytvoreno) sedět se serialem v session. Tím se smazání účtu i změna
+// hesla propíšou do zneplatnění dosud vydaných cookies.
+async function prihlasenyUzivatel(req: FastifyRequest): Promise<string | null> {
   const raw = req.cookies[SESSION_COOKIE];
   if (!raw) return null;
   const odpodepsano = req.unsignCookie(raw);
   if (!odpodepsano.valid || !odpodepsano.value) return null;
-  return prectiSession(odpodepsano.value);
+  const data = prectiSession(odpodepsano.value);
+  if (!data) return null;
+  const user = await najdiUzivatele(data.u);
+  if (!user) return null; // účet mezitím smazán
+  if (data.v !== (user.zmeneno ?? user.vytvoreno)) return null; // heslo změněno
+  return user.jmeno;
 }
 
-// Jméno do auditu. Na chráněných cestách je vždy vyplněné, protože hook níž
-// pustí dál jen přihlášeného; fallback je pojistka pro veřejné cesty.
+// Jméno do auditu. Na chráněných cestách je vždy vyplněné, protože hook níž ho
+// po ověření uloží na request; fallback je pojistka pro veřejné cesty.
 function currentUser(req: FastifyRequest): string {
-  return prihlasenyUzivatel(req) ?? "neznámý";
+  return req.uzivatel ?? "neznámý";
 }
 
 const COOKIE_NASTAVENI = {
@@ -131,7 +147,11 @@ app.addHook("onRequest", async (req, reply) => {
   const metoda = req.method === "HEAD" ? "GET" : req.method;
   const cesta = req.routeOptions?.url ?? "";
   if (VEREJNE_API.has(`${metoda} ${cesta}`)) return;
-  if (prihlasenyUzivatel(req)) return;
+  const jmeno = await prihlasenyUzivatel(req);
+  if (jmeno) {
+    req.uzivatel = jmeno; // pro audit v chráněných handlerech
+    return;
+  }
   return reply.code(401).send({ chyba: "Přihlaste se prosím." });
 });
 
@@ -194,13 +214,13 @@ app.post<{ Body: { username?: string; password?: string } }>(
     return reply.code(401).send({ ok: false, chyba: "Neplatné přihlašovací údaje." });
   }
 
-  reply.setCookie(SESSION_COOKIE, vytvorSession(user.jmeno), COOKIE_NASTAVENI);
+  reply.setCookie(SESSION_COOKIE, vytvorSession(user.jmeno, user.zmeneno ?? user.vytvoreno), COOKIE_NASTAVENI);
   await appendAudit({ uzivatel: user.jmeno, akce: "přihlášení", cil: `systém, IP ${req.ip}` });
   return { ok: true, username: user.jmeno };
 });
 
 app.post("/api/logout", async (req, reply) => {
-  const jmeno = prihlasenyUzivatel(req);
+  const jmeno = await prihlasenyUzivatel(req);
   reply.clearCookie(SESSION_COOKIE, { path: "/" });
   if (jmeno) {
     await appendAudit({ uzivatel: jmeno, akce: "odhlášení", cil: "systém" });
@@ -209,7 +229,7 @@ app.post("/api/logout", async (req, reply) => {
 });
 
 app.get("/api/me", async (req) => {
-  return { username: prihlasenyUzivatel(req) };
+  return { username: await prihlasenyUzivatel(req) };
 });
 
 // Výchozí šablona znalostní báze (nabízí ji editor u prázdného kb.md).
