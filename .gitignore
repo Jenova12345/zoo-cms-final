@@ -16,3 +16,4 @@ data/session.key
 .env
 # Archivy (zálohy, exporty, podklady) do gitu nepatří.
 *.zip
+handoff.md
