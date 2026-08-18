@@ -1,8 +1,11 @@
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { LayoutDashboard, MonitorPlay, ScrollText, LogOut } from "lucide-react";
+import { useState } from "react";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
+import { useNeulozeno } from "../lib/neulozeno";
 import { LogoMark } from "./Logo";
+import Confirm from "./Confirm";
 
 const NAV = [
   { to: "/dashboard", label: "Přehled", icon: LayoutDashboard },
@@ -13,6 +16,18 @@ const NAV = [
 export default function Layout() {
   const { username, setUsername } = useAuth();
   const navigate = useNavigate();
+  // Odchod z rozdělané stránky: kam kurátor mířil, než jsme ho zastavili.
+  // "__odhlasit" je zvláštní cíl, na konci odhlášení se stejně mění stránka.
+  const { jeNeulozeno } = useNeulozeno();
+  const [odchodNa, setOdchodNa] = useState<string | null>(null);
+
+  function chraneny(cil: string) {
+    return (e: { preventDefault: () => void }) => {
+      if (!jeNeulozeno) return;
+      e.preventDefault();
+      setOdchodNa(cil);
+    };
+  }
 
   async function handleLogout() {
     try {
@@ -42,6 +57,7 @@ export default function Layout() {
             <NavLink
               key={to}
               to={to}
+              onClick={chraneny(to)}
               className={({ isActive }) =>
                 `relative flex items-center gap-3 rounded-md pl-4 pr-3 py-2 text-sm transition-colors ${
                   isActive
@@ -64,7 +80,7 @@ export default function Layout() {
         </nav>
 
         <button
-          onClick={handleLogout}
+          onClick={() => (jeNeulozeno ? setOdchodNa("__odhlasit") : handleLogout())}
           className="flex items-center gap-3 px-6 py-4 text-sm font-medium text-fg-muted hover:text-fg transition-colors"
         >
           <LogOut className="h-[18px] w-[18px]" strokeWidth={1.75} />
@@ -99,6 +115,26 @@ export default function Layout() {
           </div>
         </main>
       </div>
+
+      {/* Rozepsané změny mizí i odchodem přes menu, ne jen zavřením okna. */}
+      <Confirm
+        open={!!odchodNa}
+        titulek="Odejít bez uložení?"
+        text={
+          <>
+            Na stránce máte rozepsané změny, které nejsou uložené. Když teď odejdete, přijdete
+            o ně — vrátit to nepůjde.
+          </>
+        }
+        potvrdit="Odejít bez uložení"
+        onPotvrdit={() => {
+          const cil = odchodNa;
+          setOdchodNa(null);
+          if (cil === "__odhlasit") void handleLogout();
+          else if (cil) navigate(cil);
+        }}
+        onZrusit={() => setOdchodNa(null)}
+      />
     </div>
   );
 }

@@ -1,3 +1,4 @@
+import { NAHRAVANI_MAX_MB } from "./limity";
 import type {
   Analytika,
   AnalyticsQuestions,
@@ -35,6 +36,11 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
       // ignore
     }
     if (res.status === 401) sessionVyprsela();
+    // 413 utne multipart ještě v přenosu, takže ze serveru chodí jen obecná
+    // hláška. Kurátor ale potřebuje vědět, co s tím — proto vlastní text.
+    if (res.status === 413) {
+      throw new Error(`Soubor je moc velký, maximum je ${NAHRAVANI_MAX_MB} MB.`);
+    }
     throw new Error(detail || `Chyba ${res.status}`);
   }
   return (await res.json()) as T;

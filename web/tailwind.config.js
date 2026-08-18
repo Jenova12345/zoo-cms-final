@@ -26,7 +26,10 @@ export default {
         },
         // Sekundární akcent (upozornění).
         amber: {
-          DEFAULT: "#C2740C",
+          DEFAULT: "#C2740C", // ikony a linky (grafika, stačí 3:1)
+          // Tentýž odstín ztmavený pro TEXT: #C2740C má na bílé jen 3,6:1,
+          // což je pod WCAG AA pro běžný text. Tenhle má 6,4:1.
+          deep: "#8A5208",
           soft: "#FBF1E2",
         },
         danger: {
