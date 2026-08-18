@@ -227,9 +227,12 @@ app.post<{ Body: { username?: string; password?: string } }>(
   const user = await overUdaje(username, password);
   if (!user) {
     // Jedna společná hláška: z odpovědi nejde poznat, jestli neexistuje jméno,
-    // nebo nesedělo heslo. Pokus se zapíše do auditu i s IP adresou.
+    // nebo nesedělo heslo. Do auditu NEzapisujeme zadaný řetězec doslova —
+    // kurátor si mohl splést pole a napsat do "jména" heslo. Pro existující
+    // účet logujeme jeho jméno, jinak neutrální značku.
+    const existujici = await najdiUzivatele(username);
     await appendAudit({
-      uzivatel: username.slice(0, 64),
+      uzivatel: existujici ? existujici.jmeno : "(neznámé jméno)",
       akce: "neúspěšné přihlášení",
       cil: `systém, IP ${req.ip}`,
     });
