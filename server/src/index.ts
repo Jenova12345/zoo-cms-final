@@ -97,8 +97,32 @@ const VEREJNE_API = new Set([
   "GET /api/displays/:id", // data pro /tablet/:id
 ]);
 
+// Míří požadavek do /api namespace? Rozhodujeme podle SKUTEČNĚ napárované
+// routy (router už cestu dekódoval a normalizoval) — ne podle syrového
+// req.url. Jinak by šlo autorizaci obejít procentním kódováním písmen
+// (`/%61pi/...` = `/api/...`), zdvojeným lomítkem nebo velkými písmeny, protože
+// router takovou cestu na chráněný handler napáruje, ale `req.url.startsWith`
+// ji nepozná. Nenapárovanou cestu (404 pod /api) posuzujeme z dekódovaného
+// tvaru, ať skončí v 401, ne v SPA fallbacku.
+function miriNaApi(req: FastifyRequest): boolean {
+  if ((req.routeOptions?.url ?? "").startsWith("/api")) return true;
+  let cesta = req.url.split("?")[0].split("#")[0];
+  for (let i = 0; i < 3; i++) {
+    let dekod: string;
+    try {
+      dekod = decodeURIComponent(cesta);
+    } catch {
+      break; // nerozkódovatelná cesta: posuď ji v tom tvaru, jaký máme
+    }
+    if (dekod === cesta) break;
+    cesta = dekod;
+  }
+  cesta = cesta.replace(/\/{2,}/g, "/").toLowerCase();
+  return cesta.startsWith("/api");
+}
+
 app.addHook("onRequest", async (req, reply) => {
-  if (!req.url.startsWith("/api")) return; // statické soubory a SPA
+  if (!miriNaApi(req)) return; // statické soubory a SPA
   // HEAD se routuje na stejný handler jako GET.
   const metoda = req.method === "HEAD" ? "GET" : req.method;
   const cesta = req.routeOptions?.url ?? "";
