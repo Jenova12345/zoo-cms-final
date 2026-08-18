@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { Link, useParams } from "react-router-dom";
 import {
   ArrowLeft,
+  CheckCircle2,
   Save,
   Send,
   Sparkles,
@@ -63,6 +64,60 @@ type ActiveTab = number | "kb";
 // takže kurátor na prázdném displeji vůbec nepoznal, že má začít Infopanelem.)
 const ZADNY_SLIDE = 0;
 
+// Slide, do kterého kurátor ještě nic nevyplnil. Podle toho se ukáže výzva
+// „co teď" a v záložce oranžová tečka — po přidání slidu je totiž snadné
+// odejít v domnění, že přidáním je hotovo.
+function jePrazdny(s: SlideContent): boolean {
+  switch (s.typ) {
+    case "info":
+      return !(s.pole.Nazev ?? "").trim() && s.obrazky.length === 0 && !s.mapa && !s.video;
+    case "gal":
+      return !s.text.trim() && s.obrazky.length === 0;
+    case "3d":
+      return s.obrazky.length === 0;
+    case "vid":
+      return !s.video;
+    default:
+      return false; // AI slide se nevyplňuje, prázdná složka je správný stav
+  }
+}
+
+// Co má kurátor s prázdným slidem udělat. Formulace odpovídá tomu, jak se
+// obsah daného typu ukládá: fotky a video hned při nahrání, texty tlačítkem.
+const PRAZDNY_NAVOD: Record<SlideTyp, string> = {
+  info: "Vyplňte Sekci a Název, nahrajte fotku a klikněte na Uložit. Dokud slide neuložíte, nemá tablet co zobrazit.",
+  gal: "Napište text zajímavosti, přidejte k němu fotku a klikněte na Uložit.",
+  "3d": "Nahrajte sekvenci snímků modelu — ukládají se hned po nahrání.",
+  vid: "Nahrajte video ve formátu MP4 — uloží se hned po nahrání.",
+  ai: "",
+};
+
+// Co ve slidu je — do potvrzení mazání, ať kurátor vidí, o co přijde.
+function obsahSlidu(s: SlideContent): string[] {
+  const kusy: string[] = [];
+  if (s.obrazky.length) {
+    kusy.push(s.typ === "3d" ? pocetSnimku(s.obrazky.length) : pocetFotek(s.obrazky.length));
+  }
+  if (s.mapa) kusy.push("mapa výskytu");
+  if (s.video) kusy.push("video");
+  if (s.text.trim()) kusy.push("text zajímavosti");
+  if (s.typ === "info" && Object.values(s.pole).some((v) => v.trim())) {
+    kusy.push("vyplněné údaje o druhu");
+  }
+  return kusy;
+}
+
+function pocetFotek(n: number): string {
+  if (n === 1) return "1 fotka";
+  if (n >= 2 && n <= 4) return `${n} fotky`;
+  return `${n} fotek`;
+}
+
+// Aktuální čas pro potvrzení „Uloženo v HH:MM".
+function ted(): string {
+  return new Date().toLocaleTimeString("cs-CZ", { hour: "2-digit", minute: "2-digit" });
+}
+
 export default function DisplayDetail() {
   const { id = "" } = useParams();
   const toast = useToast();
@@ -76,6 +131,15 @@ export default function DisplayDetail() {
   const [busy, setBusy] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [smazatOpen, setSmazatOpen] = useState(false);
+  // Zveřejnění na tabletu se ptá jedním společným dialogem: co se zveřejní
+  // (popis) a co se po potvrzení spustí (akce).
+  const [zverejnit, setZverejnit] = useState<{
+    popis: ReactNode;
+    akce: () => Promise<void>;
+  } | null>(null);
+  // Zpětná vazba „uloženo" přímo u tlačítka — toast může kurátorovi utéct,
+  // tohle zůstane na obrazovce, dokud nepřepne slide.
+  const [ulozeno, setUlozeno] = useState<{ klic: string; cas: string } | null>(null);
   // Přetahování záložek: index taženého slidu a místo, kam se pustí
   // (0..počet, tedy „před i-tý" a nakonec „na konec").
   const [taham, setTaham] = useState<number | null>(null);
@@ -142,7 +206,8 @@ export default function DisplayDetail() {
     try {
       await api.saveKb(id, kbDraft);
       await load();
-      toast.success("Znalostní báze uložena");
+      oznacUlozeno();
+      toast.success("Znalostní báze uložena. Načte si ji chatbot, na tablet se neposílá.");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Uložení selhalo.");
     } finally {
@@ -150,31 +215,55 @@ export default function DisplayDetail() {
     }
   }
 
-  // Jeden klik: uloží pole info panelu (text.txt + identita do meta.json) a
-  // odešle na displej. Latinské jméno server očistí na kanonický tvar.
-  async function saveInfoAndSend(n: number, pole: Record<string, string>) {
+  // Potvrzení „uloženo" u tlačítka aktivní záložky.
+  function oznacUlozeno() {
+    setUlozeno({ klic: String(active), cas: ted() });
+  }
+
+  // Zveřejnění na tabletu vidí návštěvníci u expozice, proto se na něj vždycky
+  // ptáme. Editory sem posílají popis toho, co se zveřejní, a vlastní akci.
+  function zeptejSeNaZverejneni(popis: ReactNode, akce: () => Promise<void>) {
+    setZverejnit({ popis, akce });
+  }
+
+  // Uloží pole info panelu (text.txt + identita do meta.json). `odeslat`
+  // rozhoduje, jestli se obsah jen zapíše na disk, nebo se rovnou zveřejní
+  // na tabletu. Latinské jméno server očistí na kanonický tvar.
+  async function saveInfo(n: number, pole: Record<string, string>, odeslat: boolean) {
     setSaving(true);
     try {
       const res = await api.saveInfo(id, n, pole, sectionDraft);
-      await api.refresh(id);
+      if (odeslat) await api.refresh(id);
       await load();
+      oznacUlozeno();
+      const zaklad = odeslat
+        ? `Uloženo a zveřejněno na tabletu (displej ${id}).`
+        : "Uloženo. Na tabletu se objeví až po zveřejnění.";
       if (res.latinCorrected && res.latin) {
-        toast.success(`Uloženo a odesláno. Latinské jméno upraveno na kanonický tvar: ${res.latin}`);
+        toast.success(`${zaklad} Latinské jméno upraveno na kanonický tvar: ${res.latin}`);
       } else {
-        toast.success(`Uloženo a odesláno na displej ${id}`);
+        toast.success(zaklad);
       }
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Uložení nebo odeslání selhalo.");
+      toast.error(
+        e instanceof Error
+          ? e.message
+          : odeslat
+            ? "Uložení nebo zveřejnění selhalo."
+            : "Uložení selhalo.",
+      );
     } finally {
       setSaving(false);
     }
   }
 
+  // Zveřejnění slidů, jejichž obsah se ukládá hned při nahrání (3D, video).
   async function sendToDisplay() {
     await withBusy(async () => {
       await api.refresh(id);
-      toast.success(`Odesláno na displej ${id}`);
-    }, "Odeslání selhalo.");
+      oznacUlozeno();
+      toast.success(`Zveřejněno na tabletu (displej ${id}). Návštěvníci to už vidí.`);
+    }, "Zveřejnění selhalo.");
   }
 
   async function addSlide(typ: SlideTyp) {
@@ -183,7 +272,7 @@ export default function DisplayDetail() {
       const { n } = await api.addSlide(id, typ);
       await load();
       setActive(n);
-      toast.success(`Slide (${SLIDE_TYP_LABEL[typ]}) přidán`);
+      toast.success(`Slide ${SLIDE_TYP_LABEL[typ]} přidán — teď vyplňte obsah a uložte.`);
     }, "Přidání slidu selhalo.");
   }
 
@@ -357,6 +446,12 @@ export default function DisplayDetail() {
               >
                 <Ikona className="h-3.5 w-3.5" strokeWidth={1.75} />
                 {i + 1} · {SLIDE_TYP_LABEL[s.typ]}
+                {jePrazdny(s) && (
+                  <span
+                    className="h-1.5 w-1.5 rounded-full bg-amber"
+                    title="Prázdný slide — chybí obsah"
+                  />
+                )}
               </button>
             </div>
           );
@@ -457,9 +552,30 @@ export default function DisplayDetail() {
         </div>
       )}
 
+      {/* Prázdný (typicky právě přidaný) slide: co teď. Bez toho kurátor
+          slide přidá a odejde v domnění, že tím je hotovo. */}
+      {slide && jePrazdny(slide) && (
+        <div className="-mt-4 flex items-start gap-2.5 rounded-lg border border-amber/40 bg-amber-soft px-4 py-3">
+          <Lightbulb className="h-5 w-5 shrink-0 text-amber" strokeWidth={1.75} />
+          <div className="text-sm text-fg-muted">
+            <span className="font-semibold text-fg">Tento slide je zatím prázdný.</span>{" "}
+            {PRAZDNY_NAVOD[slide.typ]}
+          </div>
+        </div>
+      )}
+
       {/* Obsah záložky */}
       {active === "kb" ? (
-        <KbEditor value={kbDraft} onChange={setKbDraft} onSave={saveKb} saving={saving} />
+        <KbEditor
+          value={kbDraft}
+          onChange={(v) => {
+            setUlozeno(null);
+            setKbDraft(v);
+          }}
+          onSave={saveKb}
+          saving={saving}
+          ulozenoCas={ulozeno?.klic === "kb" ? ulozeno.cas : null}
+        />
       ) : !slide ? (
         <div className="rounded-xl border border-dashed border-line px-6 py-12 text-center">
           <span className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-canvas">
@@ -493,11 +609,18 @@ export default function DisplayDetail() {
           slide={slide}
           pole={infoDrafts[slide.n] ?? {}}
           section={sectionDraft}
-          onSectionChange={setSectionDraft}
-          onChange={(patch) =>
-            setInfoDrafts((prev) => ({ ...prev, [slide.n]: { ...(prev[slide.n] ?? {}), ...patch } }))
-          }
-          onSave={(pole) => saveInfoAndSend(slide.n, pole)}
+          onSectionChange={(v) => {
+            setUlozeno(null);
+            setSectionDraft(v);
+          }}
+          onChange={(patch) => {
+            // Rozepsaná změna = už to není stav, který se uložil.
+            setUlozeno(null);
+            setInfoDrafts((prev) => ({ ...prev, [slide.n]: { ...(prev[slide.n] ?? {}), ...patch } }));
+          }}
+          onSave={(pole, odeslat) => saveInfo(slide.n, pole, odeslat)}
+          zeptejSe={zeptejSeNaZverejneni}
+          ulozenoCas={ulozeno?.klic === String(slide.n) ? ulozeno.cas : null}
           saving={saving}
           busy={busy}
           displayId={id}
@@ -512,6 +635,10 @@ export default function DisplayDetail() {
           busy={busy}
           reload={load}
           withBusy={withBusy}
+          zeptejSe={zeptejSeNaZverejneni}
+          onUlozeno={oznacUlozeno}
+          onZmena={() => setUlozeno(null)}
+          ulozenoCas={ulozeno?.klic === String(slide.n) ? ulozeno.cas : null}
         />
       ) : slide.typ === "3d" ? (
         <ModelEditor
@@ -522,6 +649,7 @@ export default function DisplayDetail() {
           reload={load}
           withBusy={withBusy}
           onSend={sendToDisplay}
+          zeptejSe={zeptejSeNaZverejneni}
         />
       ) : slide.typ === "vid" ? (
         <VidEditor
@@ -532,15 +660,19 @@ export default function DisplayDetail() {
           reload={load}
           withBusy={withBusy}
           onSend={sendToDisplay}
+          zeptejSe={zeptejSeNaZverejneni}
         />
       ) : (
         <AiSlideInfo onOpenKb={() => setActive("kb")} />
       )}
 
-      {/* Mazání slidu je nevratné — smaže se složka na disku i s obsahem. */}
+      {/* Mazání slidu je nevratné — smaže se složka na disku i s obsahem.
+          Když ve slidu něco je, vyjmenujeme to a potvrzovací tlačítko se na
+          chvíli zamkne, ať se nevratná akce nedá odklepnout překlikem. */}
       <Confirm
         open={smazatOpen && !!slide}
         titulek="Opravdu smazat?"
+        prodlevaMs={slide && obsahSlidu(slide).length > 0 ? 3000 : 0}
         text={
           <>
             Tato akce je <strong className="font-semibold text-fg">nevratná</strong> a smaže obsah
@@ -552,12 +684,39 @@ export default function DisplayDetail() {
                 <span className="font-mono">{slide.slozka}</span>
               </>
             )}
-            . Fotky, video ani text z tohoto slidu už nepůjde vrátit.
+            .{" "}
+            {slide && obsahSlidu(slide).length > 0 && (
+              <>
+                Přijdete o:{" "}
+                <strong className="font-semibold text-fg">{obsahSlidu(slide).join(", ")}</strong>.{" "}
+              </>
+            )}
+            Fotky, video ani text z tohoto slidu už nepůjde vrátit — ani přes audit log.
           </>
         }
         potvrdit="Smazat slide"
         onPotvrdit={removeSlide}
         onZrusit={() => setSmazatOpen(false)}
+      />
+
+      {/* Zveřejnění na tabletu má následek venku: od té chvíle obsah vidí
+          návštěvníci u expozice. Ptáme se na něj stejně jako na mazání. */}
+      <Confirm
+        open={!!zverejnit}
+        varianta="publikovat"
+        titulek="Zveřejnit na tabletu?"
+        text={
+          <>
+            {zverejnit?.popis} Tímto se obsah zveřejní na tabletu pro návštěvníky. Pokračovat?
+          </>
+        }
+        potvrdit="Zveřejnit na tabletu"
+        onPotvrdit={() => {
+          const akce = zverejnit?.akce;
+          setZverejnit(null);
+          if (akce) void akce();
+        }}
+        onZrusit={() => setZverejnit(null)}
       />
     </div>
   );
@@ -719,6 +878,8 @@ function InfoEditor({
   onSectionChange,
   onChange,
   onSave,
+  zeptejSe,
+  ulozenoCas,
   saving,
   busy,
   displayId,
@@ -730,7 +891,9 @@ function InfoEditor({
   section: string;
   onSectionChange: (v: string) => void;
   onChange: (patch: Record<string, string>) => void;
-  onSave: (pole: Record<string, string>) => void;
+  onSave: (pole: Record<string, string>, odeslat: boolean) => Promise<void>;
+  zeptejSe: (popis: ReactNode, akce: () => Promise<void>) => void;
+  ulozenoCas: string | null;
   saving: boolean;
   busy: boolean;
   displayId: string;
@@ -750,7 +913,9 @@ function InfoEditor({
   const latinNahled = canonicalizeLatin(latinRaw);
   const latinSeZmeni = !!latinNahled && latinNahled !== latinRaw.trim();
 
-  function handleSave() {
+  // `odeslat` = uložit a rovnou zveřejnit na tabletu. Zveřejnění se ještě
+  // potvrzuje dialogem, protože od té chvíle obsah vidí návštěvníci.
+  function handleSave(odeslat: boolean) {
     if (!valid) {
       setShowErrors(true);
       // Vyjmenujeme přesně to, co chybí, ne obecnou technickou chybu.
@@ -762,7 +927,17 @@ function InfoEditor({
       document.getElementById(`pole-${chybejici[0].klic}`)?.focus();
       return;
     }
-    onSave(pole);
+    if (!odeslat) {
+      void onSave(pole, false);
+      return;
+    }
+    zeptejSe(
+      <>
+        Zveřejní se <strong className="font-semibold text-fg">Infopanel</strong> displeje{" "}
+        {displayId} — údaje o druhu i nahrané fotky.
+      </>,
+      () => onSave(pole, true),
+    );
   }
 
   async function removeImage(url: string) {
@@ -785,6 +960,11 @@ function InfoEditor({
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
       {/* Formulář polí (na disk jde text.txt jako "Klic: Hodnota") */}
       <div className="space-y-4">
+        {/* Co je povinné, má být vidět předem — ne až z chybové hlášky. */}
+        <p className="text-xs text-fg-muted">
+          Pole označená <span className="font-bold text-danger">*</span> jsou povinná, bez nich
+          panel neuložíte. Ostatní můžete nechat prázdná.
+        </p>
         {INFO_POLE.map((def) => {
           const hodnota = pole[def.klic] ?? "";
           const nevyplneno = showErrors && def.povinne && chybi(def.klic);
@@ -793,9 +973,14 @@ function InfoEditor({
               <label className="label" htmlFor={`pole-${def.klic}`}>
                 {def.label}
                 {def.povinne ? (
-                  <span className="ml-1.5 text-[10px] font-bold uppercase tracking-wider text-danger">
-                    povinné
-                  </span>
+                  <>
+                    <span className="font-bold text-danger" aria-hidden="true">
+                      {" *"}
+                    </span>
+                    <span className="ml-1.5 text-[10px] font-bold uppercase tracking-wider text-danger">
+                      povinné
+                    </span>
+                  </>
                 ) : (
                   <span className="text-fg-dim font-normal"> · volitelné</span>
                 )}
@@ -866,14 +1051,41 @@ function InfoEditor({
               nich se panel neuloží.
             </p>
           )}
-          <button onClick={handleSave} className="btn-primary" disabled={saving}>
-            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" strokeWidth={1.75} />}
-            Uložit a odeslat na displej
-          </button>
-          <p className="text-xs text-fg-dim">
-            Uloží údaje na disk a rovnou dá displeji vědět, aby se obnovil. Fotky a video se
-            ukládají hned při nahrání.
-          </p>
+          <div className="flex flex-wrap items-center gap-3">
+            <button onClick={() => handleSave(false)} className="btn-primary" disabled={saving}>
+              {saving ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Save className="h-4 w-4" strokeWidth={1.75} />
+              )}
+              Uložit
+            </button>
+            <button onClick={() => handleSave(true)} className="btn-ghost" disabled={saving}>
+              <Send className="h-4 w-4" strokeWidth={1.75} />
+              Uložit a zveřejnit na tabletu
+            </button>
+            {ulozenoCas && (
+              <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-accent">
+                <CheckCircle2 className="h-4 w-4" strokeWidth={2} /> Uloženo v {ulozenoCas}
+              </span>
+            )}
+          </div>
+          {/* Rozdíl mezi tlačítky musí být čitelný bez školení: jedno je
+              bezpečné, druhé má následek venku u expozice. */}
+          <div className="space-y-1 text-xs text-fg-muted">
+            <p>
+              <strong className="font-semibold text-fg">Uložit</strong> — zapíše rozpracovaný obsah
+              na disk. Návštěvníci u expozice zatím nic nového nevidí.
+            </p>
+            <p>
+              <strong className="font-semibold text-fg">Uložit a zveřejnit na tabletu</strong> —
+              uloží a zároveň dá displeji pokyn, aby si nový obsah načetl. Od té chvíle ho vidí
+              návštěvníci.
+            </p>
+            <p className="text-fg-muted">
+              Fotky a video se ukládají hned při nahrání; na tabletu se objeví až po zveřejnění.
+            </p>
+          </div>
         </div>
       </div>
 
@@ -978,12 +1190,20 @@ function ZajimavostEditor({
   busy,
   reload,
   withBusy,
+  zeptejSe,
+  onUlozeno,
+  onZmena,
+  ulozenoCas,
 }: {
   slide: SlideContent;
   displayId: string;
   busy: boolean;
   reload: () => Promise<void>;
   withBusy: (fn: () => Promise<void>, fail: string) => Promise<void>;
+  zeptejSe: (popis: ReactNode, akce: () => Promise<void>) => void;
+  onUlozeno: () => void;
+  onZmena: () => void;
+  ulozenoCas: string | null;
 }) {
   const toast = useToast();
   const [draft, setDraft] = useState(slide.text);
@@ -991,18 +1211,34 @@ function ZajimavostEditor({
   const { uploading, upload } = usePhotoUpload(displayId, slide.n, reload);
   const fotka = slide.obrazky[0] ?? null;
 
-  async function save() {
+  // `odeslat` = po uložení dát displeji pokyn, aby si obsah načetl.
+  async function ulozit(odeslat: boolean) {
     setSaving(true);
     try {
       await api.saveSlideText(displayId, slide.n, draft);
-      await api.refresh(displayId);
+      if (odeslat) await api.refresh(displayId);
       await reload();
-      toast.success(`Zajímavost uložena a odeslána na displej ${displayId}`);
+      onUlozeno();
+      toast.success(
+        odeslat
+          ? `Zajímavost uložena a zveřejněna na tabletu (displej ${displayId}).`
+          : "Zajímavost uložena. Na tabletu se objeví až po zveřejnění.",
+      );
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Uložení selhalo.");
     } finally {
       setSaving(false);
     }
+  }
+
+  function zverejnit() {
+    zeptejSe(
+      <>
+        Zveřejní se slide <strong className="font-semibold text-fg">Zajímavost</strong> displeje{" "}
+        {displayId} — text i fotka.
+      </>,
+      () => ulozit(true),
+    );
   }
 
   async function removeImage(url: string) {
@@ -1025,7 +1261,10 @@ function ZajimavostEditor({
             id={`popis-${slide.n}`}
             className="input min-h-[320px] resize-y leading-relaxed"
             value={draft}
-            onChange={(e) => setDraft(e.target.value)}
+            onChange={(e) => {
+              onZmena();
+              setDraft(e.target.value);
+            }}
             placeholder="Např. Pralesnička harlekýn je drobná jedovatá žába obývající podrost tropických pralesů…"
           />
           <PodPolem
@@ -1038,10 +1277,31 @@ function ZajimavostEditor({
           />
         </div>
 
-        <button onClick={save} className="btn-primary" disabled={saving || busy}>
-          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" strokeWidth={1.75} />}
-          Uložit a odeslat na displej
-        </button>
+        <div className="flex flex-wrap items-center gap-3">
+          <button onClick={() => ulozit(false)} className="btn-primary" disabled={saving || busy}>
+            {saving ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Save className="h-4 w-4" strokeWidth={1.75} />
+            )}
+            Uložit
+          </button>
+          <button onClick={zverejnit} className="btn-ghost" disabled={saving || busy}>
+            <Send className="h-4 w-4" strokeWidth={1.75} />
+            Uložit a zveřejnit na tabletu
+          </button>
+          {ulozenoCas && (
+            <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-accent">
+              <CheckCircle2 className="h-4 w-4" strokeWidth={2} /> Uloženo v {ulozenoCas}
+            </span>
+          )}
+        </div>
+        <p className="text-xs text-fg-muted">
+          <strong className="font-semibold text-fg">Uložit</strong> zapíše text na disk;
+          návštěvníci ho ještě nevidí.{" "}
+          <strong className="font-semibold text-fg">Zveřejnit</strong> ho pustí na tablet u
+          expozice.
+        </p>
       </div>
 
       {/* Jedna fotka vpravo */}
@@ -1096,6 +1356,7 @@ function ModelEditor({
   reload,
   withBusy,
   onSend,
+  zeptejSe,
 }: {
   slide: SlideContent;
   displayId: string;
@@ -1103,6 +1364,7 @@ function ModelEditor({
   reload: () => Promise<void>;
   withBusy: (fn: () => Promise<void>, fail: string) => Promise<void>;
   onSend: () => Promise<void>;
+  zeptejSe: (popis: ReactNode, akce: () => Promise<void>) => void;
 }) {
   const toast = useToast();
   // Snímky se nahrávají seřazené podle názvu, ať sekvence sedí na render.
@@ -1165,9 +1427,33 @@ function ModelEditor({
         />
       )}
 
-      <button onClick={onSend} className="btn-primary w-fit" disabled={busy}>
-        <Send className="h-4 w-4" strokeWidth={1.75} /> Odeslat na displej
+      <button
+        onClick={() =>
+          zeptejSe(
+            slide.obrazky.length === 0 ? (
+              <>
+                Slide <strong className="font-semibold text-fg">3D model</strong> displeje{" "}
+                {displayId} je <strong className="font-semibold text-fg">prázdný</strong> — na
+                tabletu se místo modelu ukáže prázdné místo.
+              </>
+            ) : (
+              <>
+                Zveřejní se slide <strong className="font-semibold text-fg">3D model</strong>{" "}
+                displeje {displayId} — {pocetSnimku(slide.obrazky.length)}.
+              </>
+            ),
+            onSend,
+          )
+        }
+        className="btn-primary w-fit"
+        disabled={busy}
+      >
+        <Send className="h-4 w-4" strokeWidth={1.75} /> Zveřejnit na tabletu
       </button>
+      <p className="text-xs text-fg-muted">
+        Snímky jsou uložené hned po nahrání. Zveřejněním dáte displeji pokyn, aby si je načetl —
+        od té chvíle je vidí návštěvníci.
+      </p>
     </div>
   );
 }
@@ -1276,6 +1562,7 @@ function VidEditor({
   reload,
   withBusy,
   onSend,
+  zeptejSe,
 }: {
   slide: SlideContent;
   displayId: string;
@@ -1283,6 +1570,7 @@ function VidEditor({
   reload: () => Promise<void>;
   withBusy: (fn: () => Promise<void>, fail: string) => Promise<void>;
   onSend: () => Promise<void>;
+  zeptejSe: (popis: ReactNode, akce: () => Promise<void>) => void;
 }) {
   return (
     <div className="max-w-3xl space-y-4">
@@ -1302,9 +1590,33 @@ function VidEditor({
         withBusy={withBusy}
       />
 
-      <button onClick={onSend} className="btn-primary w-fit" disabled={busy}>
-        <Send className="h-4 w-4" strokeWidth={1.75} /> Odeslat na displej
+      <button
+        onClick={() =>
+          zeptejSe(
+            slide.video ? (
+              <>
+                Zveřejní se slide <strong className="font-semibold text-fg">Video</strong> displeje{" "}
+                {displayId} — nahrané video na celou obrazovku.
+              </>
+            ) : (
+              <>
+                Slide <strong className="font-semibold text-fg">Video</strong> displeje {displayId}{" "}
+                je <strong className="font-semibold text-fg">prázdný</strong> — na tabletu se místo
+                videa ukáže prázdné místo.
+              </>
+            ),
+            onSend,
+          )
+        }
+        className="btn-primary w-fit"
+        disabled={busy}
+      >
+        <Send className="h-4 w-4" strokeWidth={1.75} /> Zveřejnit na tabletu
       </button>
+      <p className="text-xs text-fg-muted">
+        Video je uložené hned po nahrání. Zveřejněním dáte displeji pokyn, aby si ho načetl — od té
+        chvíle ho vidí návštěvníci.
+      </p>
     </div>
   );
 }
@@ -1336,11 +1648,13 @@ function KbEditor({
   onChange,
   onSave,
   saving,
+  ulozenoCas,
 }: {
   value: string;
   onChange: (v: string) => void;
   onSave: () => void;
   saving: boolean;
+  ulozenoCas: string | null;
 }) {
   const toast = useToast();
   const [template, setTemplate] = useState<string | null>(null);
@@ -1401,10 +1715,25 @@ function KbEditor({
           placeholder="Podklady pro AI průvodce: fakta, časté otázky, tón odpovědí…"
         />
       </div>
-      <button onClick={onSave} className="btn-primary w-fit" disabled={saving}>
-        {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" strokeWidth={1.75} />}
-        Uložit znalostní bázi
-      </button>
+      <div className="flex flex-wrap items-center gap-3">
+        <button onClick={onSave} className="btn-primary w-fit" disabled={saving}>
+          {saving ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Save className="h-4 w-4" strokeWidth={1.75} />
+          )}
+          Uložit znalostní bázi
+        </button>
+        {ulozenoCas && (
+          <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-accent">
+            <CheckCircle2 className="h-4 w-4" strokeWidth={2} /> Uloženo v {ulozenoCas}
+          </span>
+        )}
+      </div>
+      <p className="text-xs text-fg-muted">
+        Znalostní báze se na tablet neposílá — čte si ji chatbot. Tlačítko „Zveřejnit na tabletu"
+        tu proto není.
+      </p>
     </div>
   );
 }

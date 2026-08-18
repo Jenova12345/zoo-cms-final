@@ -18,6 +18,11 @@ const ToastContext = createContext<ToastApi | null>(null);
 
 let counter = 0;
 
+// Potvrzení úspěchu zmizí samo — ale pomaleji, než trvá přečíst větu.
+// Chyba nezmizí vůbec: kurátor si ji má přečíst a zavřít, ne ji minout,
+// protože se zrovna díval do formuláře a hláška vyskočila jinde.
+const TRVANI_USPECHU_MS = 6000;
+
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
 
@@ -29,7 +34,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     (kind: ToastKind, message: string) => {
       const id = ++counter;
       setToasts((prev) => [...prev, { id, kind, message }]);
-      setTimeout(() => remove(id), 3500);
+      if (kind === "success") setTimeout(() => remove(id), TRVANI_USPECHU_MS);
     },
     [remove],
   );
@@ -42,30 +47,44 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={apiValue}>
       {children}
-      <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-2.5">
-        {toasts.map((t) => (
-          <div
-            key={t.id}
-            className={`flex items-center gap-3 rounded-xl bg-elevated px-4 py-3 shadow-cardHover border min-w-[260px] animate-fadeIn ${
-              t.kind === "success" ? "border-accent/30" : "border-danger/40"
-            }`}
-            role="status"
-          >
-            {t.kind === "success" ? (
-              <CheckCircle2 className="h-5 w-5 text-accent shrink-0" strokeWidth={1.75} />
-            ) : (
-              <AlertCircle className="h-5 w-5 text-danger shrink-0" strokeWidth={1.75} />
-            )}
-            <span className="text-sm font-medium text-fg flex-1">{t.message}</span>
-            <button
-              onClick={() => remove(t.id)}
-              className="text-fg-dim hover:text-fg"
-              aria-label="Zavřít"
+      <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-3">
+        {toasts.map((t) => {
+          const uspech = t.kind === "success";
+          return (
+            <div
+              key={t.id}
+              className={`relative flex items-start gap-3 overflow-hidden rounded-xl bg-elevated py-4 pl-5 pr-3 shadow-cardHover border-2 min-w-[320px] max-w-md animate-fadeIn ${
+                uspech ? "border-accent/45" : "border-danger/60"
+              }`}
+              role={uspech ? "status" : "alert"}
+              aria-live={uspech ? "polite" : "assertive"}
             >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-        ))}
+              {/* Barevný pruh: hlášku jde rozpoznat koutkem oka, bez čtení. */}
+              <span
+                className={`absolute inset-y-0 left-0 w-1.5 ${uspech ? "bg-accent" : "bg-danger"}`}
+              />
+              <span
+                className={`grid h-7 w-7 shrink-0 place-items-center rounded-full ${
+                  uspech ? "bg-accent text-white" : "bg-danger text-white"
+                }`}
+              >
+                {uspech ? (
+                  <CheckCircle2 className="h-4 w-4" strokeWidth={2} />
+                ) : (
+                  <AlertCircle className="h-4 w-4" strokeWidth={2} />
+                )}
+              </span>
+              <span className="flex-1 text-sm font-semibold leading-snug text-fg">{t.message}</span>
+              <button
+                onClick={() => remove(t.id)}
+                className="shrink-0 rounded p-1 text-fg-dim hover:bg-canvas hover:text-fg"
+                aria-label="Zavřít"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          );
+        })}
       </div>
     </ToastContext.Provider>
   );
