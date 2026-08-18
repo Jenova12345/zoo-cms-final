@@ -172,6 +172,20 @@ function validSlide(n: number): boolean {
 app.post<{ Body: { username?: string; password?: string } }>(
   "/api/login",
   {
+    // Tělo se validuje schématem, ale `attachValidation` nechá běžet handler i
+    // při chybě (místo automatického 400) — tak se i nevalidní pokus (číslo
+    // místo řetězce apod.) zapíše do auditu a vrátí 400, ne 500.
+    attachValidation: true,
+    schema: {
+      body: {
+        type: "object",
+        required: ["username", "password"],
+        properties: {
+          username: { type: "string" },
+          password: { type: "string" },
+        },
+      },
+    },
     // Brzda proti hádání hesel i proti DoS (bcrypt blokuje event loop): 5 pokusů
     // za 15 minut na kombinaci IP + přihlašovací jméno. `hook: preHandler`, ať
     // je při počítání klíče už rozparsované tělo requestu. 429 vrací stejný tvar
@@ -196,6 +210,14 @@ app.post<{ Body: { username?: string; password?: string } }>(
     },
   },
   async (req, reply) => {
+    if (req.validationError) {
+      await appendAudit({
+        uzivatel: "(neplatný požadavek)",
+        akce: "neúspěšné přihlášení",
+        cil: `systém, IP ${req.ip}`,
+      });
+      return reply.code(400).send({ ok: false, chyba: "Vyplňte jméno i heslo." });
+    }
     const username = (req.body?.username ?? "").trim();
   const password = req.body?.password ?? "";
   if (!username || !password) {
@@ -258,7 +280,12 @@ app.put<{ Params: { id: string }; Body: { text?: string } }>(
     if (!validId(id)) return reply.code(400).send({ chyba: "Neplatné id." });
     if (!(await displayExists(id))) return reply.code(404).send({ chyba: "Displej nenalezen." });
 
-    await writeKb(id, req.body?.text ?? "");
+    // Text je povinný: chybějící nebo prázdné tělo by jinak tiše smazalo kb.md.
+    const text = req.body?.text;
+    if (typeof text !== "string" || text.trim() === "") {
+      return reply.code(400).send({ chyba: "Text znalostní báze nesmí být prázdný." });
+    }
+    await writeKb(id, text);
     await appendAudit({
       uzivatel: currentUser(req),
       akce: "úprava znalostní báze",
@@ -302,7 +329,12 @@ app.put<{ Params: { id: string; n: string }; Body: { text?: string } }>(
     if (!validId(id) || !validSlide(n)) return reply.code(400).send({ chyba: "Neplatné parametry." });
     if (!(await slideExists(id, n))) return reply.code(404).send({ chyba: "Slide nenalezen." });
 
-    const res = await writeZajimavost(id, n, req.body?.text ?? "");
+    // Text je povinný: chybějící nebo prázdné tělo by jinak tiše smazalo obsah.
+    const text = req.body?.text;
+    if (typeof text !== "string" || text.trim() === "") {
+      return reply.code(400).send({ chyba: "Text zajímavosti nesmí být prázdný." });
+    }
+    const res = await writeZajimavost(id, n, text);
     if (!res.ok) return reply.code(400).send({ chyba: res.chyba });
     await appendAudit({
       uzivatel: currentUser(req),
