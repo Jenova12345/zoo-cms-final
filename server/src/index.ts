@@ -4,6 +4,7 @@ import Fastify, { type FastifyRequest } from "fastify";
 import fastifyStatic from "@fastify/static";
 import fastifyCookie from "@fastify/cookie";
 import fastifyMultipart from "@fastify/multipart";
+import fastifyRateLimit from "@fastify/rate-limit";
 
 import { DATA_ROOT, DISPLAYS_DIR, WEB_DIST } from "./paths.js";
 import { appendAudit, readAudit } from "./audit.js";
@@ -49,6 +50,9 @@ await app.register(fastifyCookie, { secret: await nactiNeboZalozKlic() });
 await app.register(fastifyMultipart, {
   limits: { fileSize: 200 * 1024 * 1024 }, // 200 MB, aby prošlo i mp4 video na slide
 });
+// Rate limit se NEaplikuje globálně (tablety pollují veřejné čtení), jen na
+// konkrétní routy, které si o něj řeknou přes config.rateLimit — viz /api/login.
+await app.register(fastifyRateLimit, { global: false });
 
 // Servírování reálných souborů slidů (fotky, videa) pro CMS i tablet.
 // Root je záměrně jen DISPLAYS_DIR, ne celý DATA_ROOT: users.json,
@@ -145,8 +149,34 @@ function validSlide(n: number): boolean {
 // Ověřuje se proti bcrypt hashům v data/users.json (účty zakládá
 // `npm run useradd`). Heslo se záměrně neořezává — mezera na kraji je jeho
 // součástí, stejně jako při zakládání účtu.
-app.post<{ Body: { username?: string; password?: string } }>("/api/login", async (req, reply) => {
-  const username = (req.body?.username ?? "").trim();
+app.post<{ Body: { username?: string; password?: string } }>(
+  "/api/login",
+  {
+    // Brzda proti hádání hesel i proti DoS (bcrypt blokuje event loop): 5 pokusů
+    // za 15 minut na kombinaci IP + přihlašovací jméno. `hook: preHandler`, ať
+    // je při počítání klíče už rozparsované tělo requestu. 429 vrací stejný tvar
+    // { chyba } jako ostatní chyby, takže ho klient zobrazí jako běžnou hlášku.
+    config: {
+      rateLimit: {
+        max: 5,
+        timeWindow: "15 minutes",
+        hook: "preHandler",
+        keyGenerator: (req: FastifyRequest) => {
+          const telo = req.body as { username?: unknown } | undefined;
+          const jmeno = typeof telo?.username === "string" ? telo.username.trim().toLowerCase() : "";
+          return `${req.ip}:${jmeno}`;
+        },
+        errorResponseBuilder: (_req, ctx) => ({
+          // Plugin tenhle objekt vyhodí; statusCode z kontextu (429) drží
+          // správný HTTP kód, `chyba` čte klient stejně jako u jiných chyb.
+          statusCode: ctx.statusCode,
+          chyba: "Příliš mnoho pokusů o přihlášení, zkuste to za pár minut.",
+        }),
+      },
+    },
+  },
+  async (req, reply) => {
+    const username = (req.body?.username ?? "").trim();
   const password = req.body?.password ?? "";
   if (!username || !password) {
     return reply.code(400).send({ ok: false, chyba: "Vyplňte jméno i heslo." });
