@@ -68,20 +68,47 @@ export function validujHeslo(heslo: string): string | null {
   return null;
 }
 
+// Prázdné pole vrací JEN když soubor prokazatelně neexistuje (ENOENT). Jiná
+// chyba čtení (EACCES, síťový disk odpadl) ani poškozený JSON se NESMÍ tvářit
+// jako "žádné účty" — jinak by na to navázalo tiché přepsání účtů výchozím
+// účtem. Poškozený soubor proto vyhodí výjimku a volající operaci přeruší.
 export async function readUsers(): Promise<User[]> {
+  let raw: string;
   try {
-    const raw = await fs.readFile(USERS_FILE, "utf8");
-    const data = JSON.parse(raw) as UsersFile;
-    return Array.isArray(data.uzivatele) ? data.uzivatele : [];
-  } catch {
-    return [];
+    raw = await fs.readFile(USERS_FILE, "utf8");
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw err;
   }
+  let data: UsersFile;
+  try {
+    data = JSON.parse(raw) as UsersFile;
+  } catch {
+    throw new Error(`${USERS_FILE} je poškozený (nevalidní JSON), zápis by účty přepsal.`);
+  }
+  if (!Array.isArray(data.uzivatele)) {
+    throw new Error(`${USERS_FILE} je poškozený (chybí pole uzivatele).`);
+  }
+  return data.uzivatele;
 }
 
 // Zápis přes dočasný soubor + rename (writeFileAtomic), ať se users.json
 // nerozbije, když proces spadne uprostřed zápisu. Práva 0600 (na Windows se
 // ignorují, na Linuxu/macOS soubor schovají před ostatními účty).
-async function writeUsers(uzivatele: User[]): Promise<void> {
+//
+// Pojistka: zápis, který snižuje počet účtů, projde jen s `povolitUbytek`
+// (používá ho jen smazUzivatele). Kdyby readUsers někde vrátil míň účtů, než
+// je na disku, tahle kontrola zabrání jejich tichému smazání.
+async function writeUsers(
+  uzivatele: User[],
+  opt: { povolitUbytek?: boolean } = {},
+): Promise<void> {
+  if (!opt.povolitUbytek) {
+    const soucasny = (await readUsers()).length; // na poškozeném souboru vyhodí a zápis se neprovede
+    if (uzivatele.length < soucasny) {
+      throw new Error("Zápis by snížil počet účtů — přerušeno (mazání jen přes --smazat).");
+    }
+  }
   await fs.mkdir(DATA_ROOT, { recursive: true });
   const data: UsersFile = { verze: 1, uzivatele };
   await writeFileAtomic(USERS_FILE, JSON.stringify(data, null, 2) + "\n", { mode: 0o600 });
@@ -160,7 +187,7 @@ export async function smazUzivatele(jmeno: string): Promise<{ ok: boolean; chyba
   if (zbyle.length === 0) {
     return { ok: false, chyba: "Nelze smazat poslední účet — do CMS by se nikdo nedostal." };
   }
-  await writeUsers(zbyle);
+  await writeUsers(zbyle, { povolitUbytek: true });
   return { ok: true };
 }
 
@@ -170,7 +197,14 @@ export const VYCHOZI_JMENO = "spravce";
 export const VYCHOZI_HESLO = "Amphibiarium2026";
 
 export async function zalozVychoziUcet(): Promise<boolean> {
-  if ((await pocetUzivatelu()) > 0) return false;
+  // Jen když soubor PROKAZATELNĚ neexistuje. Existující (byť poškozený) soubor
+  // se nechá být — nezakládáme přes něj výchozí účet a nepřepisujeme účty.
+  try {
+    await fs.access(USERS_FILE);
+    return false;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+  }
   const res = await pridejUzivatele(VYCHOZI_JMENO, VYCHOZI_HESLO);
   return res.ok;
 }
