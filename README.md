@@ -59,6 +59,26 @@ Veřejné je záměrně přesně to, co potřebuje tablet u expozice. Nový endp
 chráněný automaticky, dokud se vědomě nepřidá do seznamu `VEREJNE_API`
 v `server/src/index.ts`.
 
+## Konfigurace přes prostředí (`.env.example`)
+
+Server čte **proměnné prostředí** (soubor `.env` se sám nenačítá). Přehled a
+šablona jsou v **`.env.example`** — zkopíruj na `.env` a hodnoty nastav ve své
+službě/shellu. `.env` je v `.gitignore`, `.env.example` zůstává v gitu.
+
+Nejdůležitější je **`SESSION_SECRET`** — klíč pro podpis session cookie:
+
+- Když je nastavený (aspoň 16 znaků, doporučeno 64: `openssl rand -hex 32`),
+  použije se a soubor `data/session.key` se **vůbec nezakládá**. Na produkci to
+  je preferovaný způsob, ať klíč neleží v datové složce sdílené s Unity/chatbotem.
+- Když nastavený **není**, server hlásí varování a spadne zpět na
+  `data/session.key` (vytvoří ho sám). Server běží dál.
+- Když je nastavený, ale **kratší než 16 znaků**, server **záměrně nenastartuje**
+  s jasnou hláškou — slabý klíč by šel podvrhnout.
+
+Platnost přihlášení řídí `SESSION_TTL_HOURS` (výchozí 12), **strop je 12 hodin**
+i při vyšší hodnotě. Cookie zůstává `httpOnly`, `SameSite=Lax` a **bez `Secure`**
+(provoz běží po HTTP v LAN pavilonu).
+
 ### Vývojový režim (volitelné, dva procesy s hot-reloadem)
 
 ```bash

@@ -55,7 +55,7 @@ const app = Fastify({ logger: { level: "info" } });
 app.decorateRequest("uzivatel", null);
 
 // Klíč pro podpis session cookie (SESSION_SECRET, jinak data/session.key).
-await app.register(fastifyCookie, { secret: await nactiNeboZalozKlic() });
+await app.register(fastifyCookie, { secret: await nactiNeboZalozKlic(app.log) });
 await app.register(fastifyMultipart, {
   limits: { fileSize: 200 * 1024 * 1024 }, // 200 MB, aby prošlo i mp4 video na slide
 });

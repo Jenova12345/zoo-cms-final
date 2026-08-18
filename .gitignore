@@ -11,4 +11,7 @@ data/audit.jsonl
 # artefakty s tajemstvím — do gitu nepatří.
 data/users.json
 data/session.key
+
+# Lokální proměnné prostředí (tajemství). Šablona je .env.example (ta v gitu zůstává).
+.env
 podklady/**/*.zip
