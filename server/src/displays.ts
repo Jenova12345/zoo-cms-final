@@ -446,7 +446,22 @@ export async function writeKb(id: string, text: string): Promise<void> {
 // Název je vždy unikátní (Safari pojmenovává přetažené obrázky "Unknown.jpeg",
 // bez unikátního jména by se soubory přepisovaly).
 export async function convertToPng(data: Buffer): Promise<Buffer> {
-  return sharp(data).rotate().png().toBuffer();
+  // 40 Mpx strop vstupu (výchozí sharp limit je ~268 Mpx) — brzda proti
+  // obřím dekódovaným rastrům. SVG odmítáme úplně: renderuje se přes librsvg
+  // a i pár set bajtů (feTurbulence) může vyrobit desítky MB a spálit minuty
+  // CPU; navíc ho na displeji nepotřebujeme.
+  const img = sharp(data, { limitInputPixels: 40_000_000 });
+  const meta = await img.metadata();
+  if (meta.format === "svg") {
+    throw new Error("SVG se nepřijímá, nahrajte JPG nebo PNG.");
+  }
+  // Výstup se navíc zmenší na rozumný strop, ať jedno velké foto nenafoukne
+  // PNG do stovek MB.
+  return img
+    .rotate()
+    .resize({ width: 4096, height: 4096, fit: "inside", withoutEnlargement: true })
+    .png()
+    .toBuffer();
 }
 
 function uniquePngName(): string {
