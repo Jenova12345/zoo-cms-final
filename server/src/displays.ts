@@ -590,11 +590,17 @@ export async function setMapa(
 
 // --- Video (jedno MP4 ve složce _vid, volitelně i na info panelu) ---
 
+// Rezervovaná jména zařízení na Windows (i s příponou, např. CON.mp4) —
+// zápis pod nimi na Windows selže nebo míří na zařízení, ne na soubor.
+const WIN_REZERVOVANA = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\.|$)/i;
+
 function sanitizeFilename(name: string): string {
-  const base = path
+  let base = path
     .basename(name)
-    .replace(/[^\w.\- áčďéěíňóřšťúůýžÁČĎÉĚÍŇÓŘŠŤÚŮÝŽ]/g, "_");
-  return base || `video-${Date.now()}`;
+    .replace(/[^\w.\- áčďéěíňóřšťúůýžÁČĎÉĚÍŇÓŘŠŤÚŮÝŽ]/g, "_")
+    .replace(/[. ]+$/g, ""); // Windows zahazuje koncové tečky a mezery
+  if (!base || WIN_REZERVOVANA.test(base)) base = `video-${Date.now()}`;
+  return base;
 }
 
 export async function saveVideo(

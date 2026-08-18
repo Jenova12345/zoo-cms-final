@@ -54,6 +54,22 @@ const HOST = process.env.HOST ?? "127.0.0.1";
 const app = Fastify({ logger: { level: "info" } });
 app.decorateRequest("uzivatel", null);
 
+// Chybové odpovědi ven jen jako obecná hláška (žádné interní kódy, cesty ani
+// stack) — detail jde do server logu. Vlastní aplikační chyby, které nesou
+// pole `chyba` (např. 429 z rate limitu), se pošlou tak, jak jsou.
+app.setErrorHandler((err, req, reply) => {
+  const e = err as { statusCode?: number; chyba?: unknown };
+  const statusCode = typeof e.statusCode === "number" ? e.statusCode : 500;
+  if (statusCode >= 500) req.log.error(err);
+  else req.log.info({ err }, "klientská chyba");
+  if (typeof e.chyba === "string") {
+    return reply.code(statusCode).send({ chyba: e.chyba });
+  }
+  return reply.code(statusCode).send({
+    chyba: statusCode < 500 ? "Neplatný požadavek." : "Chyba serveru, zkuste to prosím znovu.",
+  });
+});
+
 // Klíč pro podpis session cookie (SESSION_SECRET, jinak data/session.key).
 await app.register(fastifyCookie, { secret: await nactiNeboZalozKlic(app.log) });
 await app.register(fastifyMultipart, {
@@ -382,7 +398,9 @@ app.delete<{ Params: { id: string; n: string; nazev: string } }>(
     if (!validId(id) || !validSlide(n)) return reply.code(400).send({ chyba: "Neplatné parametry." });
     if (!(await slideExists(id, n))) return reply.code(404).send({ chyba: "Slide nenalezen." });
 
-    const nazev = path.basename(decodeURIComponent(req.params.nazev));
+    // Fastify parametr už dekóduje; druhé decodeURIComponent zbytečně padalo
+    // na URIError u samotného "%". Stačí basename.
+    const nazev = path.basename(req.params.nazev);
     const ok = await deleteImage(id, n, nazev);
     if (!ok) return reply.code(400).send({ chyba: "Fotku se nepodařilo smazat." });
 
@@ -405,7 +423,9 @@ app.put<{ Params: { id: string; n: string }; Body: { nazev?: string | null } }>(
     if (!validId(id) || !validSlide(n)) return reply.code(400).send({ chyba: "Neplatné parametry." });
     if (!(await slideExists(id, n))) return reply.code(404).send({ chyba: "Slide nenalezen." });
 
-    const nazev = typeof req.body?.nazev === "string" ? decodeURIComponent(req.body.nazev) : null;
+    // Název přichází z JSON těla jako holé jméno souboru (ne URL-encoded);
+    // decodeURIComponent tu nemá co dělat a padal na "%".
+    const nazev = typeof req.body?.nazev === "string" ? req.body.nazev : null;
     const res = await setMapa(id, n, nazev);
     if (!res.ok) return reply.code(400).send({ chyba: res.chyba });
 

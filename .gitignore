@@ -14,4 +14,5 @@ data/session.key
 
 # Lokální proměnné prostředí (tajemství). Šablona je .env.example (ta v gitu zůstává).
 .env
-podklady/**/*.zip
+# Archivy (zálohy, exporty, podklady) do gitu nepatří.
+*.zip
