@@ -2,6 +2,7 @@ export interface DisplaySummary {
   id: string;
   druh: string;
   latin_name: string | null; // párování s analytikou chatbota (species_latin)
+  cekaNaRevizi: boolean; // AI koncept z hromadného importu, kurátor ho ještě neviděl
   stav: string;
   posledniZmena: string;
   thumbnail: string | null;
@@ -19,6 +20,9 @@ export interface DisplayMeta {
   latin_name?: string; // kanonizované latinské jméno (chatbot podle něj páruje)
   category?: string; // = Sekce (zóna expozice)
   section?: string; // taxonomická čeleď, např. Dendrobatidae
+  // Obsah je AI koncept z hromadného importu a čeká na kontrolu kurátora.
+  // Ruší se uložením znalostní báze (viz server/src/displays.ts, writeKb).
+  cekaNaRevizi?: boolean;
   stav: "online" | "offline";
   posledniZmena: string;
   slidy?: { slozka: string; typ: SlideTyp }[];

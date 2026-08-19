@@ -8,6 +8,7 @@
     "seed": "tsx src/seed.ts",
     "migrate": "tsx src/migrate.ts",
     "backfill": "tsx src/backfill.ts",
+    "import-obsahu": "tsx src/importObsahu.ts",
     "useradd": "tsx src/useradd.ts",
     "userlist": "tsx src/useradd.ts --seznam",
     "dev": "tsx watch src/index.ts",

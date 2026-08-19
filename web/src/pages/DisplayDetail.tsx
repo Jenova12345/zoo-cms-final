@@ -178,6 +178,7 @@ export default function DisplayDetail() {
   // rozepsaná verze (přenačtení ji nesmí přepsat) a co je neuložené.
   const [dotcena, setDotcena] = useState<Dotcena>(() => new Set());
   const [odchodOpen, setOdchodOpen] = useState(false);
+  const [revizeOpen, setRevizeOpen] = useState(false);
   const navigate = useNavigate();
   const { nastavNeulozeno } = useNeulozeno();
 
@@ -375,6 +376,17 @@ export default function DisplayDetail() {
     }, "Zápis do auditu selhal.");
   }
 
+  // Vědomé schválení AI textů. Nezapisuje obsah, jen ruší značku „čeká na
+  // revizi" a nechá v auditu záznam, kdo za texty ručí.
+  async function potvrditRevizi() {
+    setRevizeOpen(false);
+    await withBusy(async () => {
+      await api.potvrditRevizi(id);
+      await load();
+      toast.success("Schváleno. Do auditu se zapsalo vaše jméno a čas.");
+    }, "Potvrzení revize selhalo.");
+  }
+
   async function addSlide(typ: SlideTyp) {
     setAddOpen(false);
     await withBusy(async () => {
@@ -477,6 +489,27 @@ export default function DisplayDetail() {
           Poslední změna: {formatDateTime(detail.meta.posledniZmena)}
         </p>
       </div>
+
+      {/* Obsah přišel z hromadného importu a je od AI — dokud ho kurátor
+          neprojde, má to vědět hned po otevření displeje. */}
+      {detail.meta.cekaNaRevizi && (
+        <div className="-mt-3 flex flex-wrap items-start justify-between gap-4 rounded-lg border border-amber/40 bg-amber-soft px-4 py-3">
+          <div className="flex items-start gap-2.5">
+            <Sparkles className="h-5 w-5 shrink-0 text-amber" strokeWidth={1.75} />
+            <div className="max-w-2xl text-sm text-fg-muted">
+              <span className="font-semibold text-fg">
+                Texty jsou od AI a čekají na vaši revizi.
+              </span>{" "}
+              Přišly hromadným importem. Projděte je — hlavně znalostní bázi, ze které chatbot
+              odpovídá návštěvníkům — opravte, co nesedí, a teprve pak schvalte. Samotné uložení
+              textu za schválení nepovažujeme.
+            </div>
+          </div>
+          <button onClick={() => setRevizeOpen(true)} disabled={busy} className="btn-amber shrink-0">
+            <CheckCircle2 className="h-4 w-4" strokeWidth={1.75} /> Zkontrolováno, schvaluji
+          </button>
+        </div>
+      )}
 
       {/* Displej má slidy, ale ještě nemá druh — kurátor má vědět, co dodělat. */}
       {!prirazeno && detail.slides.length > 0 && (
@@ -696,6 +729,7 @@ export default function DisplayDetail() {
       {/* Obsah záložky */}
       {active === "kb" ? (
         <KbEditor
+          cekaNaRevizi={detail.meta.cekaNaRevizi === true}
           value={kbDraft}
           onChange={(v) => {
             setUlozeno(null);
@@ -846,6 +880,25 @@ export default function DisplayDetail() {
         potvrdit="Smazat slide"
         onPotvrdit={removeSlide}
         onZrusit={() => setSmazatOpen(false)}
+      />
+
+      {/* Schválení AI textů: kurátor za ně od téhle chvíle ručí, proto se
+          ptáme a proto to jde do auditu na jeho jméno. */}
+      <Confirm
+        open={revizeOpen}
+        varianta="publikovat"
+        titulek="Schvalujete texty od AI?"
+        text={
+          <>
+            Potvrzujete, že jste texty tohoto druhu prošli a odpovídají skutečnosti — hlavně
+            znalostní bázi, ze které chatbot odpovídá návštěvníkům. Do{" "}
+            <strong className="font-semibold text-fg">auditu se zapíše vaše jméno a čas</strong>.
+            Značka „čeká na revizi" pak zmizí z přehledu displejů.
+          </>
+        }
+        potvrdit="Schvaluji"
+        onPotvrdit={potvrditRevizi}
+        onZrusit={() => setRevizeOpen(false)}
       />
 
       {/* Odchod na seznam displejů s rozepsanými změnami. */}
@@ -1940,6 +1993,7 @@ function AiSlideInfo({ onOpenKb }: { onOpenKb: () => void }) {
 // --- Znalostní báze: kb.md v kořeni displeje, mimo slidy ---
 
 function KbEditor({
+  cekaNaRevizi,
   value,
   onChange,
   onPredvyplnit,
@@ -1948,6 +2002,7 @@ function KbEditor({
   neulozeno,
   ulozenoCas,
 }: {
+  cekaNaRevizi: boolean;
   value: string;
   onChange: (v: string) => void;
   onPredvyplnit: (v: string) => void; // šablona: není to zásah kurátora
@@ -1994,6 +2049,17 @@ function KbEditor({
           <span className="font-semibold text-fg">Znalostní báze displeje.</span> Edituje soubor
           kb.md v kořeni složky displeje. Není to slide — čte ji AI průvodce (chatbot) na tabletu.
           U nového druhu je předvyplněná šablonou od chatbota; přepište nápovědy vlastním obsahem.
+          {cekaNaRevizi && (
+            <>
+              {" "}
+              <strong className="font-semibold text-fg">
+                Tenhle text napsala AI a nikdo ho zatím nezkontroloval.
+              </strong>{" "}
+              Přečtěte ho celý — návštěvníkům se z něj odpovídá na dotazy o živém zvířeti. Až
+              budete hotoví, schvalte ho tlačítkem nahoře u displeje; uložení textu samo o sobě
+              za schválení neplatí.
+            </>
+          )}
         </div>
       </div>
       <div>

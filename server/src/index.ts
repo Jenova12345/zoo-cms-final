@@ -10,6 +10,7 @@ import { DATA_ROOT, DISPLAYS_DIR, WEB_DIST } from "./paths.js";
 import { appendAudit, readAudit } from "./audit.js";
 import {
   listDisplays,
+  oznacRevizi,
   readMeta,
   readSlides,
   readKb,
@@ -546,6 +547,28 @@ app.put<{ Params: { id: string }; Body: { poradi?: number[] } }>(
     return { ok: true };
   },
 );
+
+// Kurátor potvrzuje, že AI texty z hromadného importu přečetl a schvaluje je.
+// Je to záznam o převzetí odpovědnosti za text o živém zvířeti, který uvidí
+// veřejnost — proto vlastní endpoint a vlastní řádek v auditu se jménem a
+// časem, ne vedlejší efekt uložení kb.md.
+app.post<{ Params: { id: string } }>("/api/displays/:id/revize", async (req, reply) => {
+  const { id } = req.params;
+  if (!validId(id)) return reply.code(400).send({ chyba: "Neplatné id." });
+  const meta = await readMeta(id);
+  if (!meta) return reply.code(404).send({ chyba: "Displej nenalezen." });
+  if (!meta.cekaNaRevizi) {
+    return reply.code(400).send({ chyba: "Tento displej na revizi nečeká." });
+  }
+
+  await oznacRevizi(id, false);
+  await appendAudit({
+    uzivatel: currentUser(req),
+    akce: "potvrzení revize AI textů",
+    cil: `displej ${id}${meta.druh ? ` (${meta.druh})` : ""}`,
+  });
+  return { ok: true };
+});
 
 app.post<{ Params: { id: string } }>("/api/displays/:id/refresh", async (req, reply) => {
   const { id } = req.params;

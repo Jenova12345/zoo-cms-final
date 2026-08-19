@@ -172,6 +172,12 @@ export const api = {
     });
   },
 
+  // Kurátor potvrdil, že AI texty z importu přečetl a schvaluje je. Server
+  // zruší značku „čeká na revizi" a zapíše do auditu, kdo a kdy to potvrdil.
+  async potvrditRevizi(id: string): Promise<void> {
+    await request(`/api/displays/${id}/revize`, { method: "POST" });
+  },
+
   async refresh(id: string): Promise<void> {
     await request(`/api/displays/${id}/refresh`, { method: "POST" });
   },

@@ -94,6 +94,11 @@ export interface DisplayMeta {
   section?: string; // taxonomická čeleď, např. Dendrobatidae (jen v meta.json)
   stav: "online" | "offline";
   posledniZmena: string;
+  // Obsah přišel z hromadného importu (AI koncept) a kurátor ho ještě
+  // nepotvrdil. Pole je CMS-interní: Unity ani chatbot ho nečtou, jen se
+  // podle něj v přehledu displejů ukazuje, co čeká na revizi. Ruší se ve
+  // chvíli, kdy kurátor uloží znalostní bázi (viz writeKb).
+  cekaNaRevizi?: boolean;
   // Doplněk pro rychlou orientaci; Unity čte jen složky.
   slidy?: { slozka: string; typ: SlideTyp }[];
 }
@@ -112,6 +117,8 @@ export interface SlideContent {
 export interface DisplaySummary {
   id: string;
   druh: string;
+  // AI koncept z importu, který ještě nikdo nezkontroloval.
+  cekaNaRevizi: boolean;
   // Kvůli párování s analytikou chatbota (jeho species_latin proti našemu
   // latin_name); u nepřiřazeného displeje chybí, proto null.
   latin_name: string | null;
@@ -429,6 +436,10 @@ export async function readKb(id: string): Promise<string> {
   }
 }
 
+// POZOR: uložení znalostní báze značku „čeká na revizi" ZÁMĚRNĚ nechává být.
+// Kurátor text ukládá z různých důvodů (překlep, doplnění věty) a to ještě
+// neznamená, že ho celý přečetl a ručí za něj. Revizi ruší jen vědomé
+// schválení — POST /api/displays/:id/revize, viz oznacRevizi().
 export async function writeKb(id: string, text: string): Promise<void> {
   const body = text.replace(/\r\n/g, "\n");
   await writeFileAtomic(
@@ -438,6 +449,17 @@ export async function writeKb(id: string, text: string): Promise<void> {
   await touchDisplay(id);
   // Signál chatbotu, že se změnila znalostní báze (zatím vypnuto).
   void notifyReingest(id, "kb.md");
+}
+
+// Nastaví nebo zruší značku „AI koncept čeká na revizi kurátora".
+// Zapisuje se přes writeMeta (atomicky), ne přímo do souboru.
+export async function oznacRevizi(id: string, ceka: boolean): Promise<void> {
+  const meta = await readMeta(id);
+  if (!meta) return;
+  if (meta.cekaNaRevizi === ceka || (!ceka && meta.cekaNaRevizi === undefined)) return;
+  if (ceka) meta.cekaNaRevizi = true;
+  else delete meta.cekaNaRevizi;
+  await writeMeta(id, meta);
 }
 
 // --- Fotky (vždy PNG, aby je přečetlo Unity) ---
@@ -729,6 +751,7 @@ export async function listDisplays(): Promise<DisplaySummary[]> {
       id,
       druh: meta.druh,
       latin_name: meta.latin_name ?? null,
+      cekaNaRevizi: meta.cekaNaRevizi === true,
       stav: meta.stav,
       posledniZmena: meta.posledniZmena,
       thumbnail: await thumbnailFor(id),

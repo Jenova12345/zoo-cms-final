@@ -10,6 +10,8 @@ const ACTION_STYLE: Record<string, string> = {
   úprava: "text-accent",
   upload: "text-amber",
   "odesláno na displej": "text-accent",
+  "hromadný import": "text-amber-deep",
+  "potvrzení revize AI textů": "text-accent",
 };
 
 const ACTION_DOT: Record<string, string> = {
@@ -19,6 +21,8 @@ const ACTION_DOT: Record<string, string> = {
   úprava: "bg-accent",
   upload: "bg-amber",
   "odesláno na displej": "bg-accent",
+  "hromadný import": "bg-amber",
+  "potvrzení revize AI textů": "bg-accent",
 };
 
 export default function Audit() {
