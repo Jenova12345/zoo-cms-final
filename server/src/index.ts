@@ -11,6 +11,7 @@ import { appendAudit, readAudit } from "./audit.js";
 import {
   listDisplays,
   oznacRevizi,
+  uklidDocasneSoubory,
   readMeta,
   readSlides,
   readKb,
@@ -56,7 +57,7 @@ const app = Fastify({ logger: { level: "info" } });
 app.decorateRequest("uzivatel", null);
 
 // Chybové odpovědi ven jen jako obecná hláška (žádné interní kódy, cesty ani
-// stack) — detail jde do server logu. Vlastní aplikační chyby, které nesou
+// stack), detail jde do server logu. Vlastní aplikační chyby, které nesou
 // pole `chyba` (např. 429 z rate limitu), se pošlou tak, jak jsou.
 app.setErrorHandler((err, req, reply) => {
   const e = err as { statusCode?: number; chyba?: unknown };
@@ -77,7 +78,7 @@ await app.register(fastifyMultipart, {
   limits: { fileSize: 200 * 1024 * 1024 }, // 200 MB, aby prošlo i mp4 video na slide
 });
 // Rate limit se NEaplikuje globálně (tablety pollují veřejné čtení), jen na
-// konkrétní routy, které si o něj řeknou přes config.rateLimit — viz /api/login.
+// konkrétní routy, které si o něj řeknou přes config.rateLimit, viz /api/login.
 await app.register(fastifyRateLimit, { global: false });
 
 // Servírování reálných souborů slidů (fotky, videa) pro CMS i tablet.
@@ -125,7 +126,7 @@ const COOKIE_NASTAVENI = {
 
 // Veřejné API: přihlašovací tok a čtení obsahu displeje pro náhled tabletu
 // (ten u expozice běží bez přihlášení). Všechno ostatní pod /api vyžaduje
-// platnou session — zamykáme ve výchozím stavu, takže nový endpoint je
+// platnou session, zamykáme ve výchozím stavu, takže nový endpoint je
 // chráněný automaticky, dokud ho někdo vědomě nepřidá sem.
 const VEREJNE_API = new Set([
   "POST /api/login",
@@ -135,7 +136,7 @@ const VEREJNE_API = new Set([
 ]);
 
 // Míří požadavek do /api namespace? Rozhodujeme podle SKUTEČNĚ napárované
-// routy (router už cestu dekódoval a normalizoval) — ne podle syrového
+// routy (router už cestu dekódoval a normalizoval), ne podle syrového
 // req.url. Jinak by šlo autorizaci obejít procentním kódováním písmen
 // (`/%61pi/...` = `/api/...`), zdvojeným lomítkem nebo velkými písmeny, protože
 // router takovou cestu na chráněný handler napáruje, ale `req.url.startsWith`
@@ -184,13 +185,13 @@ function validSlide(n: number): boolean {
 
 // --- Auth ---
 // Ověřuje se proti bcrypt hashům v data/users.json (účty zakládá
-// `npm run useradd`). Heslo se záměrně neořezává — mezera na kraji je jeho
+// `npm run useradd`). Heslo se záměrně neořezává, mezera na kraji je jeho
 // součástí, stejně jako při zakládání účtu.
 app.post<{ Body: { username?: string; password?: string } }>(
   "/api/login",
   {
     // Tělo se validuje schématem, ale `attachValidation` nechá běžet handler i
-    // při chybě (místo automatického 400) — tak se i nevalidní pokus (číslo
+    // při chybě (místo automatického 400), tak se i nevalidní pokus (číslo
     // místo řetězce apod.) zapíše do auditu a vrátí 400, ne 500.
     attachValidation: true,
     schema: {
@@ -244,7 +245,7 @@ app.post<{ Body: { username?: string; password?: string } }>(
   const user = await overUdaje(username, password);
   if (!user) {
     // Jedna společná hláška: z odpovědi nejde poznat, jestli neexistuje jméno,
-    // nebo nesedělo heslo. Do auditu NEzapisujeme zadaný řetězec doslova —
+    // nebo nesedělo heslo. Do auditu NEzapisujeme zadaný řetězec doslova,
     // kurátor si mohl splést pole a napsat do "jména" heslo. Pro existující
     // účet logujeme jeho jméno, jinak neutrální značku.
     const existujici = await najdiUzivatele(username);
@@ -550,7 +551,7 @@ app.put<{ Params: { id: string }; Body: { poradi?: number[] } }>(
 
 // Kurátor potvrzuje, že AI texty z hromadného importu přečetl a schvaluje je.
 // Je to záznam o převzetí odpovědnosti za text o živém zvířeti, který uvidí
-// veřejnost — proto vlastní endpoint a vlastní řádek v auditu se jménem a
+// veřejnost, proto vlastní endpoint a vlastní řádek v auditu se jménem a
 // časem, ne vedlejší efekt uložení kb.md.
 app.post<{ Params: { id: string } }>("/api/displays/:id/revize", async (req, reply) => {
   const { id } = req.params;
@@ -589,7 +590,7 @@ app.post<{ Params: { id: string } }>("/api/displays/:id/refresh", async (req, re
 // nejsou ve VEREJNE_API, takže je chrání přihlášení jako ostatní /api.
 //
 // Odpověď je i při nedostupném chatbotovi HTTP 200 s obálkou
-// { dostupne: false, duvod } — dashboard tak nemá důvod padat a rozliší
+// { dostupne: false, duvod }, dashboard tak nemá důvod padat a rozliší
 // "analytika zatím není" od skutečné chyby požadavku (400/401).
 
 // Volitelný ISO čas; nesmyslnou hodnotu odmítáme, ať se nehádá s backendem.
@@ -631,9 +632,40 @@ app.get<{ Querystring: { since?: string } }>("/api/analytics/summary", async (re
 });
 
 // --- Audit ---
-app.get("/api/audit", async () => {
-  return { entries: await readAudit() };
-});
+// `limit` a `before` (ISO čas) umožní donačítat starší záznamy po stránkách;
+// bez nich se vrátí nejnovější stránka. Tvar odpovědi { entries } zůstává.
+app.get<{ Querystring: { limit?: string; before?: string; preskoc?: string } }>(
+  "/api/audit",
+  async (req, reply) => {
+    const { limit, before, preskoc } = req.query;
+
+    let pocet: number | undefined;
+    if (limit !== undefined && limit !== "") {
+      pocet = Number(limit);
+      if (!Number.isFinite(pocet) || pocet < 1) {
+        return reply.code(400).send({ chyba: "Neplatný parametr limit." });
+      }
+    }
+    if (before !== undefined && before !== "" && Number.isNaN(Date.parse(before))) {
+      return reply.code(400).send({ chyba: "Neplatný parametr before." });
+    }
+    let preskocit: number | undefined;
+    if (preskoc !== undefined && preskoc !== "") {
+      preskocit = Number(preskoc);
+      if (!Number.isFinite(preskocit) || preskocit < 0) {
+        return reply.code(400).send({ chyba: "Neplatný parametr preskoc." });
+      }
+    }
+
+    return {
+      entries: await readAudit({
+        limit: pocet,
+        before: before || undefined,
+        preskoc: preskocit,
+      }),
+    };
+  },
+);
 
 // --- Frontend (buildnutý web) ---
 if (existsSync(WEB_DIST)) {
@@ -656,9 +688,17 @@ try {
   if (!existsSync(DISPLAYS_DIR)) {
     app.log.warn(`Datová složka nenalezena (${DISPLAYS_DIR}). Spusť 'npm run seed'.`);
   }
+  // Zbytky po přerušeném přejmenování nebo zápisu (`.tmp-*`). Uklízí se při
+  // startu, kdy se souborami nikdo jiný nepracuje.
+  const uklizeno = await uklidDocasneSoubory();
+  if (uklizeno.length > 0) {
+    app.log.warn(
+      `Uklizeny dočasné zbytky po předchozím běhu (${uklizeno.length}): ${uklizeno.slice(0, 5).join(", ")}`,
+    );
+  }
   if ((await pocetUzivatelu()) === 0) {
     app.log.warn(
-      "Žádné účty v data/users.json — do CMS se nedá přihlásit. " +
+      "Žádné účty v data/users.json, do CMS se nedá přihlásit. " +
         "Založ účet: npm run useradd -- <jmeno> <heslo>",
     );
   }

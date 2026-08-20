@@ -1,8 +1,8 @@
-# Provoz a údržba — CMS Amphibiárium
+# Provoz a údržba. CMS Amphibiárium
 
 Technická dokumentace k provozu CMS pavilonu Amphibiárium (ZOO Ostrava).
 Popisuje **skutečný stav kódu na větvi `dev`**, ne stav popsaný v `README.md`
-(ten je v části API a struktury dat zastaralý — mluví ještě o `slide-1..6`,
+(ten je v části API a struktury dat zastaralý, mluví ještě o `slide-1..6`,
 `text.md` a endpointu pro pořadí fotek, který v kódu není).
 
 Uživatelskou část najdete v [prirucka-kurator.md](prirucka-kurator.md).
@@ -40,7 +40,7 @@ Uživatelskou část najdete v [prirucka-kurator.md](prirucka-kurator.md).
 V produkčním režimu běží **jeden proces**: Fastify servíruje API, statické
 soubory displejů i buildnutý web.
 
-Server se **nekompiluje** — `npm run start` spouští TypeScript přímo přes
+Server se **nekompiluje**, `npm run start` spouští TypeScript přímo přes
 `tsx`. Buildí se jen web. Vyžaduje Node.js 20 LTS nebo novější (ověřeno na
 Node 26); `sharp` se instaluje jako předkompilovaná binárka pro danou platformu.
 
@@ -48,11 +48,11 @@ Node 26); `sharp` se instaluje jako předkompilovaná binárka pro danou platfor
 
 ## 2. Spuštění
 
-### Produkční (demo) režim — jeden proces
+### Produkční (demo) režim, jeden proces
 
 ```bash
 npm install     # nainstaluje server i web (npm workspaces)
-npm run seed    # POZOR: přepíše data/displeje — jen při prvním rozjezdu
+npm run seed    # POZOR: přepíše data/displeje, jen při prvním rozjezdu
 npm run build   # tsc + vite build → web/dist
 npm run start   # Fastify: API + statická data + web
 ```
@@ -60,13 +60,13 @@ npm run start   # Fastify: API + statická data + web
 Pak otevřít **http://127.0.0.1:3000** (respektive `HOST:PORT`, viz níž).
 
 Pořadí je podstatné: `start` čte buildnutý web z `web/dist`. Když složka
-neexistuje, server nastartuje, ale do logu napíše varování a na `/` vrátí 404 —
+neexistuje, server nastartuje, ale do logu napíše varování a na `/` vrátí 404,
 API i `/data/displeje/...` fungují dál.
 
 > `npm run seed` maže a znovu generuje `data/displeje/<id>` pro všech 37 displejů.
 > **Na ostrých datech ho nikdy nespouštějte.** Účtů v `users.json` se nedotýká.
 
-### Vývojový režim — dva procesy s hot-reloadem
+### Vývojový režim, dva procesy s hot-reloadem
 
 ```bash
 npm run dev     # Fastify (tsx watch) na :3000 + Vite na :5173
@@ -87,12 +87,12 @@ Všechny se čtou při startu procesu; konfigurační soubor systém nemá.
 | Proměnná | Výchozí | Význam |
 |---|---|---|
 | `DATA_ROOT` | `<repo>/data` | Kořen datové složky. Cesta se převádí na absolutní (`path.resolve`). |
-| `HOST` | `127.0.0.1` | Adresa, na které Fastify poslouchá. **Pro přístup z jiného počítače je potřeba `0.0.0.0`** — výchozí `127.0.0.1` pustí dovnitř jen lokální stroj. |
+| `HOST` | `127.0.0.1` | Adresa, na které Fastify poslouchá. **Pro přístup z jiného počítače je potřeba `0.0.0.0`**, výchozí `127.0.0.1` pustí dovnitř jen lokální stroj. |
 | `PORT` | `3000` | Port HTTP serveru. |
-| `SESSION_SECRET` | — | Klíč pro podpis session cookie. Použije se, jen když má **aspoň 16 znaků**; jinak se sáhne po `<DATA_ROOT>/session.key`. |
+| `SESSION_SECRET` |, | Klíč pro podpis session cookie. Použije se, jen když má **aspoň 16 znaků**; jinak se sáhne po `<DATA_ROOT>/session.key`. |
 | `SESSION_TTL_HOURS` | `12` | Platnost přihlášení v hodinách. Musí být kladné číslo, jinak se použije výchozí hodnota. |
 | `REINGEST_ENABLED` | `false` | Řetězec `"true"` zapne odesílání reingest signálu chatbotovi. |
-| `REINGEST_URL` | — | Cílová URL reingest webhooku. Bez ní se nic neodesílá ani při `REINGEST_ENABLED=true`. |
+| `REINGEST_URL` |, | Cílová URL reingest webhooku. Bez ní se nic neodesílá ani při `REINGEST_ENABLED=true`. |
 | `REINGEST_TOKEN` | prázdný | Posílá se v hlavičce `X-Reingest-Token`. |
 | `ANALYTICS_URL` | `http://127.0.0.1:8000` | Adresa analytického backendu chatbota (Daniel). **Tohle je ta jedna proměnná, která se nastaví, až bude adresa známá.** Koncové lomítko se ořeže. |
 | `ANALYTICS_TIMEOUT_MS` | `4000` | Kolik milisekund se čeká na odpověď analytiky. Neplatná nebo nekladná hodnota = výchozí. |
@@ -133,12 +133,12 @@ npm run useradd -- --help                           # nápověda
 
 Pravidla, která vynucuje `server/src/users.ts`:
 
-- **Jméno:** 2–32 znaků, povolena písmena (včetně diakritiky), číslice, tečka,
+- **Jméno:** 2 až 32 znaků, povolena písmena (včetně diakritiky), číslice, tečka,
   pomlčka a podtržítko. Porovnává se **bez ohledu na velikost písmen**
   (`Spravce` == `spravce`), ukládá se ale ve tvaru, jak ho zadal správce.
-- **Heslo:** minimálně 8 znaků. Neořezává se — mezera na kraji je jeho součástí
+- **Heslo:** minimálně 8 znaků. Neořezává se, mezera na kraji je jeho součástí
   (stejně při zakládání i při přihlášení).
-- **Poslední účet nejde smazat** — systém by se stal nepřístupným.
+- **Poslední účet nejde smazat**, systém by se stal nepřístupným.
 - Heslo se ukládá výhradně jako **bcrypt hash (cost 12)**, nikdy otevřeně.
 
 > Heslo zadané na příkazové řádce zůstává v historii shellu a v seznamu
@@ -146,7 +146,7 @@ Pravidla, která vynucuje `server/src/users.ts`:
 
 ### Výchozí účet
 
-`npm run seed` založí účet `spravce` / `Amphibiarium2026` — ale **jen když je
+`npm run seed` založí účet `spravce` / `Amphibiarium2026`, ale **jen když je
 `users.json` prázdný nebo neexistuje**. Existující účty se nikdy nepřepisují.
 Po prvním přihlášení heslo změňte:
 
@@ -173,7 +173,7 @@ a do CMS se nedá přihlásit.
   selhalo jméno, nebo heslo) a zapisuje se do audit logu **včetně IP adresy**.
   Neexistující jméno se porovnává proti slepému hashi, aby doba odpovědi
   neprozradila existenci účtu.
-- Cookie **nemá příznak `secure`** — funguje tedy i na čistém HTTP v pavilonové
+- Cookie **nemá příznak `secure`**, funguje tedy i na čistém HTTP v pavilonové
   síti. Při vystavení do internetu patří server za reverzní proxy s HTTPS.
 
 ---
@@ -211,13 +211,13 @@ Vše je pod `DATA_ROOT` (výchozí `<repo>/data`):
 `<DATA_ROOT>/displeje` a prefix `/data/displeje/`. `users.json`, `session.key`
 ani `audit.jsonl` proto přes `/data/...` stáhnout nejdou.
 
-`audit.jsonl`, `users.json` a `session.key` jsou v `.gitignore` — do repozitáře
+`audit.jsonl`, `users.json` a `session.key` jsou v `.gitignore`, do repozitáře
 nepatří.
 
 ### Ruční zásah do složek
 
 Soubor přetažený přímo do složky slidu se objeví v CMS i na tabletu bez
-restartu — API čte disk při každém požadavku. Musí ale splňovat konvenci:
+restartu. API čte disk při každém požadavku. Musí ale splňovat konvenci:
 fotky `.png` (jiné přípony se ignorují), video `.mp4`, název složky slidu
 `<číslo>_<typ>`.
 
@@ -225,7 +225,7 @@ fotky `.png` (jiné přípony se ignorují), video `.mp4`, název složky slidu
 
 ## 6. Formáty souborů
 
-### `text.txt` — pole info panelu
+### `text.txt`, pole info panelu
 
 Řádky ve tvaru `Klic: Hodnota`, kódování UTF-8. Zapisují se v pevném pořadí a
 **prázdná pole se nezapisují vůbec**:
@@ -247,7 +247,7 @@ DelkaZivota: 10 až 15 let
 - **Povinné:** `Sekce` a `Nazev`. Validuje server i editor; `Sekce` musí být
   jedna z deseti hodnot seznamu (`Listovnice`, `Caudata`, `Červoři`, `Lezci`,
   `Madagaskar`, `Neotenie`, `Obojživelníci České republiky`, `Pralesničky`,
-  `Rozmanitost žab`, `Šesté vymírání` — definováno v `server/src/displays.ts`
+  `Rozmanitost žab`, `Šesté vymírání`, definováno v `server/src/displays.ts`
   a v `web/src/lib/types.ts`, seznamy je nutné držet shodné).
 - Parser toleruje CRLF i mezery kolem hodnoty; při zápisu se hodnoty ořezávají.
 - `Latinsky` se před zápisem **kanonizuje** (`server/src/latin.ts`): pryč
@@ -279,7 +279,7 @@ DelkaZivota: 10 až 15 let
 | Pole | Význam |
 |---|---|
 | `druh` | Interní název pro přehled CMS. Hodnota `Nepřiřazeno` = prázdný displej. Při uložení info panelu se přepíše hodnotou `Nazev`. |
-| `stav` | `online` / `offline`. **Zapisuje ho jen `seed` a `migrate`** — za běhu se neaktualizuje, není to živý monitoring. |
+| `stav` | `online` / `offline`. **Zapisuje ho jen `seed` a `migrate`**, za běhu se neaktualizuje, není to živý monitoring. |
 | `posledniZmena` | ISO datum, posouvá ho každá změna obsahu. |
 | `slidy` | Doplňkový přehled složek. Přepisuje se podle skutečného stavu disku; Unity ho nepotřebuje. |
 | `name` | = `Nazev`, identifikace pro chatbota. |
@@ -288,9 +288,9 @@ DelkaZivota: 10 až 15 let
 | `section` | Taxonomická čeleď (např. `Dendrobatidae`). Existuje **jen v `meta.json`**, do `text.txt` se nezapisuje a na tabletu se nezobrazuje. |
 
 Displej bez čitelného `meta.json` se v seznamu `GET /api/displays` vůbec
-neobjeví — soubor je tedy povinný.
+neobjeví, soubor je tedy povinný.
 
-### `text.txt` — zajímavost (slide `_gal`)
+### `text.txt`, zajímavost (slide `_gal`)
 
 Jeden dlouhý odstavec o druhu, na zařízení vlevo vedle fotky:
 
@@ -300,13 +300,13 @@ končetiny, ocas, části srdce i míchy bez vzniku jizev…
 ```
 
 - **Zapisuje se vždy klíč `Popis:`**, při čtení se bere i `Text:` (Michal
-  používá obojí). Text může na disku pokračovat na dalších řádcích — server
+  používá obojí). Text může na disku pokračovat na dalších řádcích, server
   bere všechno za klíčem.
 - Soubor **bez klíče** (ruční zásah) se přečte celý jako holý odstavec, ať se
   obsah neztratí.
 - Prázdný text = prázdný soubor.
 - Píše se přes `PUT /api/displays/:id/slides/:n/text` (tělo `{text}`).
-- Text se na displeji **neroluje** — doporučený limit je 150–200 slov, editor
+- Text se na displeji **neroluje**, doporučený limit je 150 až 200 slov, editor
   průběžně počítá slova.
 
 ### Sekvence 3D modelu (slide `_3d`)
@@ -319,7 +319,7 @@ končetiny, ocas, části srdce i míchy bez vzniku jizev…
   přes `.tmp-*`).
 - Soubor s jiným názvem než `NNN.png` se do sekvence nepočítá a ignoruje se.
 
-### `kb.md` — znalostní báze
+### `kb.md`, znalostní báze
 
 Markdown v **kořeni složky displeje**, ne ve slidu. Čte ho chatbot, CMS ho jen
 edituje. Při zápisu se normalizují konce řádků na `\n` a doplňuje se koncový
@@ -338,7 +338,7 @@ nepřepisuje automaticky.
   přejmenuje; předchozí `mapa.png` se vrátí mezi běžné fotky pod novým názvem.
   Mapa je jen na slidu typu `info`.
 - Fotky se čtou jen s příponou `.png`, řazené abecedně podle názvu souboru.
-- **Zajímavost (`_gal`) má právě jednu fotku** — nová nahraná předchozí smaže.
+- **Zajímavost (`_gal`) má právě jednu fotku**, nová nahraná předchozí smaže.
 - **3D model (`_3d`)** má místo unikátních názvů číslovanou sekvenci, viz výš.
 
 ### Video
@@ -347,7 +347,7 @@ nepřepisuje automaticky.
   konverze se nedělá.
 - Video patří na slide **`_vid`** a nově i volitelně na **`_info`** (Michal ho
   na zařízení řadí na začátek galerie fotek info panelu).
-- Na slidu je vždy **jedno** video — starší `.mp4` se před zápisem smažou.
+- Na slidu je vždy **jedno** video, starší `.mp4` se před zápisem smažou.
 - Název souboru se očistí (ponechá písmena včetně české diakritiky, číslice,
   tečku, pomlčku, podtržítko a mezeru) a přípona se vynutí na `.mp4`.
 - Limit uploadu je **200 MB** (`@fastify/multipart`).
@@ -356,7 +356,7 @@ nepřepisuje automaticky.
 
 ## 7. Struktura pro Unity
 
-Fáze A (kompatibilita s Unity) je hotová a ověřená naživo — Unity načte
+Fáze A (kompatibilita s Unity) je hotová a ověřená naživo. Unity načte
 strukturu bez ručního zásahu. Kontrakt je:
 
 **Zdrojem pravdy jsou složky a názvy souborů, ne `meta.json`.**
@@ -382,7 +382,7 @@ cs/<pořadí>_<typ>/
   se ale změnil na finální strukturu: dlouhý text vlevo, jedna fotka vpravo.
 - **`_3d` i `_mod`** znamenají 3D model. Nově zakládaný slide dostane `_3d`;
   existující `_mod` se zachová i při změně pořadí (nepřejmenovává se).
-- **AI slide** je prázdná složka `<n>_ai` — její existence říká tabletu, že se
+- **AI slide** je prázdná složka `<n>_ai`, její existence říká tabletu, že se
   na tomto místě má zobrazit AI průvodce. Žádný obsah nemá.
 - **`kb.md` a `meta.json`** jsou v kořeni displeje, mimo `cs/`.
 
@@ -394,7 +394,7 @@ Operace se slidy:
 | odebrání | složka se smaže i s obsahem, zbytek se přečísluje na souvislou řadu 1..k |
 | změna pořadí | složky se přejmenují na novou souvislou řadu |
 
-Přečíslování je **dvoufázové** — nejdřív na dočasné názvy `.tmp-<n>_<typ>`, pak
+Přečíslování je **dvoufázové**, nejdřív na dočasné názvy `.tmp-<n>_<typ>`, pak
 na cílové, aby se názvy nesrazily. Když proces spadne mezi fázemi, zůstanou na
 disku složky s prefixem `.tmp-`; server je ignoruje (neodpovídají regexu) a je
 potřeba je přejmenovat ručně.
@@ -410,7 +410,7 @@ odebrání i přesunu načítá detail displeje znovu.
   řádek), append-only.
 - Záznam: `{"cas": ISO, "uzivatel": string, "akce": string, "cil": string}`.
 - `GET /api/audit` načte **celý soubor**, přeskočí nečitelné řádky a vrátí
-  záznamy **od nejnovějšího**. Rotace ani stránkování nejsou — soubor roste
+  záznamy **od nejnovějšího**. Rotace ani stránkování nejsou, soubor roste
   neomezeně a při každém požadavku se celý načte do paměti. Při velkém objemu
   ho lze bezpečně archivovat: zastavit server, přesunout soubor stranou,
   spustit znovu (nový se založí sám).
@@ -445,7 +445,7 @@ domluvená, běží na sucho: nikam se nevolá, jen se do konzole zaloguje, co b
 odeslalo:
 
 ```
-[reingest] VYPNUTO — poslal bych POST na '(nenastavená URL)' s tělem {"displej":1,"soubor":"displeje/1/kb.md"}
+[reingest] VYPNUTO, poslal bych POST na '(nenastavená URL)' s tělem {"displej":1,"soubor":"displeje/1/kb.md"}
 ```
 
 ### Zapnutí
@@ -467,7 +467,7 @@ vyplněná `REINGEST_URL`.
   cesta je relativní k datové složce.
 - **Timeout:** 5 sekund (`AbortSignal.timeout`).
 - **Fire-and-forget:** volá se přes `void`, uložení obsahu na odpověď nečeká.
-  Selhání se jen zaloguje varováním — nikdy neshodí server ani nezruší zápis.
+  Selhání se jen zaloguje varováním, nikdy neshodí server ani nezruší zápis.
 
 ### Kdy se signál posílá
 
@@ -476,7 +476,7 @@ vyplněná `REINGEST_URL`.
 | uložení polí info panelu | `cs/<n>_info/text.txt` **a** `meta.json` (dva samostatné požadavky) |
 | uložení znalostní báze | `kb.md` |
 
-Upload fotek, videí ani změny struktury slidů reingest **nespouštějí** — pro
+Upload fotek, videí ani změny struktury slidů reingest **nespouštějí**, pro
 chatbota jsou relevantní jen fakta a identifikace druhu.
 
 ---
@@ -484,7 +484,7 @@ chatbota jsou relevantní jen fakta a identifikace druhu.
 ## 10. Analytika chatbota v dashboardu
 
 Dashboard („Přehled provozu") ukazuje reálné dotazy návštěvníků na AI. Data
-nepočítáme my — dodává je **analytický backend chatbota (Daniel)**, který běží
+nepočítáme my, dodává je **analytický backend chatbota (Daniel)**, který běží
 na stejném serveru. Naše strana je jen čtení (`server/src/analytics.ts`).
 
 ### Adresa a zapnutí
@@ -513,7 +513,7 @@ vrací `{since, total_questions, answered, unanswered, per_species[]}`.
 `species_latin` proti `latin_name` v našich `meta.json` (obě strany se
 kanonizují stejnými pravidly, viz [kapitola 6](#6-formáty-souborů)), a
 `display_id` je až záložní klíč. Druh, který se nepodaří napárovat na žádný
-displej, dashboard nezamlčí — napíše ho pod heat mapou, ať se dá opravit
+displej, dashboard nezamlčí, napíše ho pod heat mapou, ať se dá opravit
 latinský název v info panelu.
 
 ### Proxy na naší straně
@@ -537,7 +537,7 @@ Odpověď je **vždy `HTTP 200`** s obálkou, ne chyba:
 ```
 
 Dashboard z toho vykreslí hlášku „Analytika chatbota zatím není připojená" i s
-důvodem a jinak funguje dál — stránka se normálně otevře, heat mapa ukáže
+důvodem a jinak funguje dál, stránka se normálně otevře, heat mapa ukáže
 displeje z CMS bez intenzity, KPI karty se nezobrazí (radši nic než vymyšlené
 číslo). Do konzole serveru se zapíše `[analytika] … selhalo: …`.
 
@@ -552,7 +552,7 @@ Mapa dotazů kreslí body na **oficiální půdorys pavilonu od ZOO**:
 i body drží poměr stran a škálují se se šířkou okna (souřadnice jsou v %).
 
 **Souřadnice displejů jsou v `web/src/pages/Dashboard.tsx` v poli
-`PUDORYS_BODY`** — jeden řádek na displej:
+`PUDORYS_BODY`**, jeden řádek na displej:
 
 ```ts
 { displej: 8, x: 13.5, y: 77.7 },
@@ -565,23 +565,23 @@ v komentářích označené barvou a číslem sekce z plánku, jen pro orientaci
 #### Jak souřadnice vznikly
 
 Aktuální plánek (od 17. 8. 2026) má **u každé vitríny natištěné číslo
-displeje 1–31**, takže se nic nedohaduje:
+displeje 1 až 31**, takže se nic nedohaduje:
 
 1. Detekcí barevných ploch v obrázku se našly středy všech obdélníčků (spojité
    komponenty jedné barvy; vyřazená kolečka sekcí, tenké linky a obrysy).
 2. Z výřezů kolem každého středu se přečetlo natištěné číslo a přiřadilo se
-   k souřadnici. Každé číslo 1–31 padlo právě jednou, nic nechybí a nic
+   k souřadnici. Každé číslo 1 až 31 padlo právě jednou, nic nechybí a nic
    nepřebývá.
 3. Kontrola: body se s čísly vykreslily zpět na plánek a porovnaly s natištěnými
    čísly (i naživo v prohlížeči nad neztlumeným plánkem).
 
-**Kolečka s čísly 1–11 jsou sekce** (skupiny displejů), ne displeje — body
+**Kolečka s čísly 1 až 11 jsou sekce** (skupiny displejů), ne displeje, body
 nemají. Bez čísla jsou na plánku tři tvary, které tedy displeje nejsou:
 kruhová nádrž u sekce 1, tenký zelený pruh u stěny a **prostřední box
 fialového trojbloku** u sekce 8.
 
 > Starší verze plánku čísla neměla a pozice se odhadovaly z pořadí sekcí. Tahle
-> verze ten odhad ruší — pokud se v mapě někdy objeví bod mimo vitrínu, je to
+> verze ten odhad ruší, pokud se v mapě někdy objeví bod mimo vitrínu, je to
 > chyba souřadnice, ne domněnky.
 
 #### Vzhled mapy
@@ -597,14 +597,14 @@ fialového trojbloku** u sekce 8.
 
 - Intenzita (barva i velikost bodu) jde ze stejného zdroje jako dřív:
   `per_species.count` z `/analytics/summary`, napárováno na displeje.
-- Bez dat z chatbota se body kreslí **neutrálně** — žádná vymyšlená intenzita.
+- Bez dat z chatbota se body kreslí **neutrálně**, žádná vymyšlená intenzita.
 - Displeje, které v CMS jsou, ale na plánku nejsou (v CMS je 37 složek, plánek
   má 31), dashboard vypíše pod mapou. Stejně tak obráceně.
 
 ### Co dashboard nezobrazuje
 
 **Stav tabletů (online/offline) v dashboardu není.** Monitoring zařízení nemáme
-z čeho číst (přijde od Michala), takže se nesimuluje — proužek displejů je
+z čeho číst (přijde od Michala), takže se nesimuluje, proužek displejů je
 označený jako přehled z CMS a rozlišuje jen „obsah přiřazen" / „nepřiřazeno“.
 `stav` v `meta.json` je editovatelný příznak CMS, **ne** živý stav zařízení.
 
@@ -620,8 +620,8 @@ automaticky, dokud ho někdo vědomě nepřidá do seznamu.
 **Veřejné (bez přihlášení):**
 
 - `POST /api/login`, `POST /api/logout`, `GET /api/me`
-- `GET /api/displays/:id` — data pro náhled tabletu u expozice
-- `/data/displeje/...` (statické soubory) a SPA včetně `/tablet/:id` — hookem
+- `GET /api/displays/:id`, data pro náhled tabletu u expozice
+- `/data/displeje/...` (statické soubory) a SPA včetně `/tablet/:id`, hookem
   neprocházejí vůbec
 
 **Chráněné (bez platné session vrací `401 {"chyba":"Přihlaste se prosím."}`):**
@@ -629,28 +629,28 @@ automaticky, dokud ho někdo vědomě nepřidá do seznamu.
 | Metoda | Cesta | Popis |
 |---|---|---|
 | GET | `/api/displays` | seznam displejů (id, druh, `latin_name`, stav, poslední změna, náhledová fotka) |
-| PUT | `/api/displays/:id/slides/:n` | uložení polí info panelu — tělo `{pole, section}`, vrací `{ok, latin, latinCorrected}` |
-| PUT | `/api/displays/:id/kb` | zápis `kb.md` — tělo `{text}` |
-| PUT | `/api/displays/:id/slides/:n/text` | text zajímavosti (`_gal`) — tělo `{text}`, na disk jako `Popis: …` |
+| PUT | `/api/displays/:id/slides/:n` | uložení polí info panelu, tělo `{pole, section}`, vrací `{ok, latin, latinCorrected}` |
+| PUT | `/api/displays/:id/kb` | zápis `kb.md`, tělo `{text}` |
+| PUT | `/api/displays/:id/slides/:n/text` | text zajímavosti (`_gal`), tělo `{text}`, na disk jako `Popis: …` |
 | POST | `/api/displays/:id/slides/:n/image` | multipart upload fotky (konverze na PNG); `_gal` nahradí jedinou fotku, `_3d` přidá snímek na konec sekvence |
 | DELETE | `/api/displays/:id/slides/:n/images/:nazev` | smazání fotky |
-| PUT | `/api/displays/:id/slides/:n/images/mapa` | označení mapy — tělo `{nazev}`, `null` značení zruší |
+| PUT | `/api/displays/:id/slides/:n/images/mapa` | označení mapy, tělo `{nazev}`, `null` značení zruší |
 | POST | `/api/displays/:id/slides/:n/video` | multipart upload MP4 (slide `_vid` i `_info`) |
 | DELETE | `/api/displays/:id/slides/:n/video` | smazání videa |
-| POST | `/api/displays/:id/slides` | přidání slidu — tělo `{typ}` (`info`/`ai`/`3d`/`vid`/`gal`) |
+| POST | `/api/displays/:id/slides` | přidání slidu, tělo `{typ}` (`info`/`ai`/`3d`/`vid`/`gal`) |
 | DELETE | `/api/displays/:id/slides/:n` | odebrání slidu |
-| PUT | `/api/displays/:id/slides/reorder` | změna pořadí — tělo `{poradi: [n, …]}` |
+| PUT | `/api/displays/:id/slides/reorder` | změna pořadí, tělo `{poradi: [n, …]}` |
 | POST | `/api/displays/:id/refresh` | odeslání na displej |
 | GET | `/api/audit` | audit log |
 | GET | `/api/kb-template` | výchozí šablona `kb.md` |
-| GET | `/api/analytics/questions` | dotazy návštěvníků z chatbota — `since`, `limit`, `answered`, viz [kapitola 10](#10-analytika-chatbota-v-dashboardu) |
-| GET | `/api/analytics/summary` | souhrn dotazů z chatbota — `since` |
+| GET | `/api/analytics/questions` | dotazy návštěvníků z chatbota, `since`, `limit`, `answered`, viz [kapitola 10](#10-analytika-chatbota-v-dashboardu) |
+| GET | `/api/analytics/summary` | souhrn dotazů z chatbota, `since` |
 
 Chyby se vrací jako JSON `{"chyba": "..."}`; frontend tuto hlášku zobrazuje
 uživateli. Na `401` klient smaže lokální stav a přesměruje na `/login` (kromě
 veřejného náhledu tabletu).
 
-**`POST /api/displays/:id/refresh` je zatím mock** — zapíše jen záznam do audit
+**`POST /api/displays/:id/refresh` je zatím mock**, zapíše jen záznam do audit
 logu (`odesláno na displej`). Skutečné vypuzení obsahu na tablet přijde s Unity
 integrací. Fyzicky je obsah na disku už ve chvíli uložení, takže tablet ho
 načte při dalším čtení tak jako tak.
@@ -667,9 +667,9 @@ Spouštějí se z kořene repozitáře a **respektují `DATA_ROOT`**.
 
 | Příkaz | Co dělá |
 |---|---|
-| `npm run seed` | **Destruktivní.** Smaže a znovu vygeneruje `data/displeje/1..37`. Displeje 1–3 dostanou obsah (`1_info`, `2_vid`, `3_gal` se zajímavostí, `4_ai`, `kb.md`), 4–37 jsou `Nepřiřazeno` bez slidů. Displeje s číslem dělitelným 11 dostanou `stav: "offline"`. Zakládá výchozí účet, pokud žádný neexistuje. |
-| `npm run migrate` | Jednorázová migrace staré struktury (`cs/slide-1..6`, `text.md`, `kb.md` uvnitř slidu) na formát pro Unity. Zachová média (obrázky se převedou na PNG, první MP4 jde do `2_vid`), texty starých slidů připojí do `kb.md`. **Idempotentní** — displej bez složek `slide-*` přeskočí. |
-| `npm run backfill --workspace server` | Doplní do existujících `meta.json` identifikaci pro chatbota (`name`, `druh`, `latin_name`, `category`) z `text.txt`. Idempotentní, médií ani textů se nedotýká. `section` (čeleď) nezná — tu doplní kurátor v UI. V kořenovém `package.json` zkratka není. |
+| `npm run seed` | **Destruktivní.** Smaže a znovu vygeneruje `data/displeje/1..37`. Displeje 1 až 3 dostanou obsah (`1_info`, `2_vid`, `3_gal` se zajímavostí, `4_ai`, `kb.md`), 4 až 37 jsou `Nepřiřazeno` bez slidů. Displeje s číslem dělitelným 11 dostanou `stav: "offline"`. Zakládá výchozí účet, pokud žádný neexistuje. |
+| `npm run migrate` | Jednorázová migrace staré struktury (`cs/slide-1..6`, `text.md`, `kb.md` uvnitř slidu) na formát pro Unity. Zachová média (obrázky se převedou na PNG, první MP4 jde do `2_vid`), texty starých slidů připojí do `kb.md`. **Idempotentní**, displej bez složek `slide-*` přeskočí. |
+| `npm run backfill --workspace server` | Doplní do existujících `meta.json` identifikaci pro chatbota (`name`, `druh`, `latin_name`, `category`) z `text.txt`. Idempotentní, médií ani textů se nedotýká. `section` (čeleď) nezná, tu doplní kurátor v UI. V kořenovém `package.json` zkratka není. |
 | `npm run useradd -- …` / `npm run userlist` | Správa účtů, viz [kapitola 4](#4-účty-a-přihlašování). |
 
 Reset demo dat:
@@ -682,7 +682,7 @@ rm -rf data/displeje data/audit.jsonl && npm run seed
 
 ## 13. Zálohování a obnova
 
-Celý stav systému je **jedna složka** — `DATA_ROOT`. Záloha je tedy prosté
+Celý stav systému je **jedna složka**, `DATA_ROOT`. Záloha je tedy prosté
 zkopírování:
 
 ```bash
@@ -692,7 +692,7 @@ tar czf amphibiarium-$(date +%F).tar.gz -C /srv/amphibiarium data
 Zálohovat je vhodné se zastaveným serverem, nebo aspoň počítat s tím, že
 souběžný upload může skončit v záloze rozepsaný.
 
-Ve složce jsou i **citlivé soubory** — `users.json` (bcrypt hashe hesel) a
+Ve složce jsou i **citlivé soubory**, `users.json` (bcrypt hashe hesel) a
 `session.key`. Zálohu je proto potřeba držet stejně chráněnou jako produkci.
 
 Obnova = nakopírovat složku zpět a nastavit `DATA_ROOT`. Pokud se obnovuje
@@ -711,13 +711,13 @@ a restart (respektive v dev režimu pracovat na portu 5173).
 `DATA_ROOT` ukazuje jinam, než kde data jsou, nebo se ještě neseedovalo.
 Zkontrolujte hodnotu, kterou server vypíše při startu (`Datová složka: …`).
 
-**`Žádné účty v data/users.json — do CMS se nedá přihlásit.`**
+**`Žádné účty v data/users.json, do CMS se nedá přihlásit.`**
 Založte účet: `npm run useradd -- <jmeno> <heslo>`. Pozor na shodný `DATA_ROOT`
 mezi skriptem a serverem.
 
 **Nejde se přihlásit, přestože heslo je správné.**
 Ověřte `npm run userlist`, že účet je v té datové složce, nad kterou běží
-server. Zkontrolujte také, jestli se v hesle neztratila mezera na kraji —
+server. Zkontrolujte také, jestli se v hesle neztratila mezera na kraji,
 neořezává se.
 
 **Všichni se najednou odhlásili.**
@@ -733,7 +733,7 @@ Port 3000 už někdo drží (typicky předchozí instance). Ukončete ji, nebo n
 jiný `PORT`.
 
 **Fotka se nenahraje, API vrací „Obrázek se nepodařilo převést do PNG."**
-`sharp` daný formát nepřečetl. Typicky HEIC z iPhonu — ověření, jestli HEIC
+`sharp` daný formát nepřečetl. Typicky HEIC z iPhonu, ověření, jestli HEIC
 projde, je na seznamu otevřených bodů (viz `handoff.md`). Řešení pro provoz:
 převést na JPG před nahráním.
 
@@ -757,25 +757,25 @@ Chybí nebo je poškozený `meta.json`, případně složka nemá čistě číse
 
 Stav k srpnu 2026, otevřené body jsou i v `handoff.md`.
 
-- **Odeslání na displej je mock** — `/api/displays/:id/refresh` jen zapíše audit.
+- **Odeslání na displej je mock**, `/api/displays/:id/refresh` jen zapíše audit.
 - **Reingest chatbota je vypnutý**, dokud se nedomluví rozhraní s chatbotem.
-- **`stav` (online/offline) není živý** — hodnotu zapisuje jen `seed`/`migrate`,
+- **`stav` (online/offline) není živý**, hodnotu zapisuje jen `seed`/`migrate`,
   žádný monitoring tablety nekontroluje. **Přehled provozu proto stav zařízení
   vůbec neukazuje** (dřív ho simuloval); monitoring přijde od Michala.
-- **Čísla v Přehledu provozu jsou reálná, ale ze chatbota** — dokud jeho
+- **Čísla v Přehledu provozu jsou reálná, ale ze chatbota**, dokud jeho
   analytika neběží, stránka to napíše a zbytek CMS funguje bez omezení, viz
   [kapitola 10](#10-analytika-chatbota-v-dashboardu).
 - **Náhled tabletu není v poměru 3:2.** Unity jede fix 1200 × 800; přizpůsobení
   náhledu a servírování fotek ve vhodném rozměru je fáze B.
 - **Správa účtů je jen z příkazové řádky**, v UI zatím není.
-- **Přihlašování nemá rate limiting** — neúspěšné pokusy se pouze zapisují do
+- **Přihlašování nemá rate limiting**, neúspěšné pokusy se pouze zapisují do
   auditu i s IP adresou.
 - **Server nedělá HTTPS** a session cookie nemá příznak `secure`. Pro provoz
   mimo důvěryhodnou síť patří za reverzní proxy s TLS.
-- **Audit log neroste omezeně řízeně** — bez rotace, `GET /api/audit` načítá
+- **Audit log neroste omezeně řízeně**, bez rotace, `GET /api/audit` načítá
   celý soubor.
 - **Vícejazyčnost není hotová.** Na disku existuje jen větev `cs/`; ostatní
   jazyky jsou v UI označené „brzy" a nejdou vybrat.
 - **Seznam sekcí je zdvojený** v `server/src/displays.ts` a `web/src/lib/types.ts`
-  — při změně je nutné upravit obě místa, jinak editor nabídne hodnotu, kterou
+  - při změně je nutné upravit obě místa, jinak editor nabídne hodnotu, kterou
   server odmítne.

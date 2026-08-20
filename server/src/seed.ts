@@ -53,7 +53,7 @@ async function seedDisplay(id: number, seed: SeedDisplay | null) {
     // 2_vid: prázdné, mp4 nahraje kurátor
     await fs.mkdir(path.join(root, "cs", "2_vid"), { recursive: true });
 
-    // 3_gal: zajímavost — dlouhý text a jedna fotka (finální struktura)
+    // 3_gal: zajímavost, dlouhý text a jedna fotka (finální struktura)
     const gal = path.join(root, "cs", "3_gal");
     await fs.mkdir(gal, { recursive: true });
     await writeFileAtomic(path.join(gal, "text.txt"), serializeZajimavostText(seed.zajimavost));
@@ -98,7 +98,7 @@ async function main() {
   console.log("Hotovo. Displeje 1-3 mají obsah (1_info, 2_vid, 3_gal, 4_ai, kb.md), 4-37 jsou Nepřiřazeno.");
 
   // Účet, aby se dalo přihlásit hned po instalaci. Existující účty se nikdy
-  // nepřepisují — opakovaný seed dat se uživatelů nedotkne.
+  // nepřepisují, opakovaný seed dat se uživatelů nedotkne.
   if (await zalozVychoziUcet()) {
     console.log("");
     console.log(`Založen výchozí účet:  ${VYCHOZI_JMENO} / ${VYCHOZI_HESLO}`);

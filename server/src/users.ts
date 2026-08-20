@@ -1,11 +1,11 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { compare, hash } from "bcryptjs";
+import { hashHesla, overHash } from "./hash.js";
 import { DATA_ROOT } from "./paths.js";
 import { writeFileAtomic } from "./atomic.js";
 
 // Účty kurátorů. Stejná filozofie jako zbytek CMS: žádná databáze, jen soubor
-// na disku — data/users.json vedle složek displejů.
+// na disku, data/users.json vedle složek displejů.
 //
 //   {
 //     "verze": 1,
@@ -25,7 +25,7 @@ export const USERS_FILE = path.join(DATA_ROOT, "users.json");
 const BCRYPT_COST = 12;
 
 // Hash, který nikdy nepatří žádnému heslu. Porovnáváme proti němu i tehdy,
-// když jméno neexistuje — přihlášení pak trvá stejně dlouho jako u
+// když jméno neexistuje, přihlášení pak trvá stejně dlouho jako u
 // existujícího účtu a z doby odpovědi nejde vyčíst, které jméno existuje.
 const SLEPY_HASH = "$2b$12$wQ2QEip4bXbP0dmo.8xdweEgNMO5VdOFPOwiwycinyRuCTUJWs0da";
 
@@ -70,7 +70,7 @@ export function validujHeslo(heslo: string): string | null {
 
 // Prázdné pole vrací JEN když soubor prokazatelně neexistuje (ENOENT). Jiná
 // chyba čtení (EACCES, síťový disk odpadl) ani poškozený JSON se NESMÍ tvářit
-// jako "žádné účty" — jinak by na to navázalo tiché přepsání účtů výchozím
+// jako "žádné účty", jinak by na to navázalo tiché přepsání účtů výchozím
 // účtem. Poškozený soubor proto vyhodí výjimku a volající operaci přeruší.
 export async function readUsers(): Promise<User[]> {
   let raw: string;
@@ -106,7 +106,7 @@ async function writeUsers(
   if (!opt.povolitUbytek) {
     const soucasny = (await readUsers()).length; // na poškozeném souboru vyhodí a zápis se neprovede
     if (uzivatele.length < soucasny) {
-      throw new Error("Zápis by snížil počet účtů — přerušeno (mazání jen přes --smazat).");
+      throw new Error("Zápis by snížil počet účtů, přerušeno (mazání jen přes --smazat).");
     }
   }
   await fs.mkdir(DATA_ROOT, { recursive: true });
@@ -123,16 +123,16 @@ export async function pocetUzivatelu(): Promise<number> {
   return (await readUsers()).length;
 }
 
-// Ověření přihlašovacích údajů. Vrací účet, nebo null — volající se nikdy
+// Ověření přihlašovacích údajů. Vrací účet, nebo null, volající se nikdy
 // nedozví, jestli selhalo jméno, nebo heslo.
 export async function overUdaje(jmeno: string, heslo: string): Promise<User | null> {
   const user = await najdiUzivatele(jmeno);
   if (!user) {
     // Účet neexistuje: stejně spálíme čas na bcryptu, ať odpověď netrvá jinak.
-    await compare(heslo, SLEPY_HASH);
+    await overHash(heslo, SLEPY_HASH);
     return null;
   }
-  const sedi = await compare(heslo, user.hash);
+  const sedi = await overHash(heslo, user.hash);
   return sedi ? user : null;
 }
 
@@ -152,7 +152,7 @@ export async function pridejUzivatele(
   }
   uzivatele.push({
     jmeno: jmeno.trim(),
-    hash: await hash(heslo, BCRYPT_COST),
+    hash: await hashHesla(heslo, BCRYPT_COST),
     vytvoreno: new Date().toISOString(),
   });
   await writeUsers(uzivatele);
@@ -171,7 +171,7 @@ export async function zmenHeslo(
   const user = uzivatele.find((u) => klic(u.jmeno) === k);
   if (!user) return { ok: false, chyba: `Účet "${jmeno.trim()}" neexistuje.` };
 
-  user.hash = await hash(heslo, BCRYPT_COST);
+  user.hash = await hashHesla(heslo, BCRYPT_COST);
   user.zmeneno = new Date().toISOString();
   await writeUsers(uzivatele);
   return { ok: true };
@@ -185,7 +185,7 @@ export async function smazUzivatele(jmeno: string): Promise<{ ok: boolean; chyba
     return { ok: false, chyba: `Účet "${jmeno.trim()}" neexistuje.` };
   }
   if (zbyle.length === 0) {
-    return { ok: false, chyba: "Nelze smazat poslední účet — do CMS by se nikdo nedostal." };
+    return { ok: false, chyba: "Nelze smazat poslední účet, do CMS by se nikdo nedostal." };
   }
   await writeUsers(zbyle, { povolitUbytek: true });
   return { ok: true };
@@ -198,7 +198,7 @@ export const VYCHOZI_HESLO = "Amphibiarium2026";
 
 export async function zalozVychoziUcet(): Promise<boolean> {
   // Jen když soubor PROKAZATELNĚ neexistuje. Existující (byť poškozený) soubor
-  // se nechá být — nezakládáme přes něj výchozí účet a nepřepisujeme účty.
+  // se nechá být, nezakládáme přes něj výchozí účet a nepřepisujeme účty.
   try {
     await fs.access(USERS_FILE);
     return false;

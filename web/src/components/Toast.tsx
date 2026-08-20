@@ -18,7 +18,7 @@ const ToastContext = createContext<ToastApi | null>(null);
 
 let counter = 0;
 
-// Potvrzení úspěchu zmizí samo — ale pomaleji, než trvá přečíst větu.
+// Potvrzení úspěchu zmizí samo, ale pomaleji, než trvá přečíst větu.
 // Chyba nezmizí vůbec: kurátor si ji má přečíst a zavřít, ne ji minout,
 // protože se zrovna díval do formuláře a hláška vyskočila jinde.
 const TRVANI_USPECHU_MS = 6000;

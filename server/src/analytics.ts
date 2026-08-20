@@ -1,4 +1,4 @@
-// Analytika chatbota (Daniel) — čtení dotazů návštěvníků pro dashboard.
+// Analytika chatbota (Daniel), čtení dotazů návštěvníků pro dashboard.
 //
 // Kontrakt (závazný, od Daniela):
 //   GET <ANALYTICS_URL>/analytics/questions?since=<ISO>&limit=<n>&answered=<bool>
@@ -11,7 +11,7 @@
 //
 // Backend zatím nemusí běžet, takže se nedostupnost bere jako normální stav:
 // nikdy se nevyhazuje výjimka, vrací se obálka { dostupne: false, duvod } a
-// dashboard z ní napíše hlášku. Stejný přístup jako u reingestu — cizí služba
+// dashboard z ní napíše hlášku. Stejný přístup jako u reingestu, cizí služba
 // nikdy neshodí naši.
 
 const ANALYTICS_URL = (process.env.ANALYTICS_URL ?? "http://127.0.0.1:8000").replace(/\/+$/, "");

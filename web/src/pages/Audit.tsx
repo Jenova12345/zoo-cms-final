@@ -25,20 +25,52 @@ const ACTION_DOT: Record<string, string> = {
   "potvrzení revize AI textů": "bg-accent",
 };
 
+// Kolik záznamů se načte naráz. Log může mít desítky tisíc řádků, takže se
+// bere po stránkách a starší se donačítají tlačítkem.
+const STRANKA = 100;
+
 export default function Audit() {
   const [entries, setEntries] = useState<AuditEntry[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [nacitamStarsi, setNacitamStarsi] = useState(false);
+  const [maVice, setMaVice] = useState(false);
 
   async function load() {
     setLoading(true);
     try {
-      setEntries(await api.audit());
+      const davka = await api.audit({ limit: STRANKA });
+      setEntries(davka);
+      setMaVice(davka.length === STRANKA);
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Načtení selhalo.");
     } finally {
       setLoading(false);
+    }
+  }
+
+  // Starší stránka se ptá podle času posledního záznamu, který už máme.
+  async function nactiStarsi() {
+    const posledni = entries?.[entries.length - 1];
+    if (!posledni) return;
+    setNacitamStarsi(true);
+    try {
+      // Kolik záznamů s touhle milisekundou už máme: hromadné akce jich
+      // zapíšou několik naráz a bez toho by na hranici stránky vypadly.
+      const stejnyCas = entries.filter((e) => e.cas === posledni.cas).length;
+      const davka = await api.audit({
+        limit: STRANKA,
+        before: posledni.cas,
+        preskoc: stejnyCas,
+      });
+      setEntries((prev) => [...(prev ?? []), ...davka]);
+      setMaVice(davka.length === STRANKA);
+      setError(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Načtení selhalo.");
+    } finally {
+      setNacitamStarsi(false);
     }
   }
 
@@ -52,7 +84,7 @@ export default function Audit() {
         <div>
           <h1 className="font-display text-3xl font-bold tracking-tight text-fg">Audit log</h1>
           <p className="text-sm text-fg-muted mt-1.5">
-            Append-only záznam akcí ze souboru data/audit.jsonl
+            Append-only záznam akcí ze souboru data/audit.jsonl. Nejnovější nahoře.
           </p>
         </div>
         <button onClick={load} className="btn-ghost" disabled={loading}>
@@ -104,6 +136,20 @@ export default function Audit() {
           ))}
         </tbody>
       </table>
+
+      {entries && entries.length > 0 && (
+        <div className="flex flex-wrap items-center justify-center gap-4 pt-1">
+          {maVice ? (
+            <button onClick={nactiStarsi} className="btn-ghost" disabled={nacitamStarsi}>
+              {nacitamStarsi && <Loader2 className="h-4 w-4 animate-spin" />}
+              Načíst starší záznamy
+            </button>
+          ) : (
+            <span className="text-xs text-fg-muted">Načteno vše, co log obsahuje.</span>
+          )}
+          <span className="text-xs text-fg-muted tnum">načteno {entries.length} záznamů</span>
+        </div>
+      )}
     </div>
   );
 }

@@ -29,7 +29,8 @@ import { canonicalizeLatin } from "../lib/latin";
 import {
   INFO_POLE,
   NEPRIRAZENO,
-  SEKCE,
+  SEKCE_STARE,
+  SEKCE_TEMATA,
   SLIDE_TYPY,
   SLIDE_TYP_LABEL,
   SLIDE_TYP_POPIS,
@@ -54,6 +55,7 @@ import {
   KLIC_KB,
   type Dotcena,
 } from "../lib/drafty";
+import { KB_METODIKA, zbytkySablony } from "../lib/kbSablona";
 import { useNeulozeno } from "../lib/neulozeno";
 import { useToast } from "../components/Toast";
 import Confirm from "../components/Confirm";
@@ -83,7 +85,7 @@ type ActiveTab = number | "kb";
 const ZADNY_SLIDE = 0;
 
 // Slide, do kterého kurátor ještě nic nevyplnil. Podle toho se ukáže výzva
-// „co teď" a v záložce oranžová tečka — po přidání slidu je totiž snadné
+// „co teď" a v záložce oranžová tečka, po přidání slidu je totiž snadné
 // odejít v domnění, že přidáním je hotovo.
 function jePrazdny(s: SlideContent): boolean {
   switch (s.typ) {
@@ -101,25 +103,25 @@ function jePrazdny(s: SlideContent): boolean {
 }
 
 // JAK SE OBSAH DOSTANE NA TABLET (a proč o tom texty mluví takhle):
-// Unity klient si obsah načte SÁM ze sdílené složky — po chvíli nečinnosti,
+// Unity klient si obsah načte SÁM ze sdílené složky, po chvíli nečinnosti,
 // když displej přepne na spořič. Na žádný povel z CMS nečeká; endpoint
 // /refresh je mock, který jen zapíše řádek do auditu. Texty proto nesmí
-// slibovat „odeslání" ani „zveřejnění na povel" — uložený obsah se na tablet
+// slibovat „odeslání" ani „zveřejnění na povel", uložený obsah se na tablet
 // dostane tak jako tak.
 const VYZVEDNE_SI_SAM =
-  "Tablet si uložený obsah vyzvedne sám ze sdílené složky — obvykle do minuty, jakmile u něj nikdo nestojí a přepne se na spořič.";
+  "Tablet si uložený obsah vyzvedne sám ze sdílené složky, obvykle do minuty, jakmile u něj nikdo nestojí a přepne se na spořič.";
 
 // Co má kurátor s prázdným slidem udělat. Formulace odpovídá tomu, jak se
 // obsah daného typu ukládá: fotky a video hned při nahrání, texty tlačítkem.
 const PRAZDNY_NAVOD: Record<SlideTyp, string> = {
   info: "Vyplňte Sekci a Název, nahrajte fotku a uložte. Než slide uložíte, nemá tablet co zobrazit.",
   gal: "Napište text zajímavosti, přidejte k němu fotku a uložte.",
-  "3d": "Nahrajte sekvenci snímků modelu — ukládají se hned po nahrání a tablet si je pak vyzvedne sám.",
-  vid: "Nahrajte video ve formátu MP4 — uloží se hned po nahrání a tablet si ho pak vyzvedne sám.",
+  "3d": "Nahrajte sekvenci snímků modelu. Ukládají se hned po nahrání a tablet si je pak vyzvedne sám.",
+  vid: "Nahrajte video ve formátu MP4. Uloží se hned po nahrání a tablet si ho pak vyzvedne sám.",
   ai: "",
 };
 
-// Co ve slidu je — do potvrzení mazání, ať kurátor vidí, o co přijde.
+// Co ve slidu je, do potvrzení mazání, ať kurátor vidí, o co přijde.
 function obsahSlidu(s: SlideContent): string[] {
   const kusy: string[] = [];
   if (s.obrazky.length) {
@@ -152,7 +154,7 @@ export default function DisplayDetail() {
   const [error, setError] = useState<string | null>(null);
   const [active, setActive] = useState<ActiveTab>(1);
   const [infoDrafts, setInfoDrafts] = useState<Record<number, Record<string, string>>>({});
-  // Text zajímavosti drží rodič stejně jako pole info panelu — jako lokální
+  // Text zajímavosti drží rodič stejně jako pole info panelu, jako lokální
   // stav editoru se ztrácel při přepnutí záložky.
   const [galDrafts, setGalDrafts] = useState<Record<number, string>>({});
   const [kbDraft, setKbDraft] = useState("");
@@ -167,11 +169,11 @@ export default function DisplayDetail() {
     popis: ReactNode;
     akce: () => Promise<void>;
   } | null>(null);
-  // Zpětná vazba „uloženo" přímo u tlačítka — toast může kurátorovi utéct,
+  // Zpětná vazba „uloženo" přímo u tlačítka, toast může kurátorovi utéct,
   // tohle zůstane na obrazovce, dokud nepřepne slide.
   const [ulozeno, setUlozeno] = useState<{ klic: string; cas: string } | null>(null);
   // Přetahování záložek: index taženého slidu a místo, kam se pustí
-  // (0..počet, tedy „před i-tý" a nakonec „na konec").
+  // (0.počet, tedy „před i-tý" a nakonec „na konec").
   const [taham, setTaham] = useState<number | null>(null);
   const [pustimNa, setPustimNa] = useState<number | null>(null);
   // Klíče polí, do kterých kurátor sáhl. Podle nich se pozná, co je jeho
@@ -191,7 +193,7 @@ export default function DisplayDetail() {
     setDotcena((prev) => (prev.has(klic) ? prev : new Set(prev).add(klic)));
   }
 
-  // Po uložení rozepsaná verze odpovídá disku — značky zahodíme hned (i v ref,
+  // Po uložení rozepsaná verze odpovídá disku, značky zahodíme hned (i v ref,
   // ať následné load() vezme serverovou podobu, třeba kanonizovanou latinu).
   function ulozeneZahod(uprav: (d: Dotcena) => Dotcena) {
     const nove = uprav(dotcenaRef.current);
@@ -200,10 +202,10 @@ export default function DisplayDetail() {
   }
 
   // `rezim` říká, co se stane s rozepsaným obsahem:
-  //   "slouc"      – ze serveru se propíšou jen pole, kterých se kurátor
+  //   "slouc": ze serveru se propíšou jen pole, kterých se kurátor
   //                  nedotkl (po uložení a po změně struktury slidů),
-  //   "nechDrafty" – drafty se nesahá vůbec (nahrání a mazání fotek, videa,
-  //                  označení mapy — tam kurátor rozepsaný formulář typicky má).
+  //   "nechDrafty": drafty se nesahá vůbec (nahrání a mazání fotek, videa,
+  //                  označení mapy, tam kurátor rozepsaný formulář typicky má).
   const load = useCallback(
     async (rezim: "slouc" | "nechDrafty" = "slouc") => {
       try {
@@ -393,7 +395,7 @@ export default function DisplayDetail() {
       const { n } = await api.addSlide(id, typ);
       await load();
       setActive(n);
-      toast.success(`Slide ${SLIDE_TYP_LABEL[typ]} přidán — teď vyplňte obsah a uložte.`);
+      toast.success(`Slide ${SLIDE_TYP_LABEL[typ]} přidán, teď vyplňte obsah a uložte.`);
     }, "Přidání slidu selhalo.");
   }
 
@@ -414,7 +416,7 @@ export default function DisplayDetail() {
     await withBusy(async () => {
       await api.reorderSlides(id, poradi);
       // Server slidy přečísluje, takže se rozepsaný obsah musí přestěhovat
-      // s nimi — jinak by text patřil cizímu slidu.
+      // s nimi, jinak by text patřil cizímu slidu.
       const preskladana = premapujDotcena(dotcenaRef.current, poradi);
       dotcenaRef.current = preskladana;
       setDotcena(preskladana);
@@ -438,7 +440,7 @@ export default function DisplayDetail() {
     await ulozPoradi(order, j);
   }
 
-  // Přetažení záložky: `zIndexu` se vloží na pozici `naIndex` (0..počet).
+  // Přetažení záložky: `zIndexu` se vloží na pozici `naIndex` (0.počet).
   async function pustSlide(zIndexu: number, naIndex: number) {
     setTaham(null);
     setPustimNa(null);
@@ -459,7 +461,7 @@ export default function DisplayDetail() {
           to="/displeje"
           onClick={(e) => {
             // Odchod ze stránky je jediné místo, kde se rozepsané změny
-            // ztratí — přepínání záložek slidů si je drží.
+            // ztratí, přepínání záložek slidů si je drží.
             if (!neulozenoCokoliv) return;
             e.preventDefault();
             setOdchodOpen(true);
@@ -490,7 +492,7 @@ export default function DisplayDetail() {
         </p>
       </div>
 
-      {/* Obsah přišel z hromadného importu a je od AI — dokud ho kurátor
+      {/* Obsah přišel z hromadného importu a je od AI, dokud ho kurátor
           neprojde, má to vědět hned po otevření displeje. */}
       {detail.meta.cekaNaRevizi && (
         <div className="-mt-3 flex flex-wrap items-start justify-between gap-4 rounded-lg border border-amber/40 bg-amber-soft px-4 py-3">
@@ -500,8 +502,8 @@ export default function DisplayDetail() {
               <span className="font-semibold text-fg">
                 Texty jsou od AI a čekají na vaši revizi.
               </span>{" "}
-              Přišly hromadným importem. Projděte je — hlavně znalostní bázi, ze které chatbot
-              odpovídá návštěvníkům — opravte, co nesedí, a teprve pak schvalte. Samotné uložení
+              Přišly hromadným importem. Projděte je (hlavně znalostní bázi, ze které chatbot
+              odpovídá návštěvníkům), opravte, co nesedí, a teprve pak schvalte. Samotné uložení
               textu za schválení nepovažujeme.
             </div>
           </div>
@@ -511,15 +513,15 @@ export default function DisplayDetail() {
         </div>
       )}
 
-      {/* Displej má slidy, ale ještě nemá druh — kurátor má vědět, co dodělat. */}
+      {/* Displej má slidy, ale ještě nemá druh, kurátor má vědět, co dodělat. */}
       {!prirazeno && detail.slides.length > 0 && (
         <div className="-mt-3 flex items-start gap-2.5 border-l-2 border-amber pl-4 py-1">
           <Info className="h-5 w-5 text-amber shrink-0 mt-0.5" strokeWidth={1.75} />
           <div className="text-sm text-fg-muted">
             <span className="font-semibold text-fg">Displej ještě nemá přiřazený druh.</span>{" "}
             {detail.slides.some((s) => s.typ === "info")
-              ? "Vyplňte Sekci a Název v Infopanelu a uložte — název se pak objeví i v seznamu displejů."
-              : "Přidejte slide Infopanel a vyplňte v něm Sekci a Název — název se pak objeví i v seznamu displejů."}
+              ? "Vyplňte Sekci a Název v Infopanelu a uložte. Název se pak objeví i v seznamu displejů."
+              : "Přidejte slide Infopanel a vyplňte v něm Sekci a Název. Název se pak objeví i v seznamu displejů."}
           </div>
         </div>
       )}
@@ -605,7 +607,7 @@ export default function DisplayDetail() {
                 {jePrazdny(s) && (
                   <span
                     className="h-1.5 w-1.5 rounded-full bg-amber"
-                    title="Prázdný slide — chybí obsah"
+                    title="Prázdný slide, chybí obsah"
                   />
                 )}
                 {slideNeulozen(s) && (
@@ -674,7 +676,7 @@ export default function DisplayDetail() {
       {detail.slides.length > 1 && (
         <p className="-mt-6 flex items-center gap-1.5 text-[11px] text-fg-muted">
           <GripVertical className="h-3.5 w-3.5" strokeWidth={1.75} />
-          Přetáhněte pro změnu pořadí — nebo použijte šipky vpravo.
+          Přetáhněte pro změnu pořadí, nebo použijte šipky vpravo.
         </p>
       )}
 
@@ -736,7 +738,7 @@ export default function DisplayDetail() {
             oznacDotcene(KLIC_KB);
             setKbDraft(v);
           }}
-          // Předvyplnění šablonou není zásah kurátora — nedělá „neuloženo".
+          // Předvyplnění šablonou není zásah kurátora, nedělá „neuloženo".
           onPredvyplnit={setKbDraft}
           onSave={saveKb}
           saving={saving}
@@ -752,7 +754,7 @@ export default function DisplayDetail() {
             Tento displej zatím nemá obsah
           </h2>
           <p className="mx-auto mt-1.5 max-w-md text-sm text-fg-muted">
-            Začněte přidáním <strong className="font-semibold text-fg">Infopanelu</strong> — to
+            Začněte přidáním <strong className="font-semibold text-fg">Infopanelu</strong>: to
             je základní panel s názvem druhu, údaji o něm a fotkami. Další typy slidů (video,
             zajímavost, 3D model, AI otázky) můžete přidat kdykoliv potom.
           </p>
@@ -849,7 +851,7 @@ export default function DisplayDetail() {
         <AiSlideInfo onOpenKb={() => setActive("kb")} />
       )}
 
-      {/* Mazání slidu je nevratné — smaže se složka na disku i s obsahem.
+      {/* Mazání slidu je nevratné, smaže se složka na disku i s obsahem.
           Když ve slidu něco je, vyjmenujeme to a potvrzovací tlačítko se na
           chvíli zamkne, ať se nevratná akce nedá odklepnout překlikem. */}
       <Confirm
@@ -863,7 +865,7 @@ export default function DisplayDetail() {
             {slide && (
               <>
                 {" "}
-                — slide {pozice + 1} ({SLIDE_TYP_LABEL[slide.typ]}), složka{" "}
+                - slide {pozice + 1} ({SLIDE_TYP_LABEL[slide.typ]}), složka{" "}
                 <span className="font-mono">{slide.slozka}</span>
               </>
             )}
@@ -874,7 +876,7 @@ export default function DisplayDetail() {
                 <strong className="font-semibold text-fg">{obsahSlidu(slide).join(", ")}</strong>.{" "}
               </>
             )}
-            Fotky, video ani text z tohoto slidu už nepůjde vrátit — ani přes audit log.
+            Fotky, video ani text z tohoto slidu už nepůjde vrátit, ani přes audit log.
           </>
         }
         potvrdit="Smazat slide"
@@ -890,8 +892,8 @@ export default function DisplayDetail() {
         titulek="Schvalujete texty od AI?"
         text={
           <>
-            Potvrzujete, že jste texty tohoto druhu prošli a odpovídají skutečnosti — hlavně
-            znalostní bázi, ze které chatbot odpovídá návštěvníkům. Do{" "}
+            Potvrzujete, že jste texty tohoto druhu prošli a odpovídají skutečnosti. Platí to
+            hlavně pro znalostní bázi, ze které chatbot odpovídá návštěvníkům. Do{" "}
             <strong className="font-semibold text-fg">auditu se zapíše vaše jméno a čas</strong>.
             Značka „čeká na revizi" pak zmizí z přehledu displejů.
           </>
@@ -908,7 +910,7 @@ export default function DisplayDetail() {
         text={
           <>
             Máte rozepsané změny, které nejsou uložené. Když teď odejdete na seznam displejů,
-            přijdete o ně — vrátit to nepůjde.
+            přijdete o ně a vrátit to nepůjde.
           </>
         }
         potvrdit="Odejít bez uložení"
@@ -927,8 +929,8 @@ export default function DisplayDetail() {
         titulek="Označit obsah jako hotový?"
         text={
           <>
-            {zverejnit?.popis} Na tablet se obsah dostane sám, obvykle do minuty od uložení — i bez
-            tohoto kroku. Tímhle se do auditu zapíše, že je hotový a zkontrolovaný. Pokračovat?
+            {zverejnit?.popis} Na tablet se obsah dostane sám, obvykle do minuty od uložení, a to
+            i bez tohoto kroku. Tímhle se do auditu zapíše, že je hotový a zkontrolovaný. Pokračovat?
           </>
         }
         potvrdit="Označit jako hotové"
@@ -958,7 +960,7 @@ function PodPolem({ hint, pocitadlo }: { hint?: string; pocitadlo?: ReactNode })
 }
 
 // Počítadlo délky. Limit je doporučení (na tabletu se dlouhý text ořízne),
-// takže po překročení jen zoranžoví — uložení nikdy neblokuje.
+// takže po překročení jen zoranžoví, uložení nikdy neblokuje.
 function Pocitadlo({
   kolik,
   limit,
@@ -978,7 +980,7 @@ function Pocitadlo({
 }
 
 // Stav rozepsaného obsahu u tlačítek. Neuložené změny musí být vidět dřív,
-// než kurátor odejde — toast na to nestačí, ten mezitím zmizí.
+// než kurátor odejde, toast na to nestačí, ten mezitím zmizí.
 function StavUlozeni({
   neulozeno,
   ulozenoCas,
@@ -990,7 +992,7 @@ function StavUlozeni({
     return (
       <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-amber-deep">
         <span className="h-2 w-2 rounded-full bg-amber" />
-        Neuloženo — nezapomeňte uložit
+        Neuloženo, nezapomeňte uložit
       </span>
     );
   }
@@ -1005,7 +1007,7 @@ function StavUlozeni({
 }
 
 // Jemná nápověda místo prázdného místa: co se sem nahrává. Záměrně bez rámečku
-// — stojí pod nahrávacím polem, které rámeček už má.
+// - stojí pod nahrávacím polem, které rámeček už má.
 function PrazdnyStav({
   ikona: Ikona,
   text,
@@ -1020,7 +1022,7 @@ function PrazdnyStav({
       <Ikona className="h-4 w-4 shrink-0 text-fg-dim" strokeWidth={1.5} />
       <p>
         <span className="font-medium text-fg-muted">{text}</span>
-        {hint && <span className="text-fg-muted"> — {hint}</span>}
+        {hint && <span className="text-fg-muted">, {hint}</span>}
       </p>
     </div>
   );
@@ -1110,7 +1112,7 @@ function usePhotoUpload(
     if (seradPodleNazvu) {
       list.sort((a, b) => a.name.localeCompare(b.name, "cs", { numeric: true }));
     }
-    // Zajímavost má na disku právě jednu fotku — server by ostatní stejně
+    // Zajímavost má na disku právě jednu fotku, server by ostatní stejně
     // přepsal, takže je ani nenahráváme a rovnou to řekneme.
     const vicNezUnese = jenJedna && list.length > 1;
     if (jenJedna) list = list.slice(0, 1);
@@ -1122,7 +1124,7 @@ function usePhotoUpload(
       await reload();
       toast.success(
         vicNezUnese
-          ? "Nahrála se první vybraná fotka — zajímavost jich unese jen jednu."
+          ? "Nahrála se první vybraná fotka. Zajímavost jich unese jen jednu."
           : list.length === 1
             ? "Fotka nahrána"
             : `${list.length} fotek nahráno`,
@@ -1173,6 +1175,13 @@ function InfoEditor({
   const [showErrors, setShowErrors] = useState(false);
   const { uploading, upload } = usePhotoUpload(displayId, slide.n, reload);
 
+  // Sekce uložená pod starým názvem: v nabídce je jen nové pojmenování, tak
+  // kurátorovi ukážeme, čemu ta stará hodnota odpovídá.
+  const novyNazevSekce = SEKCE_STARE[pole.Sekce ?? ""];
+  const staraSekce = novyNazevSekce
+    ? SEKCE_TEMATA.find((sekce) => sekce.cs === novyNazevSekce) ?? null
+    : null;
+
   const chybi = (klic: string) => !(pole[klic] ?? "").trim();
   const chybejici = INFO_POLE.filter((d) => d.povinne && chybi(d.klic));
   const valid = chybejici.length === 0;
@@ -1203,7 +1212,7 @@ function InfoEditor({
     zeptejSe(
       <>
         Označí se jako hotový <strong className="font-semibold text-fg">Infopanel</strong> displeje{" "}
-        {displayId} — údaje o druhu i nahrané fotky.
+        {displayId}, údaje o druhu i nahrané fotky.
       </>,
       () => onSave(pole, true),
     );
@@ -1234,7 +1243,7 @@ function InfoEditor({
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
       {/* Formulář polí (na disk jde text.txt jako "Klic: Hodnota") */}
       <div className="space-y-4">
-        {/* Co je povinné, má být vidět předem — ne až z chybové hlášky. */}
+        {/* Co je povinné, má být vidět předem, ne až z chybové hlášky. */}
         <p className="text-xs text-fg-muted">
           Pole označená <span className="font-bold text-danger">*</span> jsou povinná, bez nich
           panel neuložíte. Ostatní můžete nechat prázdná.
@@ -1266,12 +1275,17 @@ function InfoEditor({
                   value={hodnota}
                   onChange={(e) => onChange({ Sekce: e.target.value })}
                 >
-                  <option value="">— vyberte sekci —</option>
-                  {SEKCE.map((s) => (
-                    <option key={s} value={s}>
-                      {s}
+                  <option value="">vyberte sekci</option>
+                  {SEKCE_TEMATA.map((sekce) => (
+                    <option key={sekce.cs} value={sekce.cs}>
+                      {sekce.cislo}. {sekce.cs}
                     </option>
                   ))}
+                  {/* Displej uložený dřív má starý název sekce. Necháme ho
+                      v nabídce, ať kurátor vidí, co v souboru opravdu je. */}
+                  {staraSekce && (
+                    <option value={hodnota}>{hodnota} (starý název)</option>
+                  )}
                 </select>
               ) : (
                 <input
@@ -1292,6 +1306,15 @@ function InfoEditor({
               />
               {nevyplneno && (
                 <p className="mt-1 text-xs text-danger">Tohle pole je potřeba vyplnit.</p>
+              )}
+              {def.klic === "Sekce" && staraSekce && (
+                <p className="mt-1 text-xs text-amber-deep">
+                  „{hodnota}" je starý název. Podle tabule v pavilonu je to teď{" "}
+                  <span className="font-semibold">
+                    {staraSekce.cislo}. {staraSekce.cs}
+                  </span>
+                  , vyberte ho, ať sedí čísla na podlaze.
+                </p>
               )}
               {def.klic === "Latinsky" && latinSeZmeni && (
                 <p className="mt-1 text-xs text-amber-deep">
@@ -1340,20 +1363,19 @@ function InfoEditor({
             </button>
             <StavUlozeni neulozeno={neulozeno} ulozenoCas={ulozenoCas} />
           </div>
-          {/* Rozdíl mezi tlačítky musí být čitelný bez školení — a hlavně
+          {/* Rozdíl mezi tlačítky musí být čitelný bez školení, a hlavně
               pravdivý: uložený obsah jde na tablet tak jako tak. */}
           <div className="space-y-1 text-xs text-fg-muted">
             <p>
-              <strong className="font-semibold text-fg">Uložit</strong> — zapíše obsah na disk.{" "}
+              <strong className="font-semibold text-fg">Uložit</strong>: zapíše obsah na disk.{" "}
               {VYZVEDNE_SI_SAM}
             </p>
             <p>
-              <strong className="font-semibold text-fg">Uložit a označit jako hotové</strong> —
-              uloží a navíc zapíše do auditu (jako „odesláno na displej"), že je obsah hotový a
+              <strong className="font-semibold text-fg">Uložit a označit jako hotové</strong>: uloží a navíc zapíše do auditu (jako „odesláno na displej"), že je obsah hotový a
               zkontrolovaný. Na to, kdy se objeví na tabletu, to vliv nemá.
             </p>
             <p>
-              Fotky a video se ukládají hned při nahrání — tablet si je vyzvedne stejně jako
+              Fotky a video se ukládají hned při nahrání. Tablet si je vyzvedne stejně jako
               zbytek.
             </p>
           </div>
@@ -1365,7 +1387,7 @@ function InfoEditor({
         <div>
           <span className="label">Fotky info panelu</span>
           <p className="text-xs text-fg-muted -mt-1">
-            Hlavní vizuál druhu. Jednu fotku můžete označit jako mapu výskytu — ikonkou mapy,
+            Hlavní vizuál druhu. Jednu fotku můžete označit jako mapu výskytu ikonkou mapy,
             která se objeví po najetí na fotku.
           </p>
         </div>
@@ -1456,11 +1478,11 @@ function InfoEditor({
         text={
           smazatFotku === slide.mapa ? (
             <>
-              Mapa výskytu se smaže z disku. Vrátit to nepůjde — bude ji potřeba nahrát a znovu
+              Mapa výskytu se smaže z disku. Vrátit to nepůjde, bude ji potřeba nahrát a znovu
               označit.
             </>
           ) : (
-            <>Fotka se smaže z disku. Vrátit to nepůjde — bude ji potřeba nahrát znovu.</>
+            <>Fotka se smaže z disku. Vrátit to nepůjde, bude ji potřeba nahrát znovu.</>
           )
         }
         potvrdit={smazatFotku === slide.mapa ? "Smazat mapu" : "Smazat fotku"}
@@ -1528,7 +1550,7 @@ function ZajimavostEditor({
     zeptejSe(
       <>
         Označí se jako hotový slide <strong className="font-semibold text-fg">Zajímavost</strong>{" "}
-        displeje {displayId} — text i fotka.
+        displeje {displayId}, text i fotka.
       </>,
       () => ulozit(true),
     );
@@ -1604,7 +1626,7 @@ function ZajimavostEditor({
           uploading={uploading}
           onFiles={upload}
           vice={false}
-          popis="Jedna fotka (JPG nebo PNG) — nová nahradí tu předchozí."
+          popis="Jedna fotka (JPG nebo PNG), nová nahradí tu předchozí."
         />
 
         {fotka ? (
@@ -1625,7 +1647,7 @@ function ZajimavostEditor({
           <PrazdnyStav
             ikona={ImageIcon}
             text="Zatím žádná fotka"
-            hint="Nahrajte jednu fotku k textu — na tabletu bude vpravo vedle něj."
+            hint="Nahrajte jednu fotku k textu, na tabletu bude vpravo vedle něj."
           />
         )}
       </div>
@@ -1633,7 +1655,7 @@ function ZajimavostEditor({
       <Confirm
         open={smazatFotku}
         titulek="Smazat fotku?"
-        text={<>Fotka se smaže z disku. Vrátit to nepůjde — bude ji potřeba nahrát znovu.</>}
+        text={<>Fotka se smaže z disku. Vrátit to nepůjde, bude ji potřeba nahrát znovu.</>}
         potvrdit="Smazat fotku"
         onPotvrdit={() => fotka && removeImage(fotka)}
         onZrusit={() => setSmazatFotku(false)}
@@ -1689,7 +1711,7 @@ function ModelEditor({
       <div>
         <span className="label">Snímky 3D modelu</span>
         <p className="text-xs text-fg-muted -mt-1">
-          Sekvence fotek, jak se model otáčí — tablet mezi nimi přepíná. Vyberte všechny snímky
+          Sekvence fotek, jak se model otáčí, tablet mezi nimi přepíná. Vyberte všechny snímky
           najednou, seřadí se podle názvu souboru a uloží pod čísly{" "}
           <span className="font-mono">001.png</span>, <span className="font-mono">002.png</span>…
           Po smazání snímku se zbytek sám přečísluje, v sekvenci nezůstane díra.
@@ -1739,13 +1761,14 @@ function ModelEditor({
             slide.obrazky.length === 0 ? (
               <>
                 Slide <strong className="font-semibold text-fg">3D model</strong> displeje{" "}
-                {displayId} je <strong className="font-semibold text-fg">prázdný</strong> — na
+                {displayId} je <strong className="font-semibold text-fg">prázdný</strong>: na
                 tabletu se místo modelu ukáže prázdné místo.
               </>
             ) : (
               <>
                 Označí se jako hotový slide{" "}
-                <strong className="font-semibold text-fg">3D model</strong> displeje {displayId} —{" "}
+                <strong className="font-semibold text-fg">3D model</strong> displeje {displayId}
+                {", "}
                 {pocetSnimku(slide.obrazky.length)}.
               </>
             ),
@@ -1881,7 +1904,7 @@ function VideoBlok({
           )}
           <p className="mt-2 text-sm font-medium text-fg-muted">Nahrát video (MP4)</p>
           <p className="text-xs text-fg-muted">
-            Klikněte a vyberte soubor — MP4 do {NAHRAVANI_MAX_MB} MB
+            Klikněte a vyberte soubor. MP4 do {NAHRAVANI_MAX_MB} MB
           </p>
         </button>
       )}
@@ -1891,7 +1914,7 @@ function VideoBlok({
         titulek="Smazat video?"
         text={
           <>
-            Video se smaže z disku. Vrátit to nepůjde — bude ho potřeba nahrát znovu a znovu počkat
+            Video se smaže z disku. Vrátit to nepůjde, bude ho potřeba nahrát znovu a znovu počkat
             na upload.
           </>
         }
@@ -1944,13 +1967,13 @@ function VidEditor({
             slide.video ? (
               <>
                 Označí se jako hotový slide{" "}
-                <strong className="font-semibold text-fg">Video</strong> displeje {displayId} —
+                <strong className="font-semibold text-fg">Video</strong> displeje {displayId},
                 nahrané video na celou obrazovku.
               </>
             ) : (
               <>
                 Slide <strong className="font-semibold text-fg">Video</strong> displeje {displayId}{" "}
-                je <strong className="font-semibold text-fg">prázdný</strong> — na tabletu se místo
+                je <strong className="font-semibold text-fg">prázdný</strong>: na tabletu se místo
                 videa ukáže prázdné místo.
               </>
             ),
@@ -1978,7 +2001,7 @@ function AiSlideInfo({ onOpenKb }: { onOpenKb: () => void }) {
       <div className="flex items-start gap-2.5 border-l-2 border-amber pl-4 py-1">
         <Sparkles className="h-5 w-5 text-amber shrink-0 mt-0.5" strokeWidth={1.75} />
         <div className="text-sm text-fg-muted">
-          <span className="font-semibold text-fg">AI slide.</span> Na disku je jen prázdná složka —
+          <span className="font-semibold text-fg">AI slide.</span> Na disku je jen prázdná složka,
           její existence říká tabletu, že má na tomto místě zobrazit AI průvodce. Žádný obsah se sem
           neukládá; podklady pro odpovědi průvodce se editují ve znalostní bázi displeje.
         </div>
@@ -2013,6 +2036,7 @@ function KbEditor({
 }) {
   const toast = useToast();
   const [template, setTemplate] = useState<string | null>(null);
+  const [zbytkyOpen, setZbytkyOpen] = useState<string[] | null>(null);
   const prefilled = useRef(false);
   const prazdne = value.trim() === "";
 
@@ -2031,6 +2055,18 @@ function KbEditor({
     }
   }, [template, prazdne, onPredvyplnit]);
 
+  // Před uložením zkontroluj, jestli v textu nezůstaly kusy šablony. Chatbot
+  // by je vydával za fakta o druhu, takže na ně upozorníme, ale uložení
+  // neblokujeme, kurátor může mít důvod.
+  function ulozitSKontrolou() {
+    const zbytky = zbytkySablony(value);
+    if (zbytky.length > 0) {
+      setZbytkyOpen(zbytky);
+      return;
+    }
+    onSave();
+  }
+
   function vlozitSablonu() {
     if (!template) return;
     if (!prazdne && !window.confirm("Přepsat současný text šablonou? Neuložené změny se ztratí.")) {
@@ -2038,7 +2074,7 @@ function KbEditor({
     }
     prefilled.current = true;
     onChange(template);
-    toast.success("Šablona vložena. Přepište nápovědy vlastním obsahem a uložte.");
+    toast.success("Kostra vložena. Doplňte text pod nadpisy a uložte.");
   }
 
   return (
@@ -2047,21 +2083,46 @@ function KbEditor({
         <Sparkles className="h-5 w-5 text-amber shrink-0 mt-0.5" strokeWidth={1.75} />
         <div className="text-sm text-fg-muted">
           <span className="font-semibold text-fg">Znalostní báze displeje.</span> Edituje soubor
-          kb.md v kořeni složky displeje. Není to slide — čte ji AI průvodce (chatbot) na tabletu.
-          U nového druhu je předvyplněná šablonou od chatbota; přepište nápovědy vlastním obsahem.
+          kb.md v kořeni složky displeje. Není to slide, čte ji AI průvodce (chatbot) na tabletu.
+          U nového druhu je předvyplněná kostra nadpisů; text pod ně dopište sami.
           {cekaNaRevizi && (
             <>
               {" "}
               <strong className="font-semibold text-fg">
                 Tenhle text napsala AI a nikdo ho zatím nezkontroloval.
               </strong>{" "}
-              Přečtěte ho celý — návštěvníkům se z něj odpovídá na dotazy o živém zvířeti. Až
+              Přečtěte ho celý, návštěvníkům se z něj odpovídá na dotazy o živém zvířeti. Až
               budete hotoví, schvalte ho tlačítkem nahoře u displeje; uložení textu samo o sobě
               za schválení neplatí.
             </>
           )}
         </div>
       </div>
+      {/* Metodika je schválně mimo textové pole: co je v poli, to se uloží do
+          kb.md a chatbot to vydá za fakta o druhu. */}
+      <details className="rounded-lg border border-line bg-canvas px-4 py-3">
+        <summary className="cursor-pointer text-sm font-semibold text-fg">
+          Jak psát znalostní bázi (nápověda)
+        </summary>
+        <div className="mt-3 space-y-3">
+          {KB_METODIKA.map((sekce) => (
+            <div key={sekce.nadpis}>
+              <div className="text-xs font-semibold uppercase tracking-wider text-fg-muted">
+                {sekce.nadpis}
+              </div>
+              <ul className="mt-1 space-y-1">
+                {sekce.body.map((radek) => (
+                  <li key={radek} className="flex gap-2 text-sm text-fg-muted">
+                    <span className="text-fg-dim">•</span>
+                    <span>{radek}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+      </details>
+
       <div>
         <div className="flex items-center justify-between gap-3">
           <label className="label">Znalostní báze (kb.md)</label>
@@ -2082,7 +2143,7 @@ function KbEditor({
         />
       </div>
       <div className="flex flex-wrap items-center gap-3">
-        <button onClick={onSave} className="btn-primary w-fit" disabled={saving}>
+        <button onClick={ulozitSKontrolou} className="btn-primary w-fit" disabled={saving}>
           {saving ? (
             <Loader2 className="h-4 w-4 animate-spin" />
           ) : (
@@ -2093,8 +2154,31 @@ function KbEditor({
         <StavUlozeni neulozeno={neulozeno} ulozenoCas={ulozenoCas} />
       </div>
       <p className="text-xs text-fg-muted">
-        Znalostní bázi si načítá chatbot sám, na tablet nejde — proto tu druhé tlačítko není.
+        Znalostní bázi si načítá chatbot sám, na tablet nejde, proto tu druhé tlačítko není.
       </p>
+
+      {/* Zbytky šablony v textu: chatbot je nerozliší od faktů o druhu. */}
+      <Confirm
+        open={!!zbytkyOpen}
+        titulek="V textu zůstaly kusy šablony"
+        text={
+          <>
+            Chatbot bere obsah kb.md jako fakta o tomhle druhu, takže by pokyny i ukázky
+            vydával za pravdu. Našli jsme:
+            <ul className="mt-2 list-disc space-y-0.5 pl-5">
+              {zbytkyOpen?.map((z) => (
+                <li key={z}>{z}</li>
+              ))}
+            </ul>
+          </>
+        }
+        potvrdit="Uložit i tak"
+        onPotvrdit={() => {
+          setZbytkyOpen(null);
+          onSave();
+        }}
+        onZrusit={() => setZbytkyOpen(null)}
+      />
     </div>
   );
 }

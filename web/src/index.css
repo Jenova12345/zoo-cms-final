@@ -3,7 +3,7 @@
 @tailwind utilities;
 
 /* Fonty od Michala pro náhled tabletu. Servírují se lokálně z /michal, ne
-   z Google Fonts — v pavilonu nemusí být internet a náhled by se rozpadl.
+   z Google Fonts, v pavilonu nemusí být internet a náhled by se rozpadl.
    Rustica přišla jen v řezu Regular; kurzívu a tučný řez si prohlížeč
    dopočítá sám (v Unity jsou to skutečné řezy, drobný rozdíl je očekávaný). */
 @font-face {
@@ -48,7 +48,7 @@ body {
   .btn-ghost {
     @apply btn bg-transparent text-fg-muted border border-line hover:text-fg hover:border-accent/40;
   }
-  /* Nevratná akce (mazání) — jen v potvrzovacím dialogu. */
+  /* Nevratná akce (mazání), jen v potvrzovacím dialogu. */
   .btn-danger {
     @apply btn bg-danger text-white hover:brightness-105 active:scale-[0.99];
   }

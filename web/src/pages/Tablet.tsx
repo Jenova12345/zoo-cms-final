@@ -11,7 +11,7 @@ const MEDIA_ADVANCE_MS = 5000;
 // Reálné zařízení u expozice: Unity běží na fixním rozlišení 1200 × 800 (3:2).
 // Náhled proto sázíme přesně do těchto rozměrů a celý rám jen zmenšíme, aby se
 // vešel do okna prohlížeče (letterbox okolo). Kurátor tak vidí i to, jestli se
-// text na displej vejde — ne layout, který se přizpůsobí jeho monitoru.
+// text na displej vejde, ne layout, který se přizpůsobí jeho monitoru.
 //
 // Uvnitř rámu se proto zásadně nepoužívají responzivní varianty (lg:...): ty
 // reagují na šířku okna, ne na šířku rámu, a náhled by se rozešel se zařízením.
@@ -21,7 +21,7 @@ const VYSKA = 800;
 
 // --- Grafika od Michala (web/public/michal, servíruje se lokálně) ---
 //
-// Rozměry a pozice níž jsou odměřené z předlohy "Informace – 3.png"
+// Rozměry a pozice níž jsou odměřené z předlohy "Informace, 3.png"
 // (1701 × 1101) a přepočtené do rámu 1200 × 800 poměrem 0,705 / 0,727.
 const G = "/michal";
 const ZLUTA = "#F8CA00"; // odměřeno z předlohy (nadtitulek i rámečky tlačítek)
@@ -260,7 +260,7 @@ function tlacitkoProSlide(typ: SlideContent["typ"] | null): Tlacitko {
 
 // Identita druhu pro hlavičku. Na zařízení je hlavička stejná na všech slidech
 // (viz předlohy Informace / Video / Text + schéma), ale text.txt má jen info
-// panel — na ostatních slidech proto bereme totéž z meta.json, kam se identita
+// panel, na ostatních slidech proto bereme totéž z meta.json, kam se identita
 // při uložení info panelu propisuje.
 interface Identita {
   sekce?: string;
@@ -313,7 +313,7 @@ function Zarizeni({
         <ObsahAi identita={id} />
       )}
 
-      {/* Svislý vzor vlevo — přes celou výšku, nad obsahem.
+      {/* Svislý vzor vlevo, přes celou výšku, nad obsahem.
           V předloze se vzor neroztahuje na výšku displeje, ale opakuje se:
           odměřeno, že jedna perioda je 624 px při šířce vzoru 83 px (v měřítku
           předlohy). Po přepočtu do rámu 1200 × 800 je to šířka 59 px, z níž je
@@ -390,7 +390,7 @@ function Hlavicka({
   );
 }
 
-// Info panel podle předlohy "Informace – 3.png".
+// Info panel podle předlohy "Informace, 3.png".
 function ObsahInfo({
   slide,
   onPrev,
@@ -402,7 +402,7 @@ function ObsahInfo({
 }) {
   const { Sekce: sekce, Nazev: nazev, Latinsky: latinsky } = slide.pole;
 
-  // Prázdná pole se nevykreslují — kurátor hned vidí, co ještě chybí.
+  // Prázdná pole se nevykreslují, kurátor hned vidí, co ještě chybí.
   const detaily = INFO_POLE.filter(
     (d) => !["Sekce", "Nazev", "Latinsky"].includes(d.klic) && (slide.pole[d.klic] ?? "").trim(),
   );
@@ -429,7 +429,7 @@ function ObsahInfo({
         )}
       </div>
 
-      {/* Organický černý tvar od Michala — vytváří vlnitou hranu fotky */}
+      {/* Organický černý tvar od Michala, vytváří vlnitou hranu fotky */}
       <img
         src={`${G}/liana.png`}
         alt=""
@@ -452,7 +452,7 @@ function ObsahInfo({
         <Hlavicka sekce={sekce} nazev={nazev} latinsky={latinsky} />
 
         {/* Mapa výskytu z dat displeje (cs/<slide>/mapa.png).
-            Vykresluje se tak, jak ji kurátor nahrál — když nahraje tmavou mapu,
+            Vykresluje se tak, jak ji kurátor nahrál, když nahraje tmavou mapu,
             musí to na náhledu poznat, ne aby mu ji náhled přebarvil. */}
         {slide.mapa && (
           <img
@@ -507,7 +507,7 @@ function ObsahInfo({
   );
 }
 
-// Zajímavost (_gal) podle předlohy "Text + schéma – 1.png": vlevo dlouhý text,
+// Zajímavost (_gal) podle předlohy "Text + schéma, 1.png": vlevo dlouhý text,
 // svislá bílá linka, vpravo jedna fotka. Pozice odměřené z předlohy
 // (linka x = 765 px, text končí na 700 px, obsah od y = 225 do 915 px).
 function ObsahZajimavost({ slide, identita }: { slide: SlideContent; identita: Identita }) {
@@ -558,9 +558,9 @@ function ObsahZajimavost({ slide, identita }: { slide: SlideContent; identita: I
   );
 }
 
-// 3D model (_3d) podle předlohy "3D model – 1.png": model uprostřed tmavé
+// 3D model (_3d) podle předlohy "3D model, 1.png": model uprostřed tmavé
 // plochy, hlavička vlevo nahoře. Sekvence snímků se v náhledu nepřehrává sama
-// (na zařízení s ní otáčí návštěvník) — kurátor jí prochází šipkami.
+// (na zařízení s ní otáčí návštěvník), kurátor jí prochází šipkami.
 function ObsahModel({ slide, identita }: { slide: SlideContent; identita: Identita }) {
   const [snimek, setSnimek] = useState(0);
   const pocet = slide.obrazky.length;
@@ -670,7 +670,7 @@ function ObsahAi({ identita: id }: { identita: Identita }) {
             : "Zeptejte se AI průvodce. Nejdřív displeji přiřaďte druh a vyplňte znalostní bázi."}
         </div>
       </div>
-      {/* Svislá linka jako v předloze "Text + schéma – 1.png" */}
+      {/* Svislá linka jako v předloze "Text + schéma, 1.png" */}
       <div className="absolute" style={{ left: 700, top: 210, bottom: 190, width: 2, background: "#fff" }} />
       <div className="absolute grid place-items-center" style={{ left: 760, top: 210, right: 90, bottom: 190 }}>
         <div className="text-center">
@@ -738,7 +738,7 @@ function SipkaZarizeni({
 //
 // Přednost mají soubory od Michala ve web/public/michal (vlajka-cz.png,
 // vlajka-pl.png, vlajka-en.png). Dokud tam nejsou, kreslí se záložní SVG podle
-// předlohy — náhled tak funguje i bez nich a po nakopírování souborů se přepne
+// předlohy, náhled tak funguje i bez nich a po nakopírování souborů se přepne
 // sám, bez zásahu do kódu.
 const VLAJKA_SOUBOR: Record<KodJazyka, string> = {
   cz: `${G}/vlajka-cz.png`,
@@ -828,7 +828,7 @@ function Vlajka({
 }
 
 // Spodní lišta zařízení: domeček + čtyři tlačítka se žlutým rámečkem.
-// Šířky jsou pevné (odměřené z předlohy), ne podle délky textu — v Unity jsou
+// Šířky jsou pevné (odměřené z předlohy), ne podle délky textu, v Unity jsou
 // to hotové obrázky pevné velikosti a lišta musí končit 32 px od pravého kraje.
 function SpodniLista({ aktivni }: { aktivni: Tlacitko }) {
   const tlacitka: { id: Tlacitko; popisek: string; ikona: string; sirka: number }[] = [

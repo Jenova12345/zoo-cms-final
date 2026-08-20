@@ -14,7 +14,7 @@ import type {
 
 // Data dashboardu jsou reálná: displeje z našeho /api/displays (meta.json na
 // disku) a dotazy návštěvníků z analytiky chatbota přes náš proxy endpoint
-// /api/analytics/... Chatbot backend nemusí běžet — pak se místo čísel píše
+// /api/analytics/... Chatbot backend nemusí běžet, pak se místo čísel píše
 // hláška, stránka se normálně otevře.
 
 const LIMIT_POSLEDNI = 200; // kolik dotazů stáhnout
@@ -81,10 +81,10 @@ interface HeatNode {
   x: number; // % šířky půdorysu
   y: number; // % výšky půdorysu
   count: number; // dotazů za sledované období
-  score: number; // 0–1, intenzita pro barvu a velikost
+  score: number; // 0 až 1, intenzita pro barvu a velikost
 }
 
-// Oficiální půdorys pavilonu od ZOO — verze S ČÍSLY DISPLEJŮ (17. 8. 2026).
+// Oficiální půdorys pavilonu od ZOO, verze S ČÍSLY DISPLEJŮ (17. 8. 2026).
 // Kopie podklady/Amphibiarium_mapa 1.png, servíruje se z web/public. Poměr
 // stran drží mapu ve správném tvaru při jakékoli šířce okna.
 const PUDORYS = "/pavilon-pudorys.png";
@@ -97,9 +97,9 @@ const PUDORYS_POMER = "6459 / 6434";
 // └─────────────────────────────────────────────────────────────────────────┘
 //
 // Jak souřadnice vznikly: v plánku je u každé vitríny natištěné číslo displeje
-// (1–31). Středy obdélníčků jsou odečtené z obrázku detekcí barevných ploch
+// (1 až 31). Středy obdélníčků jsou odečtené z obrázku detekcí barevných ploch
 // (spojité komponenty jedné barvy) a k nim přiřazená čísla přečtená z plánku.
-// Kolečka s čísly 1–11 jsou sekce (skupiny displejů), ty tu nejsou. Bez čísla
+// Kolečka s čísly 1 až 11 jsou sekce (skupiny displejů), ty tu nejsou. Bez čísla
 // jsou na plánku i tři tvary, které tedy displeje nejsou: kruhová nádrž
 // u sekce 1, zelený pruh u stěny a prostřední fialový box u sekce 8.
 // Komentáře u skupin uvádějí barvu a číslo sekce z plánku, jen pro orientaci.
@@ -130,11 +130,11 @@ const PUDORYS_BODY: { displej: number; x: number; y: number }[] = [
   // fialová, sekce 8 (prostřední box strip nemá číslo, displej to není)
   { displej: 19, x: 94.7, y: 46.7 },
   { displej: 20, x: 94.8, y: 35.6 },
-  // modrá, sekce 9 — vnější stěna severovýchodní chodby
+  // modrá, sekce 9, vnější stěna severovýchodní chodby
   { displej: 21, x: 92.8, y: 27.8 },
   { displej: 22, x: 88.9, y: 24.1 },
   { displej: 23, x: 83.5, y: 18.7 },
-  // modrá, sekce 9 — vnitřní stěna téže chodby
+  // modrá, sekce 9, vnitřní stěna téže chodby
   { displej: 24, x: 79.4, y: 33.5 },
   { displej: 25, x: 75.7, y: 29.9 },
   { displej: 26, x: 72.2, y: 26.5 },
@@ -170,7 +170,7 @@ function heatColor(score: number): string {
 
 const HEAT_GRADIENT = "linear-gradient(90deg, #86C48A, #15803D 35%, #C2740C 70%, #DC2626)";
 
-// Bez analytiky se body kreslí neutrálně šedě — heat mapa bez dat nemá co barvit.
+// Bez analytiky se body kreslí neutrálně šedě, heat mapa bez dat nemá co barvit.
 const NEUTRAL = "#A3ADAA";
 
 interface MapaData {
@@ -183,7 +183,7 @@ interface MapaData {
 
 // Párování analytiky na displeje: primárně přes species_latin proti latin_name
 // z našich meta.json (obojí kanonizované stejnými pravidly), display_id jen
-// jako záloha — podle kontraktu může být null.
+// jako záloha, podle kontraktu může být null.
 function naparuj(displays: DisplaySummary[], summary: AnalyticsSummary | null): MapaData {
   const podleCisla = new Map(displays.map((d) => [Number(d.id), d]));
 
@@ -210,7 +210,7 @@ function naparuj(displays: DisplaySummary[], summary: AnalyticsSummary | null): 
   const pouziteLatiny = new Set<string>();
   const pouziteId = new Set<number>();
 
-  // Párování se počítá pro VŠECHNY displeje z CMS, i pro ty mimo půdorys —
+  // Párování se počítá pro VŠECHNY displeje z CMS, i pro ty mimo půdorys,
   // jinak by druh napárovaný na displej 35 hlásil, že nemá displej.
   const zasahy = new Map<number, { count: number; species_name: string } | undefined>();
   for (const d of displays) {
@@ -274,7 +274,7 @@ export default function Dashboard() {
   const [nacitani, setNacitani] = useState(true);
   const [hover, setHover] = useState<HeatNode | null>(null);
 
-  // Každý zdroj se vykreslí, jak dorazí — na nedostupný chatbot se čeká do
+  // Každý zdroj se vykreslí, jak dorazí, na nedostupný chatbot se čeká do
   // timeoutu a stránka by kvůli němu neměla stát u kolečka. Analytika
   // nevyhazuje výjimku (vrací obálku), seznam displejů ano.
   async function load() {
@@ -391,7 +391,7 @@ export default function Dashboard() {
         {displays && displays.length === 0 && (
           <Hlaska
             text="V CMS zatím nejsou žádné displeje."
-            detail="Datová složka je prázdná — displeje vytvoří `npm run seed`."
+            detail="Datová složka je prázdná, displeje vytvoří `npm run seed`."
           />
         )}
 
@@ -506,19 +506,19 @@ export default function Dashboard() {
               />
             )}
 
-            {/* Kolečka na plánku jsou zóny expozice — ať si je nikdo neplete
+            {/* Kolečka na plánku jsou zóny expozice, ať si je nikdo neplete
                 s čísly displejů. */}
             <p className="text-[11px] text-fg-dim">
               Body leží na obdélníčcích s čísly displejů z plánku od ZOO (číslo, druh a počet
-              dotazů ukáže nájezd myší). Kolečka s čísly 1–11 na plánku jsou sekce, tedy skupiny
-              displejů — ty v mapě body nemají.
+              dotazů ukáže nájezd myší). Kolečka s čísly 1 až 11 na plánku jsou sekce, tedy skupiny
+              displejů; ty v mapě body nemají.
             </p>
 
             {/* Plánek od ZOO zachycuje 31 displejů, v CMS jich může být víc. */}
             {mapa.mimoPudorys.length > 0 && (
               <p className="text-[11px] text-fg-dim">
-                Půdorys od ZOO zachycuje displeje 1–{PUDORYS_BODY.length}. V CMS jsou navíc displeje{" "}
-                <span className="tnum">{mapa.mimoPudorys.join(", ")}</span>, na plánku nejsou — v
+                Půdorys od ZOO zachycuje displeje 1 až {PUDORYS_BODY.length}. V CMS jsou navíc displeje{" "}
+                <span className="tnum">{mapa.mimoPudorys.join(", ")}</span>, na plánku nejsou, v
                 mapě se proto nezobrazují.
               </p>
             )}

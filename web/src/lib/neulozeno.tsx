@@ -4,7 +4,7 @@ import { createContext, useContext, useState, type ReactNode } from "react";
 //
 // Detail displeje ji ohlásí, levý navigační panel se jí ptá dřív, než pustí
 // kurátora pryč. Bez toho by odchod přes menu (nebo Odhlásit) tiše zahodil
-// rozdělanou práci — beforeunload na to nestačí, uvnitř SPA se nespouští.
+// rozdělanou práci, beforeunload na to nestačí, uvnitř SPA se nespouští.
 interface NeulozenoApi {
   jeNeulozeno: boolean;
   nastavNeulozeno: (v: boolean) => void;

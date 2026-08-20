@@ -123,7 +123,7 @@ export default function Layout() {
         text={
           <>
             Na stránce máte rozepsané změny, které nejsou uložené. Když teď odejdete, přijdete
-            o ně — vrátit to nepůjde.
+            o ně a vrátit to nepůjde.
           </>
         }
         potvrdit="Odejít bez uložení"

@@ -18,7 +18,7 @@ export const SEED_DISPLAYS: Record<number, SeedDisplay> = {
     barva: "#0f766e",
     celed: "Ambystomatidae",
     pole: {
-      Sekce: "Neotenie",
+      Sekce: "Neotenie, původ moderních obojživelníků",
       Nazev: "Axolotl mexický",
       Latinsky: "Ambystoma mexicanum",
       Strava: "vodní bezobratlí, larvy hmyzu, drobní korýši",
@@ -66,7 +66,7 @@ Přátelský, stručný, vhodný pro děti i dospělé. Bez latinských termín�
     barva: "#a16207",
     celed: "Salamandridae",
     pole: {
-      Sekce: "Caudata",
+      Sekce: "Caudata, obojživelníci s ocasem",
       Nazev: "Mlok skvrnitý",
       Latinsky: "Salamandra salamandra",
       Strava: "žížaly, slimáci, pavouci a hmyz",

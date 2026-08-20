@@ -57,23 +57,118 @@ export const INFO_KLICE = [
   "DelkaZivota",
 ] as const;
 
-export const SEKCE = [
-  "Listovnice",
-  "Caudata",
-  "Červoři",
-  "Lezci",
-  "Madagaskar",
-  "Neotenie",
-  "Obojživelníci České republiky",
-  "Pralesničky",
-  "Rozmanitost žab",
-  "Šesté vymírání",
+export interface SekceDef {
+  cislo: number; // číslo tématu na oficiální tabuli i na podlaze pavilonu
+  cs: string;
+  en: string;
+  pl: string;
+}
+
+// Témata (sekce) pavilonu podle oficiální tabule od Michala.
+//
+// Do cs/<slide>/text.txt a do meta.json.category se zapisuje POUZE český
+// název (`cs`). Překlady jsou zatím jen pro CMS: kontrakt s Unity ani
+// s chatbotem se nemění, oba dál čtou jeden řetězec.
+export const SEKCE_TEMATA: SekceDef[] = [
+  {
+    cislo: 1,
+    cs: "Červoři, záhadní obojživelníci",
+    en: "Caecilians, Mysterious Amphibians",
+    pl: "Płazy beznogie, tajemnicze stworzenia",
+  },
+  {
+    cislo: 2,
+    cs: "Rozmanitost žab",
+    en: "Diversity of Frogs",
+    pl: "Różnorodność żab",
+  },
+  {
+    cislo: 3,
+    cs: "Pralesničky, jedovaté krásky",
+    en: "Poison Dart Frogs, Poisonous Beauties",
+    pl: "Drzewołazy, trujące piękności",
+  },
+  {
+    cislo: 4,
+    cs: "Šesté vymírání",
+    en: "The Sixth Extinction",
+    pl: "Szóste wymieranie",
+  },
+  {
+    cislo: 5,
+    cs: "Historie obojživelníků, přechod obratlovců z vody na souš",
+    en: "History of Amphibians, the Transition of Vertebrates from Water to Land",
+    pl: "Historia płazów, wyjście kręgowców z wody na ląd",
+  },
+  {
+    cislo: 6,
+    cs: 'Lezci, novodobí "obojživelníci"',
+    en: 'Mudskippers, Modern-day "Amphibians"',
+    pl: 'Poskoczki, współczesne "płazy"',
+  },
+  {
+    cislo: 7,
+    cs: "Madagaskar, žabí ráj",
+    en: "Madagascar, Frog Paradise",
+    pl: "Madagaskar, raj dla żab",
+  },
+  {
+    cislo: 8,
+    cs: "Listovnice, královny noci",
+    en: "Leaf Frogs, Queens of the Night",
+    pl: "Chwytnice, królowe nocy",
+  },
+  {
+    cislo: 9,
+    cs: "Caudata, obojživelníci s ocasem",
+    en: "Caudata, Amphibians with a Tail",
+    pl: "Caudata, płazy ogoniaste",
+  },
+  {
+    cislo: 10,
+    cs: "Neotenie, původ moderních obojživelníků",
+    en: "Neoteny, the Origin of Modern Amphibians",
+    pl: "Neotenia, pochodzenie współczesnych płazów",
+  },
+  {
+    cislo: 11,
+    cs: "Obojživelníci České republiky",
+    en: "Amphibians of the Czech Republic",
+    pl: "Płazy Republiki Czeskiej",
+  },
 ];
+
+// Platné hodnoty pole Sekce (české názvy v pořadí podle čísla tématu).
+export const SEKCE = SEKCE_TEMATA.map((s) => s.cs);
+
+// Názvy, pod kterými sekce fungovaly před srovnáním s oficiální tabulí.
+// Displeje uložené dřív je mají v text.txt i v meta.json, takže musí dál
+// projít validací. Klíč je starý název, hodnota nový.
+export const SEKCE_STARE: Record<string, string> = {
+  Listovnice: "Listovnice, královny noci",
+  Caudata: "Caudata, obojživelníci s ocasem",
+  Červoři: "Červoři, záhadní obojživelníci",
+  Lezci: 'Lezci, novodobí "obojživelníci"',
+  Madagaskar: "Madagaskar, žabí ráj",
+  Neotenie: "Neotenie, původ moderních obojživelníků",
+  Pralesničky: "Pralesničky, jedovaté krásky",
+};
+
+// Je hodnota platnou sekcí (nový nebo starý název)?
+export function jeSekce(hodnota: string): boolean {
+  return SEKCE.includes(hodnota) || hodnota in SEKCE_STARE;
+}
+
+// Sekce podle uložené hodnoty, ať je název starý nebo nový.
+export function najdiSekci(hodnota: string): SekceDef | null {
+  const cs = SEKCE_STARE[hodnota] ?? hodnota;
+  return SEKCE_TEMATA.find((s) => s.cs === cs) ?? null;
+}
 
 export const MAPA_SOUBOR = "mapa.png";
 
 // Zajímavost (_gal): text.txt s jedním klíčem. Zapisujeme "Popis", při čtení
-// bereme i "Text" — Michal používá obojí.
+// bereme i "Text": Michal používá obojí.
 export const ZAJIMAVOST_KLIC = "Popis";
 const ZAJIMAVOST_RE = /^\s*(?:Popis|Text)\s*:\s?(.*)$/i;
 
@@ -117,6 +212,9 @@ export interface SlideContent {
 export interface DisplaySummary {
   id: string;
   druh: string;
+  // Sekce (téma) displeje z meta.json, kvůli filtru v přehledu. Může být
+  // i starý název, přehled si ho přeloží přes SEKCE_STARE.
+  category: string | null;
   // AI koncept z importu, který ještě nikdo nezkontroloval.
   cekaNaRevizi: boolean;
   // Kvůli párování s analytikou chatbota (jeho species_latin proti našemu
@@ -261,7 +359,7 @@ async function readInfoPole(id: string, slozka: string): Promise<Record<string, 
 // --- text.txt zajímavosti (_gal): jeden dlouhý odstavec pod klíčem Popis ---
 
 // Zapisujeme "Popis: <text>", čteme i "Text:". Odstavec může na disku
-// pokračovat na dalších řádcích — bereme všechno za klíčem. Soubor bez klíče
+// pokračovat na dalších řádcích, bereme všechno za klíčem. Soubor bez klíče
 // (ruční zásah) čteme celý jako holý odstavec, ať se obsah neztratí.
 export function parseZajimavostText(raw: string): string {
   const lines = raw.replace(/\r\n/g, "\n").split("\n");
@@ -308,7 +406,9 @@ export function validateInfoPole(pole: Record<string, string>): string | null {
   const sekce = (pole.Sekce ?? "").trim();
   const nazev = (pole.Nazev ?? "").trim();
   if (!sekce) return "Vyplňte prosím sekci.";
-  if (!SEKCE.includes(sekce)) return "Neplatná sekce.";
+  // Starý název sekce (před srovnáním s oficiální tabulí) projde taky, jinak
+  // by dřív uložený displej nešlo znovu uložit.
+  if (!jeSekce(sekce)) return "Neplatná sekce.";
   if (!nazev) return "Vyplňte prosím název.";
   return null;
 }
@@ -439,7 +539,7 @@ export async function readKb(id: string): Promise<string> {
 // POZOR: uložení znalostní báze značku „čeká na revizi" ZÁMĚRNĚ nechává být.
 // Kurátor text ukládá z různých důvodů (překlep, doplnění věty) a to ještě
 // neznamená, že ho celý přečetl a ručí za něj. Revizi ruší jen vědomé
-// schválení — POST /api/displays/:id/revize, viz oznacRevizi().
+// schválení. POST /api/displays/:id/revize, viz oznacRevizi().
 export async function writeKb(id: string, text: string): Promise<void> {
   const body = text.replace(/\r\n/g, "\n");
   await writeFileAtomic(
@@ -468,7 +568,7 @@ export async function oznacRevizi(id: string, ceka: boolean): Promise<void> {
 // Název je vždy unikátní (Safari pojmenovává přetažené obrázky "Unknown.jpeg",
 // bez unikátního jména by se soubory přepisovaly).
 export async function convertToPng(data: Buffer): Promise<Buffer> {
-  // 40 Mpx strop vstupu (výchozí sharp limit je ~268 Mpx) — brzda proti
+  // 40 Mpx strop vstupu (výchozí sharp limit je ~268 Mpx), brzda proti
   // obřím dekódovaným rastrům. SVG odmítáme úplně: renderuje se přes librsvg
   // a i pár set bajtů (feTurbulence) může vyrobit desítky MB a spálit minuty
   // CPU; navíc ho na displeji nepotřebujeme.
@@ -490,7 +590,53 @@ function uniquePngName(): string {
   return `foto-${Date.now().toString(36)}-${randomBytes(3).toString("hex")}.png`;
 }
 
-// Sekvence 3D modelu musí být souvislá řada od 001 — po přidání i smazání
+// Přejmenování s opakováním. Na Windows drží soubor nebo složku klidně
+// antivirus nebo Unity klient, který čte obsah displeje, a rename spadne na
+// EPERM/EBUSY. Bez opakování by uprostřed dvoufázového přečíslování zůstal
+// slide pod dočasným názvem `.tmp-*`, tedy neviditelný pro CMS i pro tablet.
+const RENAME_POKUSU = 5;
+const RENAME_PAUZA_MS = 120;
+
+async function renameSPokusy(from: string, to: string): Promise<void> {
+  for (let pokus = 1; ; pokus++) {
+    try {
+      await fs.rename(from, to);
+      return;
+    } catch (err) {
+      const kod = (err as NodeJS.ErrnoException).code;
+      if ((kod !== "EPERM" && kod !== "EBUSY") || pokus >= RENAME_POKUSU) throw err;
+      await new Promise((hotovo) => setTimeout(hotovo, RENAME_PAUZA_MS * pokus));
+    }
+  }
+}
+
+// Zbytky po přerušeném přečíslování nebo atomickém zápisu: složky a soubory
+// `.tmp-*` uvnitř data/displeje. Uklízí se při startu serveru, kdy nic jiného
+// se soubory nepracuje, takže se nemůže smazat rozdělaný zápis.
+export async function uklidDocasneSoubory(): Promise<string[]> {
+  const uklizeno: string[] = [];
+  async function projdi(dir: string): Promise<void> {
+    let polozky;
+    try {
+      polozky = await fs.readdir(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const p of polozky) {
+      const cesta = path.join(dir, p.name);
+      if (p.name.startsWith(".tmp-")) {
+        await fs.rm(cesta, { recursive: true, force: true }).catch(() => {});
+        uklizeno.push(path.relative(DISPLAYS_DIR, cesta));
+        continue;
+      }
+      if (p.isDirectory()) await projdi(cesta);
+    }
+  }
+  await projdi(DISPLAYS_DIR);
+  return uklizeno;
+}
+
+// Sekvence 3D modelu musí být souvislá řada od 001, po přidání i smazání
 // snímku ji srovnáme. Dvoufázově (přes dočasné názvy), ať se nesrazí cíle.
 async function renumberSequence(id: string, slozka: string): Promise<void> {
   const dir = slideDirPath(id, slozka);
@@ -499,10 +645,10 @@ async function renumberSequence(id: string, slozka: string): Promise<void> {
   const meni = cile.filter((t) => t.from !== t.to);
   if (meni.length === 0) return;
   for (const t of meni) {
-    await fs.rename(path.join(dir, t.from), path.join(dir, `.tmp-${t.to}`));
+    await renameSPokusy(path.join(dir, t.from), path.join(dir, `.tmp-${t.to}`));
   }
   for (const t of meni) {
-    await fs.rename(path.join(dir, `.tmp-${t.to}`), path.join(dir, t.to));
+    await renameSPokusy(path.join(dir, `.tmp-${t.to}`), path.join(dir, t.to));
   }
 }
 
@@ -531,7 +677,7 @@ export async function saveImage(
     const cisla = (await sekvence(id, slide.slozka)).map((f) => Number(SEKVENCE_RE.exec(f)![1]));
     nazev = sekvencniNazev((cisla.length ? Math.max(...cisla) : 0) + 1);
   } else {
-    // Zajímavost má právě jednu fotku — předchozí nahradíme.
+    // Zajímavost má právě jednu fotku, předchozí nahradíme.
     if (slide.typ === "gal") {
       for (const old of await listFiles(id, slide.slozka, ".png")) {
         try {
@@ -544,7 +690,9 @@ export async function saveImage(
     nazev = uniquePngName();
   }
 
-  await fs.writeFile(path.join(dir, nazev), png);
+  // Atomicky (tmp + rename) jako texty: Unity i chatbot čtou složku displeje
+  // přímo, půlka souboru by jim vyrobila rozbitý obrázek.
+  await writeFileAtomic(path.join(dir, nazev), png);
   if (slide.typ === "3d") await renumberSequence(id, slide.slozka);
   await touchDisplay(id);
   return { ok: true, url: slideFileUrl(id, slide.slozka, nazev) };
@@ -612,7 +760,7 @@ export async function setMapa(
 
 // --- Video (jedno MP4 ve složce _vid, volitelně i na info panelu) ---
 
-// Rezervovaná jména zařízení na Windows (i s příponou, např. CON.mp4) —
+// Rezervovaná jména zařízení na Windows (i s příponou, např. CON.mp4),
 // zápis pod nimi na Windows selže nebo míří na zařízení, ne na soubor.
 const WIN_REZERVOVANA = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\.|$)/i;
 
@@ -636,19 +784,19 @@ export async function saveVideo(
     return { ok: false, chyba: "Video patří jen na video slide nebo info panel." };
   }
   const dir = slideDirPath(id, slide.slozka);
-  // Jedno video na slide: starší mp4 odstraníme.
-  for (const old of await listFiles(id, slide.slozka, ".mp4")) {
-    try {
-      await fs.unlink(path.join(dir, old));
-    } catch {
-      // ignore
-    }
-  }
+  const stara = await listFiles(id, slide.slozka, ".mp4");
   let safe = sanitizeFilename(filename);
   if (path.extname(safe).toLowerCase() !== ".mp4") {
     safe = safe.replace(/\.[^.]*$/, "") + ".mp4";
   }
-  await fs.writeFile(path.join(dir, safe), data);
+  // Pořadí je schválně opačné než dřív: nejdřív se atomicky zapíše nové video
+  // a teprve po úspěchu se smaže staré. Když upload selže, na slidu zůstane
+  // původní video místo prázdna.
+  await writeFileAtomic(path.join(dir, safe), data);
+  for (const old of stara) {
+    if (old === safe) continue; // právě zapsaný soubor stejného jména
+    await fs.unlink(path.join(dir, old)).catch(() => {});
+  }
   await touchDisplay(id);
   return { ok: true, url: slideFileUrl(id, slide.slozka, safe) };
 }
@@ -680,10 +828,10 @@ async function renumberSlides(id: string, ordered: SlideDirInfo[]): Promise<void
   const changing = tmp.filter((t) => t.from !== t.to);
   if (changing.length === 0) return;
   for (const t of changing) {
-    await fs.rename(path.join(dir, t.from), path.join(dir, `.tmp-${t.to}`));
+    await renameSPokusy(path.join(dir, t.from), path.join(dir, `.tmp-${t.to}`));
   }
   for (const t of changing) {
-    await fs.rename(path.join(dir, `.tmp-${t.to}`), path.join(dir, t.to));
+    await renameSPokusy(path.join(dir, `.tmp-${t.to}`), path.join(dir, t.to));
   }
 }
 
@@ -750,6 +898,7 @@ export async function listDisplays(): Promise<DisplaySummary[]> {
     out.push({
       id,
       druh: meta.druh,
+      category: meta.category ?? null,
       latin_name: meta.latin_name ?? null,
       cekaNaRevizi: meta.cekaNaRevizi === true,
       stav: meta.stav,

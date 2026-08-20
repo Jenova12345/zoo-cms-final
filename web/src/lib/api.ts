@@ -37,7 +37,7 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
     }
     if (res.status === 401) sessionVyprsela();
     // 413 utne multipart ještě v přenosu, takže ze serveru chodí jen obecná
-    // hláška. Kurátor ale potřebuje vědět, co s tím — proto vlastní text.
+    // hláška. Kurátor ale potřebuje vědět, co s tím, proto vlastní text.
     if (res.status === 413) {
       throw new Error(`Soubor je moc velký, maximum je ${NAHRAVANI_MAX_MB} MB.`);
     }
@@ -182,8 +182,17 @@ export const api = {
     await request(`/api/displays/${id}/refresh`, { method: "POST" });
   },
 
-  async audit(): Promise<AuditEntry[]> {
-    const data = await request<{ entries: AuditEntry[] }>("/api/audit");
+  // Nejnovější záznamy první. `before` (ISO čas posledního načteného záznamu)
+  // vrátí starší stránku, takže se dá donačítat směrem do minulosti.
+  async audit(
+    filtr: { limit?: number; before?: string; preskoc?: number } = {},
+  ): Promise<AuditEntry[]> {
+    const params = new URLSearchParams();
+    if (filtr.limit !== undefined) params.set("limit", String(filtr.limit));
+    if (filtr.before) params.set("before", filtr.before);
+    if (filtr.preskoc) params.set("preskoc", String(filtr.preskoc));
+    const qs = params.toString();
+    const data = await request<{ entries: AuditEntry[] }>(`/api/audit${qs ? `?${qs}` : ""}`);
     return data.entries;
   },
 

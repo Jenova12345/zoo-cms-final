@@ -17,7 +17,7 @@ import { writeFileAtomic } from "./atomic.js";
 //
 // POZOR (13. 8. 2026): skript zůstal ve stavu, v jakém migraci reálně provedl.
 // Po finální struktuře od Michala je `_gal` ZAJÍMAVOST (text.txt + jedna
-// fotka), ne galerie — kdyby se migrace pouštěla znovu na starých datech,
+// fotka), ne galerie, kdyby se migrace pouštěla znovu na starých datech,
 // v 3_gal skončí víc fotek a CMS i Unity vezmou jen první, text bude prázdný.
 // Data v pavilonu jsou migrovaná, tohle je jen historická pojistka.
 

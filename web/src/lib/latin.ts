@@ -1,4 +1,4 @@
-// Klientská verze kanonizace latinského jména — jen pro živý náhled v editoru.
+// Klientská verze kanonizace latinského jména, jen pro živý náhled v editoru.
 // Autoritativní očištění dělá server (viz server/src/latin.ts); tato funkce
 // musí držet stejná pravidla, aby náhled odpovídal tomu, co se uloží.
 

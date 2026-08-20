@@ -1,6 +1,7 @@
 export interface DisplaySummary {
   id: string;
   druh: string;
+  category: string | null; // sekce z meta.json (kvůli filtru v přehledu)
   latin_name: string | null; // párování s analytikou chatbota (species_latin)
   cekaNaRevizi: boolean; // AI koncept z hromadného importu, kurátor ho ještě neviděl
   stav: string;
@@ -10,7 +11,7 @@ export interface DisplaySummary {
 
 // Typ slidu = suffix názvu složky na disku (<n>_<typ>), pořadí = číselný prefix.
 // Finální struktura od Michala má pevných pět typů. Pozor: "gal" je
-// ZAJÍMAVOST (dlouhý text + jedna fotka), ne galerie — suffix zůstal kvůli
+// ZAJÍMAVOST (dlouhý text + jedna fotka), ne galerie, suffix zůstal kvůli
 // Unity. Typ "3d" má na disku suffix _3d nebo _mod, server čte obojí.
 export type SlideTyp = "info" | "ai" | "3d" | "vid" | "gal";
 
@@ -91,28 +92,124 @@ export interface AnalyticsSummary {
   per_species: AnalyticsSpecies[];
 }
 
-// Buď data, nebo důvod, proč nejsou — chatbot backend nemusí běžet.
+// Buď data, nebo důvod, proč nejsou, chatbot backend nemusí běžet.
 export type Analytika<T> = { dostupne: true; data: T } | { dostupne: false; duvod: string };
 
 export const NEPRIRAZENO = "Nepřiřazeno";
 
-// Sekce expozice (dropdown info panelu; hodnota jde do text.txt beze změny).
-export const SEKCE = [
-  "Listovnice",
-  "Caudata",
-  "Červoři",
-  "Lezci",
-  "Madagaskar",
-  "Neotenie",
-  "Obojživelníci České republiky",
-  "Pralesničky",
-  "Rozmanitost žab",
-  "Šesté vymírání",
+// Sekce expozice pro rozbalovátko info panelu. Zrcadlí server/src/displays.ts,
+// stejně jako ostatní sdílené konstanty v tomhle souboru.
+export interface SekceDef {
+  cislo: number; // číslo tématu na oficiální tabuli i na podlaze pavilonu
+  cs: string;
+  en: string;
+  pl: string;
+}
+
+// Témata (sekce) pavilonu podle oficiální tabule od Michala.
+//
+// Do cs/<slide>/text.txt a do meta.json.category se zapisuje POUZE český
+// název (`cs`). Překlady jsou zatím jen pro CMS: kontrakt s Unity ani
+// s chatbotem se nemění, oba dál čtou jeden řetězec.
+export const SEKCE_TEMATA: SekceDef[] = [
+  {
+    cislo: 1,
+    cs: "Červoři, záhadní obojživelníci",
+    en: "Caecilians, Mysterious Amphibians",
+    pl: "Płazy beznogie, tajemnicze stworzenia",
+  },
+  {
+    cislo: 2,
+    cs: "Rozmanitost žab",
+    en: "Diversity of Frogs",
+    pl: "Różnorodność żab",
+  },
+  {
+    cislo: 3,
+    cs: "Pralesničky, jedovaté krásky",
+    en: "Poison Dart Frogs, Poisonous Beauties",
+    pl: "Drzewołazy, trujące piękności",
+  },
+  {
+    cislo: 4,
+    cs: "Šesté vymírání",
+    en: "The Sixth Extinction",
+    pl: "Szóste wymieranie",
+  },
+  {
+    cislo: 5,
+    cs: "Historie obojživelníků, přechod obratlovců z vody na souš",
+    en: "History of Amphibians, the Transition of Vertebrates from Water to Land",
+    pl: "Historia płazów, wyjście kręgowców z wody na ląd",
+  },
+  {
+    cislo: 6,
+    cs: 'Lezci, novodobí "obojživelníci"',
+    en: 'Mudskippers, Modern-day "Amphibians"',
+    pl: 'Poskoczki, współczesne "płazy"',
+  },
+  {
+    cislo: 7,
+    cs: "Madagaskar, žabí ráj",
+    en: "Madagascar, Frog Paradise",
+    pl: "Madagaskar, raj dla żab",
+  },
+  {
+    cislo: 8,
+    cs: "Listovnice, královny noci",
+    en: "Leaf Frogs, Queens of the Night",
+    pl: "Chwytnice, królowe nocy",
+  },
+  {
+    cislo: 9,
+    cs: "Caudata, obojživelníci s ocasem",
+    en: "Caudata, Amphibians with a Tail",
+    pl: "Caudata, płazy ogoniaste",
+  },
+  {
+    cislo: 10,
+    cs: "Neotenie, původ moderních obojživelníků",
+    en: "Neoteny, the Origin of Modern Amphibians",
+    pl: "Neotenia, pochodzenie współczesnych płazów",
+  },
+  {
+    cislo: 11,
+    cs: "Obojživelníci České republiky",
+    en: "Amphibians of the Czech Republic",
+    pl: "Płazy Republiki Czeskiej",
+  },
 ];
+
+// Platné hodnoty pole Sekce (české názvy v pořadí podle čísla tématu).
+export const SEKCE = SEKCE_TEMATA.map((s) => s.cs);
+
+// Názvy, pod kterými sekce fungovaly před srovnáním s oficiální tabulí.
+// Displeje uložené dřív je mají v text.txt i v meta.json, takže musí dál
+// projít validací. Klíč je starý název, hodnota nový.
+export const SEKCE_STARE: Record<string, string> = {
+  Listovnice: "Listovnice, královny noci",
+  Caudata: "Caudata, obojživelníci s ocasem",
+  Červoři: "Červoři, záhadní obojživelníci",
+  Lezci: 'Lezci, novodobí "obojživelníci"',
+  Madagaskar: "Madagaskar, žabí ráj",
+  Neotenie: "Neotenie, původ moderních obojživelníků",
+  Pralesničky: "Pralesničky, jedovaté krásky",
+};
+
+// Je hodnota platnou sekcí (nový nebo starý název)?
+export function jeSekce(hodnota: string): boolean {
+  return SEKCE.includes(hodnota) || hodnota in SEKCE_STARE;
+}
+
+// Sekce podle uložené hodnoty, ať je název starý nebo nový.
+export function najdiSekci(hodnota: string): SekceDef | null {
+  const cs = SEKCE_STARE[hodnota] ?? hodnota;
+  return SEKCE_TEMATA.find((s) => s.cs === cs) ?? null;
+}
 
 // Pole info panelu: klíč přesně tak, jak se zapisuje do text.txt.
 //
-// `hint` je nápověda pro kurátora pod polem — Michalovo Unity má pevné
+// `hint` je nápověda pro kurátora pod polem. Michalovo Unity má pevné
 // rozvržení a dlouhý text se na tabletu ořízne, proto u polí s limitem
 // hlásíme doporučenou délku (`limitZnaku`). Limit je jen doporučení: nikdy
 // neblokuje uložení, jen se u počítadla rozsvítí oranžově.
@@ -170,7 +267,7 @@ export const INFO_POLE: InfoPoleDef[] = [
 ];
 
 // Doporučená délka textu zajímavosti (slide _gal). Delší text se na tabletu
-// ořízne — pole neroluje.
+// ořízne, pole neroluje.
 export const ZAJIMAVOST_LIMIT_SLOV = 200;
 
 // České názvy typů podle finální struktury (stejné popisky jako tlačítka na

@@ -2,12 +2,14 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { ImageOff, Loader2, Search, Sparkles } from "lucide-react";
 import { api, formatDateTime } from "../lib/api";
-import { NEPRIRAZENO, type DisplaySummary } from "../lib/types";
+import { NEPRIRAZENO, SEKCE_TEMATA, najdiSekci, type DisplaySummary } from "../lib/types";
 
 export default function Displays() {
   const [displays, setDisplays] = useState<DisplaySummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  // "" = všechny sekce, "0" = displeje bez sekce, jinak číslo tématu.
+  const [sekce, setSekce] = useState("");
 
   useEffect(() => {
     api
@@ -17,6 +19,12 @@ export default function Displays() {
   }, []);
 
   const filtered = displays?.filter((d) => {
+    if (sekce) {
+      // Starý název sekce najdiSekci přeloží, takže filtr sedí i na displeje
+      // uložené před srovnáním s oficiální tabulí.
+      const cislo = najdiSekci(d.category ?? "")?.cislo;
+      if (sekce === "0" ? cislo !== undefined : String(cislo ?? "") !== sekce) return false;
+    }
     const q = query.trim().toLowerCase();
     if (!q) return true;
     return d.id.includes(q) || d.druh.toLowerCase().includes(q);
@@ -44,14 +52,30 @@ export default function Displays() {
             </p>
           )}
         </div>
-        <div className="relative">
-          <Search className="h-4 w-4 text-fg-dim absolute left-3 top-1/2 -translate-y-1/2" strokeWidth={1.75} />
-          <input
-            className="input pl-9 w-64"
-            placeholder="Hledat číslo nebo druh"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-          />
+        <div className="flex flex-wrap items-center gap-3">
+          <select
+            className="input w-64"
+            value={sekce}
+            onChange={(e) => setSekce(e.target.value)}
+            aria-label="Filtr podle sekce"
+          >
+            <option value="">Všechny sekce</option>
+            {SEKCE_TEMATA.map((s) => (
+              <option key={s.cislo} value={String(s.cislo)}>
+                {s.cislo}. {s.cs}
+              </option>
+            ))}
+            <option value="0">Bez sekce</option>
+          </select>
+          <div className="relative">
+            <Search className="h-4 w-4 text-fg-dim absolute left-3 top-1/2 -translate-y-1/2" strokeWidth={1.75} />
+            <input
+              className="input pl-9 w-64"
+              placeholder="Hledat číslo nebo druh"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+          </div>
         </div>
       </div>
 
@@ -60,6 +84,21 @@ export default function Displays() {
       {!displays && !error && (
         <div className="grid place-items-center py-20 text-fg-dim">
           <Loader2 className="h-6 w-6 animate-spin" />
+        </div>
+      )}
+
+      {filtered && filtered.length === 0 && (
+        <div className="rounded-xl border border-dashed border-line px-6 py-10 text-center text-sm text-fg-muted">
+          Tomuhle výběru neodpovídá žádný displej.{" "}
+          <button
+            onClick={() => {
+              setSekce("");
+              setQuery("");
+            }}
+            className="font-semibold text-accent hover:underline"
+          >
+            Zrušit filtr
+          </button>
         </div>
       )}
 
@@ -81,7 +120,7 @@ export default function Displays() {
                       <ImageOff className="h-6 w-6" strokeWidth={1.5} />
                     </div>
                   )}
-                  {/* AI koncept z hromadného importu — kurátor ho ještě neviděl. */}
+                  {/* AI koncept z hromadného importu, kurátor ho ještě neviděl. */}
                   {d.cekaNaRevizi && (
                     <span className="absolute left-2 top-2 chip bg-amber-soft text-amber-deep shadow-card">
                       <Sparkles className="h-3.5 w-3.5" strokeWidth={2} />

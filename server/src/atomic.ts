@@ -6,8 +6,8 @@ import path from "node:path";
 // STEJNÉ složce a teprve hotový soubor se přejmenuje na cílový název.
 //
 // Proč: holé fs.writeFile otevírá soubor s flagem "w", takže ho nejdřív zkrátí
-// na nulu a teprve pak plní. Kdo soubor čte v tom okamžiku — Danielův chatbot
-// sleduje naše soubory file watcherem, Unity je čte přímo z disku — dostane
+// na nulu a teprve pak plní. Kdo soubor čte v tom okamžiku. Danielův chatbot
+// sleduje naše soubory file watcherem, Unity je čte přímo z disku, dostane
 // prázdný nebo useknutý soubor a JSON.parse mu spadne. Rename je oproti tomu
 // v rámci jednoho filesystému atomický: čtenář vidí buď celý starý, nebo celý
 // nový obsah, nikdy půlku. Watcher navíc dostane jednu událost místo dvou

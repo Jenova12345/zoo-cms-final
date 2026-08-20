@@ -84,7 +84,7 @@ export function infoZmeneno(
 }
 
 // Neuložená změna = pole, kterého se kurátor dotkl A které se zároveň liší
-// od disku. Předvyplněná šablona (kb) tak „neuloženo" nedělá — kurátor do ní
+// od disku. Předvyplněná šablona (kb) tak „neuloženo" nedělá, kurátor do ní
 // nesáhl, není o co přijít.
 export function infoNeulozeno(
   n: number,
@@ -105,7 +105,7 @@ export function textZmeneno(draft: string, ulozeny: string): boolean {
 }
 
 // --- Přečíslování po změně pořadí --------------------------------------
-// Server po reorderu přejmenuje složky na souvislou řadu 1..k v zadaném
+// Server po reorderu přejmenuje složky na souvislou řadu 1.k v zadaném
 // pořadí, takže slide, který byl `poradi[i]`, je nově `i + 1`. Drafty i
 // značky dotčených polí se musí přestěhovat s ním, jinak by se rozepsaný
 // text propsal do cizího slidu.
@@ -137,7 +137,7 @@ export function premapujDotcena(dotcena: Dotcena, poradi: number[]): Dotcena {
       if (cil !== undefined) out.add(klicZajimavosti(cil));
       continue;
     }
-    out.add(klic); // kb, celed — na čísle slidu nezávisí
+    out.add(klic); // kb, celed, na čísle slidu nezávisí
   }
   return out;
 }

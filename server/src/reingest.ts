@@ -24,7 +24,7 @@ export async function notifyReingest(id: string, relativniCesta: string): Promis
 
   if (!ENABLED || !URL) {
     console.log(
-      `[reingest] VYPNUTO — poslal bych POST na '${URL || "(nenastavená URL)"}' ` +
+      `[reingest] VYPNUTO, poslal bych POST na '${URL || "(nenastavená URL)"}' ` +
         `s tělem ${JSON.stringify(payload)}`,
     );
     return;

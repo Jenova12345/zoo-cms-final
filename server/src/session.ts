@@ -5,7 +5,7 @@ import { DATA_ROOT } from "./paths.js";
 
 // Přihlašovací session. Cookie je podepsaná tajným klíčem (HMAC přes
 // @fastify/cookie), takže si ji nikdo nemůže vyrobit ani přepsat na cizí
-// jméno — na rozdíl od původního stavu, kdy v cookie bylo jen URL-encoded
+// jméno, na rozdíl od původního stavu, kdy v cookie bylo jen URL-encoded
 // jméno a stačilo ho přepsat v prohlížeči.
 //
 // V cookie je: { u: jméno, exp: čas vypršení }. Platnost se kontroluje i na
@@ -20,7 +20,7 @@ const SECRET_FILE = path.join(DATA_ROOT, "session.key");
 
 const VYCHOZI_TTL_HODIN = 12;
 // Strop platnosti session. I když někdo nastaví SESSION_TTL_HOURS na víc,
-// session nevydrží déle než 12 h — ukradená cookie tím má omezené okno.
+// session nevydrží déle než 12 h, ukradená cookie tím má omezené okno.
 const MAX_TTL_HODIN = 12;
 
 function ttlHodin(): number {
@@ -42,7 +42,7 @@ export async function nactiNeboZalozKlic(log: { warn: (msg: string) => void }): 
     const s = raw.trim();
     if (s.length < 16) {
       // Env je nastavený, ale nepoužitelně slabý. Radši nenastartovat, než tiše
-      // podepisovat session krátkým tajemstvím — a session.key nezakládat.
+      // podepisovat session krátkým tajemstvím, a session.key nezakládat.
       throw new Error(
         "SESSION_SECRET je nastavený, ale kratší než 16 znaků. Zvol silnější " +
           "(např. `openssl rand -hex 32`), nebo proměnnou odeber a použije se data/session.key.",
@@ -52,7 +52,7 @@ export async function nactiNeboZalozKlic(log: { warn: (msg: string) => void }): 
   }
 
   log.warn(
-    `SESSION_SECRET není nastavený — používá se klíč v ${SECRET_FILE}. ` +
+    `SESSION_SECRET není nastavený, používá se klíč v ${SECRET_FILE}. ` +
       "V produkci nastav SESSION_SECRET v prostředí (viz .env.example).",
   );
   try {
@@ -76,7 +76,7 @@ export async function nactiNeboZalozKlic(log: { warn: (msg: string) => void }): 
 export interface SessionData {
   u: string; // jméno přihlášeného
   exp: number; // čas vypršení (ms od epochy)
-  v: string; // serial účtu (zmeneno/vytvoreno) — zneplatní session po změně hesla
+  v: string; // serial účtu (zmeneno/vytvoreno), zneplatní session po změně hesla
 }
 
 // Obsah cookie (ještě před podpisem, ten přidá @fastify/cookie). `serial` je

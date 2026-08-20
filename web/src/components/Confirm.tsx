@@ -11,7 +11,7 @@ import { AlertTriangle, Send } from "lucide-react";
 //
 // `varianta` mění jen tón dialogu: "nebezpeci" = červená (mazání),
 // "publikovat" = zelená (zveřejnění není destruktivní, jen ho uvidí
-// návštěvníci). `prodlevaMs` je pojistka proti překliku — potvrzovací
+// návštěvníci). `prodlevaMs` je pojistka proti překliku, potvrzovací
 // tlačítko se odemkne až po odpočtu, takže omylem zdvojený klik z předchozí
 // obrazovky akci nespustí.
 export default function Confirm({
@@ -100,7 +100,7 @@ export default function Confirm({
             onClick={onPotvrdit}
             disabled={zamceno}
             className={publikovat ? "btn-primary" : "btn-danger"}
-            title={zamceno ? "Pojistka proti překliku — chvilku počkejte" : undefined}
+            title={zamceno ? "Pojistka proti překliku, chvilku počkejte" : undefined}
           >
             {potvrdit}
             {zamceno && <span className="tnum"> ({zbyva})</span>}

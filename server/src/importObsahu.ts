@@ -28,7 +28,7 @@ import {
 //   npm run import-obsahu -- <zdroj> <mapovani.json> --zapsat --prepsat
 //
 // ZÁSADNÍ: nic se nezapisuje přes holé fs. Všechno jde stejnou cestou jako
-// když obsah uloží kurátor v CMS — přes writeInfoPole() a writeKb() z
+// když obsah uloží kurátor v CMS, přes writeInfoPole() a writeKb() z
 // displays.ts. Tím projde validace povinných polí, kanonizace latinského
 // jména, atomický zápis (tmp + rename kvůli file watcheru chatbota),
 // propsání identity do meta.json i signál k reingestu. Import navíc zapisuje
@@ -102,7 +102,7 @@ async function nactiZdroj(korenn: string, slozka: string): Promise<Polozka> {
     return { ...zaklad, preskocit: "meta.json chybí nebo není platný JSON" };
   }
 
-  // Bez latinského názvu druh nenajde chatbot ani analytika — takový záznam
+  // Bez latinského názvu druh nenajde chatbot ani analytika, takový záznam
   // se zásadně neimportuje, jen nahlásí.
   const latin = canonicalizeLatin((meta.latin_name ?? "").trim());
   if (!latin) {
@@ -137,7 +137,7 @@ async function precti(cesta: string): Promise<string> {
   }
 }
 
-// Příznak AI konceptu bereme odkudkoliv, kde ho generátor může nechat —
+// Příznak AI konceptu bereme odkudkoliv, kde ho generátor může nechat,
 // z meta.json (boolean nebo status) i z textu kb.md.
 function jeAiKoncept(meta: ZdrojovaMeta, kb: string): boolean {
   const PRIZNAK = "ai_draft_pending_curator_review";
@@ -178,7 +178,7 @@ async function coJeNaDispleji(id: string): Promise<string[]> {
   const nalezeno: string[] = [];
   const meta = await readMeta(id);
   if (meta && meta.druh !== NEPRIRAZENO) nalezeno.push(`druh „${meta.druh}"`);
-  // Seed zakládá u nepřiřazených displejů zástupný text — ten se nepočítá
+  // Seed zakládá u nepřiřazených displejů zástupný text, ten se nepočítá
   // jako obsah, jinak by import nemohl obsadit žádný volný displej.
   const kb = (await readKb(id)).trim();
   if (kb && kb !== DEFAULT_KB.trim()) nalezeno.push("znalostní bázi");
@@ -282,7 +282,7 @@ async function main(): Promise<void> {
         if (chyba) {
           p.preskocit = `info panel neprojde validací: ${chyba.toLowerCase()}`;
         } else if (uz.length > 0 && !prepsat) {
-          p.preskocit = `displej ${id} už má obsah (${uz.join(", ")}) — přepis jen s --prepsat`;
+          p.preskocit = `displej ${id} už má obsah (${uz.join(", ")}), přepis jen s --prepsat`;
         } else {
           p.prepisuje = uz; // prázdné = displej je volný
           p.novySlide = !(await readSlides(id)).some((s) => s.typ === "info");
@@ -311,7 +311,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  // 3) Zápis — vždy přes funkce z displays.ts, nikdy přes holé fs.
+  // 3) Zápis, vždy přes funkce z displays.ts, nikdy přes holé fs.
   const kdo = `import-obsahu (${os.userInfo().username})`;
   let hotovo = 0;
   const selhalo: { slozka: string; duvod: string }[] = [];
@@ -329,7 +329,7 @@ async function main(): Promise<void> {
       if (p.kb.trim()) await writeKb(id, p.kb);
 
       // Značka se ruší jen vědomým schválením kurátora v CMS, takže na pořadí
-      // vůči zápisu obsahu nezáleží — nastavuje se na konci, ať je jasné, že
+      // vůči zápisu obsahu nezáleží, nastavuje se na konci, ať je jasné, že
       // platí pro celý naimportovaný obsah.
       if (p.cekaNaRevizi) await oznacRevizi(id, true);
 
@@ -360,7 +360,7 @@ async function main(): Promise<void> {
   console.log(`Naimportováno: ${hotovo}`);
   console.log(`Přeskočeno:    ${preskocene.length + selhalo.length}`);
   for (const p of preskocene) console.log(`  • ${p.slozka}: ${p.preskocit}`);
-  for (const s of selhalo) console.log(`  • ${s.slozka}: zápis selhal — ${s.duvod}`);
+  for (const s of selhalo) console.log(`  • ${s.slozka}: zápis selhal, ${s.duvod}`);
   const kRevizi = kZapsani.filter((p) => p.cekaNaRevizi).length;
   if (hotovo > 0) {
     console.log("");

@@ -6,10 +6,10 @@ struktury složek a zobrazí v náhledu tabletu.
 
 ## Stack
 
-- **/server** – Fastify + TypeScript, reálné file I/O nad `/data`, žádná databáze.
+- **/server**. Fastify + TypeScript, reálné file I/O nad `/data`, žádná databáze.
   V produkčním (demo) režimu servíruje i buildnutý web, takže běží **jeden proces**.
-- **/web** – React + Vite + TypeScript + Tailwind + Lucide + React Router.
-- **/data** – reálný datový root se složkami displejů.
+- **/web**. React + Vite + TypeScript + Tailwind + Lucide + React Router.
+- **/data**, reálný datový root se složkami displejů.
 
 ## Spuštění lokálně (demo režim, jeden proces)
 
@@ -62,10 +62,10 @@ v `server/src/index.ts`.
 ## Konfigurace přes prostředí (`.env.example`)
 
 Server čte **proměnné prostředí** (soubor `.env` se sám nenačítá). Přehled a
-šablona jsou v **`.env.example`** — zkopíruj na `.env` a hodnoty nastav ve své
+šablona jsou v **`.env.example`**, zkopíruj na `.env` a hodnoty nastav ve své
 službě/shellu. `.env` je v `.gitignore`, `.env.example` zůstává v gitu.
 
-Nejdůležitější je **`SESSION_SECRET`** — klíč pro podpis session cookie:
+Nejdůležitější je **`SESSION_SECRET`**, klíč pro podpis session cookie:
 
 - Když je nastavený (aspoň 16 znaků, doporučeno 64: `openssl rand -hex 32`),
   použije se a soubor `data/session.key` se **vůbec nezakládá**. Na produkci to
@@ -73,7 +73,7 @@ Nejdůležitější je **`SESSION_SECRET`** — klíč pro podpis session cookie
 - Když nastavený **není**, server hlásí varování a spadne zpět na
   `data/session.key` (vytvoří ho sám). Server běží dál.
 - Když je nastavený, ale **kratší než 16 znaků**, server **záměrně nenastartuje**
-  s jasnou hláškou — slabý klíč by šel podvrhnout.
+  s jasnou hláškou, slabý klíč by šel podvrhnout.
 
 Platnost přihlášení řídí `SESSION_TTL_HOURS` (výchozí 12), **strop je 12 hodin**
 i při vyšší hodnotě. Cookie zůstává `httpOnly`, `SameSite=Lax` a **bez `Secure`**
@@ -108,24 +108,24 @@ data/users.json                                 účty kurátorů (bcrypt hashe 
 data/session.key                                klíč pro podpis session cookie
 ```
 
-> `users.json`, `session.key` ani `audit.jsonl` se neservírují přes HTTP —
+> `users.json`, `session.key` ani `audit.jsonl` se neservírují přes HTTP,
 > přes `/data/` jde ven jen složka `displeje`.
 
 Typ slidu je **suffix** názvu složky (`_info`, `_ai`, `_3d` i `_mod`, `_vid`, `_gal`),
 pořadí **číselný prefix**. Přehled drží i pole `slidy` v `meta.json`, zdrojem pravdy
 jsou ale složky na disku. Soubor ručně přetažený do složky slidu se objeví v CMS
-i na tabletu. Podrobně v `docs/provoz-a-udrzba.md`, kapitoly 5–7.
+i na tabletu. Podrobně v `docs/provoz-a-udrzba.md`, kapitoly 5 až 7.
 
 ## Dva toky, které lze předvést
 
 **(a) Úprava ve webu zapíše na disk a projeví se na tabletu**
 1. Otevři displej (např. #1 Axolotl), uprav text/nadpis, klikni **Uložit**.
 2. Soubor `data/displeje/1/cs/1_info/text.txt` se reálně přepíše.
-3. Otevři **Náhled tabletu** (tlačítko v detailu, nebo `/tablet/1`) – zobrazí novou verzi.
+3. Otevři **Náhled tabletu** (tlačítko v detailu, nebo `/tablet/1`), zobrazí novou verzi.
 
 **(b) Ruční přetažení souboru do složky se objeví na tabletu**
 1. Přetáhni obrázek do `data/displeje/1/cs/1_info/`.
-2. V náhledu tabletu klikni na ikonu **obnovit** (vpravo nahoře) – fotka se objeví.
+2. V náhledu tabletu klikni na ikonu **obnovit** (vpravo nahoře), fotka se objeví.
 
 > Tablet i CMS čtou stejné API nad stejnými soubory, takže obojí je vždy v souladu.
 
@@ -158,5 +158,5 @@ i na tabletu. Podrobně v `docs/provoz-a-udrzba.md`, kapitoly 5–7.
 - Datový root lze přepsat proměnnou `DATA_ROOT`, port proměnnou `PORT`.
 - Dashboard („Přehled provozu") čte dotazy návštěvníků z analytiky chatbota.
   Adresa se nastavuje proměnnou `ANALYTICS_URL` (default `http://127.0.0.1:8000`).
-  Když backend neběží, dashboard to napíše a funguje dál — viz
+  Když backend neběží, dashboard to napíše a funguje dál, viz
   `docs/provoz-a-udrzba.md`, kapitola 10.
