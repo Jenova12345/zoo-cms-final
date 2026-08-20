@@ -371,10 +371,13 @@ app.put<{ Params: { id: string; n: string }; Body: { text?: string; jazyk?: stri
     if (!validId(id) || !validSlide(n)) return reply.code(400).send({ chyba: "Neplatné parametry." });
     if (!(await slideExists(id, n))) return reply.code(404).send({ chyba: "Slide nenalezen." });
 
-    // Text je povinný: chybějící nebo prázdné tělo by jinak tiše smazalo obsah.
+    // Prázdný text projde: kurátor si slide založí a text dopíše později,
+    // je to legitimní rozdělaná práce (za hotový takový slide označit nejde,
+    // to hlídá editor). Chybějící pole ale ne, to by znamenalo špatně
+    // poskládaný požadavek a tiché smazání obsahu.
     const text = req.body?.text;
-    if (typeof text !== "string" || text.trim() === "") {
-      return reply.code(400).send({ chyba: "Text zajímavosti nesmí být prázdný." });
+    if (typeof text !== "string") {
+      return reply.code(400).send({ chyba: "Chybí text zajímavosti." });
     }
     const res = await writeZajimavost(id, n, text, jazykNeboVychozi(req.body?.jazyk));
     if (!res.ok) return reply.code(400).send({ chyba: res.chyba });

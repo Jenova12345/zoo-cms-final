@@ -64,6 +64,16 @@ import { useNeulozeno } from "../lib/neulozeno";
 import { useToast } from "../components/Toast";
 import Confirm from "../components/Confirm";
 
+// Ovládání fotky (smazat, označit jako mapu). Schválně je vidět pořád:
+// schované pod hoverem ho kurátorka nenajde, na dotykovém displeji se k němu
+// nedostane vůbec a terč 24 px se špatně trefuje. Tady je 36 px, s popiskem
+// pro odečítač obrazovky a viditelným rámečkem při průchodu klávesnicí.
+const OVLADANI_LISTA =
+  "absolute inset-x-0 bottom-0 flex items-center gap-1 bg-black/60 px-1.5 py-1.5";
+const OVLADANI_TLACITKO =
+  "grid h-9 w-9 place-items-center rounded text-white transition hover:bg-white/25 focus:outline-none focus-visible:ring-2 focus-visible:ring-white disabled:opacity-40";
+const OVLADANI_SMAZAT = `${OVLADANI_TLACITKO} hover:bg-danger`;
+
 // Sdílené věci se ukládají jednou (do češtiny) a ostatní jazyky je čtou
 // odtud. Kurátor tak nenahrává 36 snímků třikrát.
 const SDILENE_HLASKA = "Společné pro všechny jazyky, nahrává se jednou.";
@@ -1180,11 +1190,15 @@ function pocetSlov(text: string): number {
 
 function PhotoDropzone({
   uploading,
+  prubeh,
+  onZrus,
   onFiles,
   vice = true,
   popis,
 }: {
   uploading: boolean;
+  prubeh?: { hotovo: number; celkem: number } | null;
+  onZrus?: () => void;
   onFiles: (files: FileList | File[]) => void;
   vice?: boolean; // false = slide unese jen jednu fotku (zajímavost)
   popis?: string;
@@ -1224,12 +1238,39 @@ function PhotoDropzone({
       ) : (
         <UploadCloud className={`h-7 w-7 mx-auto ${dragOver ? "text-accent" : "text-fg-dim"}`} strokeWidth={1.5} />
       )}
-      <p className="mt-2 text-sm font-medium text-fg-muted">
-        {vice ? "Přetáhněte fotky sem nebo klikněte" : "Přetáhněte fotku sem nebo klikněte"}
-      </p>
-      <p className="text-xs text-fg-muted">
-        {popis ?? "JPG nebo PNG, systém si formát převede sám"}
-      </p>
+      {uploading && prubeh ? (
+        <>
+          <p className="mt-2 text-sm font-semibold text-fg tnum">
+            Nahrávám {prubeh.hotovo} / {prubeh.celkem}
+          </p>
+          <div className="mx-auto mt-2 h-1.5 w-48 overflow-hidden rounded-full bg-canvas">
+            <div
+              className="h-full bg-accent transition-all"
+              style={{ width: `${Math.round((prubeh.hotovo / prubeh.celkem) * 100)}%` }}
+            />
+          </div>
+          {onZrus && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation(); // klik nesmí otevřít výběr souborů
+                onZrus();
+              }}
+              className="btn-ghost mt-3 px-2.5 py-1 text-xs"
+            >
+              Zrušit nahrávání
+            </button>
+          )}
+        </>
+      ) : (
+        <>
+          <p className="mt-2 text-sm font-medium text-fg-muted">
+            {vice ? "Přetáhněte fotky sem nebo klikněte" : "Přetáhněte fotku sem nebo klikněte"}
+          </p>
+          <p className="text-xs text-fg-muted">
+            {popis ?? "JPG nebo PNG, systém si formát převede sám"}
+          </p>
+        </>
+      )}
     </div>
   );
 }
@@ -1245,7 +1286,11 @@ function usePhotoUpload(
   jenJedna = false,
 ) {
   const toast = useToast();
-  const [uploading, setUploading] = useState(false);
+  // Průběh po souborech: u 3D sekvence jde o desítky uploadů za sebou
+  // a bez počítadla kurátor po dvaceti vteřinách usoudí, že to zamrzlo.
+  const [prubeh, setPrubeh] = useState<{ hotovo: number; celkem: number } | null>(null);
+  const zruseni = useRef<AbortController | null>(null);
+
   const upload = async (files: FileList | File[]) => {
     let list = Array.from(files).filter((f) => f.type.startsWith("image/"));
     if (list.length === 0) {
@@ -1259,26 +1304,62 @@ function usePhotoUpload(
     // přepsal, takže je ani nenahráváme a rovnou to řekneme.
     const vicNezUnese = jenJedna && list.length > 1;
     if (jenJedna) list = list.slice(0, 1);
-    setUploading(true);
-    try {
-      for (const file of list) {
-        await api.uploadImage(displayId, n, file);
+
+    const rizeni = new AbortController();
+    zruseni.current = rizeni;
+    setPrubeh({ hotovo: 0, celkem: list.length });
+
+    let hotovo = 0;
+    let zruseno = false;
+    let chyba: string | null = null;
+
+    for (const file of list) {
+      try {
+        await api.uploadImage(displayId, n, file, rizeni.signal);
+        hotovo++;
+        setPrubeh({ hotovo, celkem: list.length });
+      } catch (e) {
+        if (e instanceof DOMException && e.name === "AbortError") zruseno = true;
+        else chyba = `${file.name}: ${e instanceof Error ? e.message : "upload selhal"}`;
+        break;
       }
-      await reload();
-      toast.success(
-        vicNezUnese
-          ? "Nahrála se první vybraná fotka. Zajímavost jich unese jen jednu."
-          : list.length === 1
-            ? "Fotka nahrána"
-            : `${list.length} fotek nahráno`,
-      );
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Upload selhal.");
-    } finally {
-      setUploading(false);
     }
+
+    zruseni.current = null;
+    setPrubeh(null);
+    await reload(); // ať je hned vidět, co se stihlo nahrát
+
+    // Přerušený upload se nesmí spolknout: kurátor musí vědět, kolik souborů
+    // na disku opravdu je, jinak odejde s nekompletní sekvencí. Počet se bere
+    // ze serveru, ne z počítadla: zrušení nezastaví soubor, který už odešel,
+    // takže ten se ještě uloží a klientské číslo by bylo o jedna nižší.
+    if (zruseno || chyba) {
+      let naDisku = hotovo;
+      try {
+        const d = await api.display(displayId);
+        naDisku = d.slides.find((x) => x.n === n)?.obrazky.length ?? hotovo;
+      } catch {
+        // nepodařilo se přečíst stav, zůstane počítadlo z klienta
+      }
+      const kolik = `Z ${list.length} vybraných se nenahrály všechny, na slidu je teď ${naDisku} souborů.`;
+      toast.error(
+        zruseno ? `Nahrávání zrušeno. ${kolik}` : `Upload selhal u ${chyba} ${kolik}`,
+      );
+      return;
+    }
+    toast.success(
+      vicNezUnese
+        ? "Nahrála se první vybraná fotka. Zajímavost jich unese jen jednu."
+        : list.length === 1
+          ? seradPodleNazvu
+            ? "Snímek nahrán"
+            : "Fotka nahrána"
+          : `${seradPodleNazvu ? pocetSnimku(list.length) : pocetFotek(list.length)} nahráno`,
+    );
   };
-  return { uploading, upload };
+
+  const zrus = () => zruseni.current?.abort();
+  return { uploading: prubeh !== null, prubeh, upload, zrus };
 }
 
 // --- Info panel: formulář polí + fotky + mapa výskytu ---
@@ -1320,7 +1401,7 @@ function InfoEditor({
 }) {
   const toast = useToast();
   const [showErrors, setShowErrors] = useState(false);
-  const { uploading, upload } = usePhotoUpload(displayId, slide.n, reload);
+  const { uploading, prubeh, upload, zrus } = usePhotoUpload(displayId, slide.n, reload);
 
   // Sekce uložená pod starým názvem: v nabídce je jen nové pojmenování, tak
   // kurátorovi ukážeme, čemu ta stará hodnota odpovídá.
@@ -1569,7 +1650,7 @@ function InfoEditor({
           </p>
         </div>
 
-        <PhotoDropzone uploading={uploading} onFiles={upload} />
+        <PhotoDropzone uploading={uploading} prubeh={prubeh} onZrus={zrus} onFiles={upload} />
 
         {slide.obrazky.length === 0 && !slide.mapa ? (
           <PrazdnyStav
@@ -1582,22 +1663,24 @@ function InfoEditor({
             {slide.obrazky.map((url) => (
               <div key={url} className="group relative aspect-square rounded-lg overflow-hidden bg-canvas ring-1 ring-line">
                 <img src={url} alt="Fotka info panelu" className="h-full w-full object-cover" />
-                <div className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-1 bg-black/45 px-1.5 py-1 opacity-0 group-hover:opacity-100 transition">
+                <div className={`${OVLADANI_LISTA} justify-between`}>
                   <button
                     onClick={() => markMapa(url)}
                     disabled={busy}
-                    className="grid h-6 w-6 place-items-center rounded text-white/90 hover:bg-white/20 disabled:opacity-30"
+                    className={OVLADANI_TLACITKO}
                     title="Označit jako mapu výskytu"
+                    aria-label="Označit jako mapu výskytu"
                   >
-                    <Map className="h-4 w-4" strokeWidth={2} />
+                    <Map className="h-5 w-5" strokeWidth={2} />
                   </button>
                   <button
                     onClick={() => setSmazatFotku(url)}
                     disabled={busy}
-                    className="grid h-6 w-6 place-items-center rounded text-white/90 hover:bg-danger disabled:opacity-30"
+                    className={OVLADANI_SMAZAT}
                     title="Smazat fotku"
+                    aria-label="Smazat fotku"
                   >
-                    <Trash2 className="h-4 w-4" strokeWidth={2} />
+                    <Trash2 className="h-5 w-5" strokeWidth={2} />
                   </button>
                 </div>
               </div>
@@ -1608,22 +1691,24 @@ function InfoEditor({
                 <span className="absolute left-1.5 top-1.5 chip bg-amber text-white text-[10px] px-1.5 py-0.5">
                   mapa výskytu
                 </span>
-                <div className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-1 bg-black/45 px-1.5 py-1 opacity-0 group-hover:opacity-100 transition">
+                <div className={`${OVLADANI_LISTA} justify-between`}>
                   <button
                     onClick={() => markMapa(null)}
                     disabled={busy}
-                    className="grid h-6 w-6 place-items-center rounded text-white/90 hover:bg-white/20 disabled:opacity-30"
+                    className={OVLADANI_TLACITKO}
                     title="Zrušit značení mapy (stane se běžnou fotkou)"
+                    aria-label="Zrušit značení mapy výskytu"
                   >
-                    <X className="h-4 w-4" strokeWidth={2} />
+                    <X className="h-5 w-5" strokeWidth={2} />
                   </button>
                   <button
                     onClick={() => setSmazatFotku(slide.mapa!)}
                     disabled={busy}
-                    className="grid h-6 w-6 place-items-center rounded text-white/90 hover:bg-danger disabled:opacity-30"
+                    className={OVLADANI_SMAZAT}
                     title="Smazat mapu"
+                    aria-label="Smazat mapu výskytu"
                   >
-                    <Trash2 className="h-4 w-4" strokeWidth={2} />
+                    <Trash2 className="h-5 w-5" strokeWidth={2} />
                   </button>
                 </div>
               </div>
@@ -1705,7 +1790,7 @@ function ZajimavostEditor({
   const toast = useToast();
   const [saving, setSaving] = useState(false);
   // Zajímavost má na disku právě jednu fotku, tak ji ani nenabízíme víc.
-  const { uploading, upload } = usePhotoUpload(displayId, slide.n, reload, false, true);
+  const { uploading, prubeh, upload, zrus } = usePhotoUpload(displayId, slide.n, reload, false, true);
   const fotka = slide.obrazky[0] ?? null;
 
   // `odeslat` = navíc zapsat do auditu, že je kurátor s textem hotový.
@@ -1728,7 +1813,17 @@ function ZajimavostEditor({
     }
   }
 
+  // Prázdný slide se dá uložit (rozdělaná práce), ale ne označit za hotový.
+  // Hotovo je záznam do auditu, že obsah někdo zkontroloval; u prázdna to
+  // nedává smysl a na tabletu by zůstalo prázdné místo.
   function zverejnit() {
+    if (!text.trim()) {
+      setChybiObsah(true);
+      toast.error("Ještě chybí vyplnit: text zajímavosti.");
+      document.getElementById(`popis-${slide.n}`)?.focus();
+      return;
+    }
+    setChybiObsah(false);
     zeptejSe(
       <>
         Označí se jako hotový slide <strong className="font-semibold text-fg">Zajímavost</strong>{" "}
@@ -1739,6 +1834,7 @@ function ZajimavostEditor({
   }
 
   const [smazatFotku, setSmazatFotku] = useState(false);
+  const [chybiObsah, setChybiObsah] = useState(false);
 
   async function removeImage(url: string) {
     setSmazatFotku(false);
@@ -1790,6 +1886,12 @@ function ZajimavostEditor({
           </button>
           <StavUlozeni neulozeno={neulozeno} ulozenoCas={ulozenoCas} />
         </div>
+        {chybiObsah && !text.trim() && (
+          <p className="text-sm text-danger">
+            Ještě chybí vyplnit: <span className="font-semibold">text zajímavosti</span>. Bez něj
+            slide nejde označit za hotový, uložit rozepsaný ale můžete.
+          </p>
+        )}
         <p className="text-xs text-fg-muted">
           <strong className="font-semibold text-fg">Uložit</strong> zapíše text na disk.{" "}
           {VYZVEDNE_SI_SAM} Druhé tlačítko navíc zapíše do auditu, že je text hotový.
@@ -1807,6 +1909,8 @@ function ZajimavostEditor({
 
         <PhotoDropzone
           uploading={uploading}
+          prubeh={prubeh}
+          onZrus={zrus}
           onFiles={upload}
           vice={false}
           popis="Jedna fotka (JPG nebo PNG), nová nahradí tu předchozí."
@@ -1815,14 +1919,15 @@ function ZajimavostEditor({
         {fotka ? (
           <div className="group relative aspect-[4/3] max-w-sm rounded-lg overflow-hidden bg-canvas ring-1 ring-line">
             <img src={fotka} alt="Fotka zajímavosti" className="h-full w-full object-cover" />
-            <div className="absolute inset-x-0 bottom-0 flex items-center justify-end bg-black/45 px-1.5 py-1 opacity-0 group-hover:opacity-100 transition">
+            <div className={`${OVLADANI_LISTA} justify-end`}>
               <button
                 onClick={() => setSmazatFotku(true)}
                 disabled={busy}
-                className="grid h-6 w-6 place-items-center rounded text-white/90 hover:bg-danger disabled:opacity-30"
+                className={OVLADANI_SMAZAT}
                 title="Smazat fotku"
+                aria-label="Smazat fotku zajímavosti"
               >
-                <Trash2 className="h-4 w-4" strokeWidth={2} />
+                <Trash2 className="h-5 w-5" strokeWidth={2} />
               </button>
             </div>
           </div>
@@ -1874,11 +1979,12 @@ function ModelEditor({
 }) {
   const toast = useToast();
   // Snímky se nahrávají seřazené podle názvu, ať sekvence sedí na render.
-  const { uploading, upload } = usePhotoUpload(displayId, slide.n, reload, true);
+  const { uploading, prubeh, upload, zrus } = usePhotoUpload(displayId, slide.n, reload, true);
 
   // U jednoho snímku z dlouhé sekvence stačí lehčí potvrzení: krátká otázka
   // bez varování o nevratnosti (snímek se dá znovu nahrát z renderu).
   const [smazatSnimek, setSmazatSnimek] = useState<string | null>(null);
+  const [chybiObsah, setChybiObsah] = useState(false);
 
   async function removeFrame(url: string) {
     setSmazatSnimek(null);
@@ -1901,7 +2007,7 @@ function ModelEditor({
         </p>
       </div>
 
-      <PhotoDropzone uploading={uploading} onFiles={upload} />
+      <PhotoDropzone uploading={uploading} prubeh={prubeh} onZrus={zrus} onFiles={upload} />
 
       {slide.obrazky.length > 0 ? (
         <>
@@ -1916,14 +2022,15 @@ function ModelEditor({
                 <span className="absolute left-1 top-1 rounded bg-black/55 px-1.5 py-0.5 text-[10px] font-semibold text-white tnum">
                   {nazevSouboru(url)}
                 </span>
-                <div className="absolute inset-x-0 bottom-0 flex items-center justify-end bg-black/45 px-1.5 py-1 opacity-0 group-hover:opacity-100 transition">
+                <div className={`${OVLADANI_LISTA} justify-end`}>
                   <button
                     onClick={() => setSmazatSnimek(url)}
                     disabled={busy}
-                    className="grid h-6 w-6 place-items-center rounded text-white/90 hover:bg-danger disabled:opacity-30"
+                    className={OVLADANI_SMAZAT}
                     title="Smazat snímek"
+                    aria-label={`Smazat snímek ${nazevSouboru(url)}`}
                   >
-                    <Trash2 className="h-4 w-4" strokeWidth={2} />
+                    <Trash2 className="h-5 w-5" strokeWidth={2} />
                   </button>
                 </div>
               </div>
@@ -1938,26 +2045,30 @@ function ModelEditor({
         />
       )}
 
+      {chybiObsah && slide.obrazky.length === 0 && (
+        <p className="text-sm text-danger">
+          Ještě chybí nahrát: <span className="font-semibold">snímky 3D modelu</span>. Prázdný
+          slide nejde označit za hotový.
+        </p>
+      )}
       <button
-        onClick={() =>
+        onClick={() => {
+          if (slide.obrazky.length === 0) {
+            setChybiObsah(true);
+            toast.error("Ještě chybí nahrát: snímky 3D modelu.");
+            return;
+          }
+          setChybiObsah(false);
           zeptejSe(
-            slide.obrazky.length === 0 ? (
-              <>
-                Slide <strong className="font-semibold text-fg">3D model</strong> displeje{" "}
-                {displayId} je <strong className="font-semibold text-fg">prázdný</strong>: na
-                tabletu se místo modelu ukáže prázdné místo.
-              </>
-            ) : (
-              <>
-                Označí se jako hotový slide{" "}
-                <strong className="font-semibold text-fg">3D model</strong> displeje {displayId}
-                {", "}
-                {pocetSnimku(slide.obrazky.length)}.
-              </>
-            ),
+            <>
+              Označí se jako hotový slide{" "}
+              <strong className="font-semibold text-fg">3D model</strong> displeje {displayId}
+              {", "}
+              {pocetSnimku(slide.obrazky.length)}.
+            </>,
             onSend,
-          )
-        }
+          );
+        }}
         className="btn-primary w-fit"
         disabled={busy}
       >
@@ -2005,6 +2116,9 @@ function VideoBlok({
 }) {
   const toast = useToast();
   const [uploadingVideo, setUploadingVideo] = useState(false);
+  // Procenta odeslaných bajtů: u stovek MB je kolečko bez čísla k ničemu.
+  const [procenta, setProcenta] = useState(0);
+  const zruseniVidea = useRef<AbortController | null>(null);
   const videoInput = useRef<HTMLInputElement>(null);
 
   async function uploadVideoFile(file: File) {
@@ -2020,14 +2134,26 @@ function VideoBlok({
       );
       return;
     }
+    const rizeni = new AbortController();
+    zruseniVidea.current = rizeni;
+    setProcenta(0);
     setUploadingVideo(true);
     try {
-      await api.uploadVideo(displayId, slide.n, file);
+      await api.uploadVideo(displayId, slide.n, file, {
+        signal: rizeni.signal,
+        onProgress: setProcenta,
+      });
       await reload();
       toast.success("Video nahráno");
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Upload videa selhal.");
+      if (e instanceof DOMException && e.name === "AbortError") {
+        // Zrušený upload nic nepřepsal, na slidu zůstalo původní video.
+        toast.error("Nahrávání videa zrušeno, nic se nezměnilo.");
+      } else {
+        toast.error(e instanceof Error ? e.message : "Upload videa selhal.");
+      }
     } finally {
+      zruseniVidea.current = null;
       setUploadingVideo(false);
     }
   }
@@ -2056,6 +2182,28 @@ function VideoBlok({
           e.target.value = "";
         }}
       />
+
+      {uploadingVideo && (
+        <div className="rounded-xl border border-line bg-canvas px-4 py-3">
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-sm font-semibold text-fg tnum">
+              Nahrávám video {procenta} %
+            </span>
+            <button
+              onClick={() => zruseniVidea.current?.abort()}
+              className="btn-ghost px-2.5 py-1 text-xs"
+            >
+              Zrušit nahrávání
+            </button>
+          </div>
+          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-surface">
+            <div className="h-full bg-accent transition-all" style={{ width: `${procenta}%` }} />
+          </div>
+          <p className="mt-1.5 text-xs text-fg-muted">
+            Dokud nahrávání nedoběhne, zůstává na slidu původní video.
+          </p>
+        </div>
+      )}
 
       {slide.video ? (
         <div className="space-y-3">
@@ -2126,6 +2274,9 @@ function VidEditor({
   onSend: () => Promise<void>;
   zeptejSe: (popis: ReactNode, akce: () => Promise<void>) => void;
 }) {
+  const toast = useToast();
+  const [chybiObsah, setChybiObsah] = useState(false);
+
   return (
     <div className="max-w-3xl space-y-4">
       <div>
@@ -2145,25 +2296,29 @@ function VidEditor({
         withBusy={withBusy}
       />
 
+      {chybiObsah && !slide.video && (
+        <p className="text-sm text-danger">
+          Ještě chybí nahrát: <span className="font-semibold">video</span>. Prázdný slide nejde
+          označit za hotový.
+        </p>
+      )}
       <button
-        onClick={() =>
+        onClick={() => {
+          if (!slide.video) {
+            setChybiObsah(true);
+            toast.error("Ještě chybí nahrát: video.");
+            return;
+          }
+          setChybiObsah(false);
           zeptejSe(
-            slide.video ? (
-              <>
-                Označí se jako hotový slide{" "}
-                <strong className="font-semibold text-fg">Video</strong> displeje {displayId},
-                nahrané video na celou obrazovku.
-              </>
-            ) : (
-              <>
-                Slide <strong className="font-semibold text-fg">Video</strong> displeje {displayId}{" "}
-                je <strong className="font-semibold text-fg">prázdný</strong>: na tabletu se místo
-                videa ukáže prázdné místo.
-              </>
-            ),
+            <>
+              Označí se jako hotový slide{" "}
+              <strong className="font-semibold text-fg">Video</strong> displeje {displayId},
+              nahrané video na celou obrazovku.
+            </>,
             onSend,
-          )
-        }
+          );
+        }}
         className="btn-primary w-fit"
         disabled={busy}
       >

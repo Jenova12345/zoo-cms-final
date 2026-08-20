@@ -118,12 +118,20 @@ export const api = {
     });
   },
 
-  async uploadImage(id: string, n: number, file: File): Promise<{ url: string }> {
+  // `signal` umožní kurátorovi rozdělané nahrávání zrušit (u 3D sekvence
+  // jde o desítky souborů za sebou).
+  async uploadImage(
+    id: string,
+    n: number,
+    file: File,
+    signal?: AbortSignal,
+  ): Promise<{ url: string }> {
     const form = new FormData();
     form.append("file", file);
     return request<{ ok: boolean; url: string }>(`/api/displays/${id}/slides/${n}/image`, {
       method: "POST",
       body: form,
+      signal,
     });
   },
 
@@ -142,13 +150,22 @@ export const api = {
     });
   },
 
-  async uploadVideo(id: string, n: number, file: File): Promise<{ url: string }> {
+  // Video je jeden velký soubor, takže se nahrává přes XHR: fetch neumí
+  // hlásit, kolik bajtů už odešlo, a kurátor u stovek MB potřebuje vidět,
+  // že se něco děje (a umět to zrušit).
+  async uploadVideo(
+    id: string,
+    n: number,
+    file: File,
+    opts: { onProgress?: (procenta: number) => void; signal?: AbortSignal } = {},
+  ): Promise<{ url: string }> {
     const form = new FormData();
     form.append("file", file);
-    return request<{ ok: boolean; url: string }>(`/api/displays/${id}/slides/${n}/video`, {
-      method: "POST",
-      body: form,
-    });
+    return xhrUpload<{ ok: boolean; url: string }>(
+      `/api/displays/${id}/slides/${n}/video`,
+      form,
+      opts,
+    );
   },
 
   async deleteVideo(id: string, n: number): Promise<void> {
@@ -215,6 +232,58 @@ export const api = {
     return analytika<AnalyticsQuestions>(`/api/analytics/questions${qs ? `?${qs}` : ""}`);
   },
 };
+
+// Upload s hlášením průběhu. Chybové stavy řeší stejně jako request():
+// 401 pošle na přihlášení, 413 vysvětlí limit česky, jinak se použije
+// hláška ze serveru.
+function xhrUpload<T>(
+  url: string,
+  form: FormData,
+  opts: { onProgress?: (procenta: number) => void; signal?: AbortSignal },
+): Promise<T> {
+  return new Promise<T>((hotovo, selhalo) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", url);
+    xhr.withCredentials = true;
+
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable && opts.onProgress) {
+        opts.onProgress(Math.round((e.loaded / e.total) * 100));
+      }
+    };
+
+    xhr.onload = () => {
+      let telo: { chyba?: string } | null = null;
+      try {
+        telo = JSON.parse(xhr.responseText);
+      } catch {
+        // odpověď bez JSON, hlášku složíme níž
+      }
+      if (xhr.status >= 200 && xhr.status < 300) {
+        hotovo(telo as T);
+        return;
+      }
+      if (xhr.status === 401) sessionVyprsela();
+      if (xhr.status === 413) {
+        selhalo(new Error(`Soubor je moc velký, maximum je ${NAHRAVANI_MAX_MB} MB.`));
+        return;
+      }
+      selhalo(new Error(telo?.chyba || `Chyba ${xhr.status}`));
+    };
+
+    xhr.onerror = () => selhalo(new Error("Spojení se serverem selhalo."));
+    xhr.onabort = () => selhalo(new DOMException("Nahrávání zrušeno.", "AbortError"));
+
+    if (opts.signal) {
+      if (opts.signal.aborted) {
+        selhalo(new DOMException("Nahrávání zrušeno.", "AbortError"));
+        return;
+      }
+      opts.signal.addEventListener("abort", () => xhr.abort(), { once: true });
+    }
+    xhr.send(form);
+  });
+}
 
 // Analytika chatbota se nikdy nevrací jako výjimka: náš server posílá obálku
 // { dostupne } i když Danielův backend neběží, a když selže i naše strana
