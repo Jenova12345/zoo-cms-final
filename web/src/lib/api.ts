@@ -1,5 +1,6 @@
 import { NAHRAVANI_MAX_MB } from "./limity";
 import type {
+  Jazyk,
   Analytika,
   AnalyticsQuestions,
   AnalyticsSummary,
@@ -68,8 +69,9 @@ export const api = {
     return data.displays;
   },
 
-  async display(id: string): Promise<DisplayDetail> {
-    return request<DisplayDetail>(`/api/displays/${id}`);
+  // `jazyk` je volitelný, server bez něj vrací češtinu (stejně jako dřív).
+  async display(id: string, jazyk: Jazyk = "cs"): Promise<DisplayDetail> {
+    return request<DisplayDetail>(`/api/displays/${id}?jazyk=${jazyk}`);
   },
 
   // Uloží pole info panelu (na disku vznikne text.txt s řádky "Klic: Hodnota")
@@ -80,23 +82,24 @@ export const api = {
     n: number,
     pole: Record<string, string>,
     section: string,
+    jazyk: Jazyk = "cs",
   ): Promise<{ latin: string; latinCorrected: boolean }> {
     return request<{ ok: boolean; latin: string; latinCorrected: boolean }>(
       `/api/displays/${id}/slides/${n}`,
       {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pole, section }),
+        body: JSON.stringify({ pole, section, jazyk }),
       },
     );
   },
 
   // Text zajímavosti (slide _gal). Na disku vznikne text.txt s "Popis: …".
-  async saveSlideText(id: string, n: number, text: string): Promise<void> {
+  async saveSlideText(id: string, n: number, text: string, jazyk: Jazyk = "cs"): Promise<void> {
     await request(`/api/displays/${id}/slides/${n}/text`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text }),
+      body: JSON.stringify({ text, jazyk }),
     });
   },
 
@@ -107,11 +110,11 @@ export const api = {
   },
 
   // Uloží znalostní bázi (kb.md v kořeni displeje).
-  async saveKb(id: string, text: string): Promise<void> {
+  async saveKb(id: string, text: string, jazyk: Jazyk = "cs"): Promise<void> {
     await request(`/api/displays/${id}/kb`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text }),
+      body: JSON.stringify({ text, jazyk }),
     });
   },
 

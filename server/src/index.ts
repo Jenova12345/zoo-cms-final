@@ -9,8 +9,10 @@ import fastifyRateLimit from "@fastify/rate-limit";
 import { DATA_ROOT, DISPLAYS_DIR, WEB_DIST } from "./paths.js";
 import { appendAudit, readAudit } from "./audit.js";
 import {
+  jazykNeboVychozi,
   listDisplays,
   oznacRevizi,
+  stavJazyku,
   uklidDocasneSoubory,
   readMeta,
   readSlides,
@@ -285,16 +287,33 @@ app.get("/api/displays", async () => {
   return { displays: await listDisplays() };
 });
 
-app.get<{ Params: { id: string } }>("/api/displays/:id", async (req, reply) => {
-  const { id } = req.params;
-  if (!validId(id)) return reply.code(400).send({ chyba: "Neplatné id." });
-  const meta = await readMeta(id);
-  if (!meta) return reply.code(404).send({ chyba: "Displej nenalezen." });
-  return { id, meta, slides: await readSlides(id), kb: await readKb(id) };
-});
+// `jazyk` je volitelný a výchozí je cs, takže klient, který ho neposílá
+// (Unity, chatbot, tablet u expozice), dostane přesně to co dřív. Neznámá
+// hodnota spadne zpátky na cs, do cesty se tak nikdy nedostane nic jiného
+// než cs, en nebo pl.
+app.get<{ Params: { id: string }; Querystring: { jazyk?: string } }>(
+  "/api/displays/:id",
+  async (req, reply) => {
+    const { id } = req.params;
+    if (!validId(id)) return reply.code(400).send({ chyba: "Neplatné id." });
+    const meta = await readMeta(id);
+    if (!meta) return reply.code(404).send({ chyba: "Displej nenalezen." });
+
+    const jazyk = jazykNeboVychozi(req.query.jazyk);
+    return {
+      id,
+      meta,
+      slides: await readSlides(id, jazyk),
+      kb: await readKb(id, jazyk),
+      // Doplňková pole pro CMS; klienti, kteří je neznají, je ignorují.
+      jazyk,
+      jazyky: await stavJazyku(id),
+    };
+  },
+);
 
 // --- Znalostní báze (kb.md v kořeni displeje, edituje se mimo slidy) ---
-app.put<{ Params: { id: string }; Body: { text?: string } }>(
+app.put<{ Params: { id: string }; Body: { text?: string; jazyk?: string } }>(
   "/api/displays/:id/kb",
   async (req, reply) => {
     const { id } = req.params;
@@ -306,11 +325,12 @@ app.put<{ Params: { id: string }; Body: { text?: string } }>(
     if (typeof text !== "string" || text.trim() === "") {
       return reply.code(400).send({ chyba: "Text znalostní báze nesmí být prázdný." });
     }
-    await writeKb(id, text);
+    const jazyk = jazykNeboVychozi(req.body?.jazyk);
+    await writeKb(id, text, jazyk);
     await appendAudit({
       uzivatel: currentUser(req),
       akce: "úprava znalostní báze",
-      cil: `displej ${id}`,
+      cil: `displej ${id} (${jazyk})`,
     });
     return { ok: true };
   },
@@ -320,7 +340,7 @@ app.put<{ Params: { id: string }; Body: { text?: string } }>(
 // identita (name, latin_name, category, section) se propíše do meta.json.
 app.put<{
   Params: { id: string; n: string };
-  Body: { pole?: Record<string, string>; section?: string };
+  Body: { pole?: Record<string, string>; section?: string; jazyk?: string };
 }>("/api/displays/:id/slides/:n", async (req, reply) => {
   const { id } = req.params;
   const n = Number(req.params.n);
@@ -330,19 +350,20 @@ app.put<{
 
   const pole = req.body?.pole && typeof req.body.pole === "object" ? req.body.pole : {};
   const section = typeof req.body?.section === "string" ? req.body.section : undefined;
-  const res = await writeInfoPole(id, n, pole, section);
+  const jazyk = jazykNeboVychozi(req.body?.jazyk);
+  const res = await writeInfoPole(id, n, pole, section, jazyk);
   if (!res.ok) return reply.code(400).send({ chyba: res.chyba });
   await appendAudit({
     uzivatel: currentUser(req),
     akce: "úprava info panelu",
-    cil: `displej ${id}, slide ${n}`,
+    cil: `displej ${id}, slide ${n} (${jazyk})`,
   });
   return { ok: true, latin: res.latin, latinCorrected: res.latinCorrected };
 });
 
 // Text zajímavosti (slide _gal): jeden dlouhý odstavec, na disku
 // cs/<slozka>/text.txt jako "Popis: …".
-app.put<{ Params: { id: string; n: string }; Body: { text?: string } }>(
+app.put<{ Params: { id: string; n: string }; Body: { text?: string; jazyk?: string } }>(
   "/api/displays/:id/slides/:n/text",
   async (req, reply) => {
     const { id } = req.params;
@@ -355,7 +376,7 @@ app.put<{ Params: { id: string; n: string }; Body: { text?: string } }>(
     if (typeof text !== "string" || text.trim() === "") {
       return reply.code(400).send({ chyba: "Text zajímavosti nesmí být prázdný." });
     }
-    const res = await writeZajimavost(id, n, text);
+    const res = await writeZajimavost(id, n, text, jazykNeboVychozi(req.body?.jazyk));
     if (!res.ok) return reply.code(400).send({ chyba: res.chyba });
     await appendAudit({
       uzivatel: currentUser(req),

@@ -1,6 +1,39 @@
+// Jazyky pavilonu. Zrcadlí server/src/displays.ts.
+export const JAZYKY = ["cs", "en", "pl"] as const;
+export type Jazyk = (typeof JAZYKY)[number];
+
+export const JAZYK_LABEL: Record<Jazyk, string> = {
+  cs: "Čeština",
+  en: "English",
+  pl: "Polski",
+};
+
+// Pole info panelu, která kurátor píše v každém jazyce zvlášť. Ostatní
+// (Sekce, Latinsky) jsou společná a zadávají se jen v češtině.
+export const PREKLADANA_POLE = [
+  "Nazev",
+  "Strava",
+  "Velikost",
+  "DobaLihnuti",
+  "Ohrozeni",
+  "DelkaZivota",
+] as const;
+
+export function jePrekladane(klic: string): boolean {
+  return (PREKLADANA_POLE as readonly string[]).includes(klic);
+}
+
+export interface StavJazyka {
+  jazyk: Jazyk;
+  celkem: number;
+  chybi: number;
+  hotovo: boolean;
+}
+
 export interface DisplaySummary {
   id: string;
   druh: string;
+  jazyky: Record<Jazyk, boolean>; // které jazyky jsou hotové
   category: string | null; // sekce z meta.json (kvůli filtru v přehledu)
   latin_name: string | null; // párování s analytikou chatbota (species_latin)
   cekaNaRevizi: boolean; // AI koncept z hromadného importu, kurátor ho ještě neviděl
@@ -45,6 +78,8 @@ export interface DisplayDetail {
   meta: DisplayMeta;
   slides: SlideContent[];
   kb: string; // znalostní báze kb.md v kořeni displeje
+  jazyk: Jazyk; // jazyk, ve kterém je obsah v této odpovědi
+  jazyky: StavJazyka[]; // co v kterém jazyce chybí
 }
 
 export interface AuditEntry {

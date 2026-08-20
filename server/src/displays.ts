@@ -165,6 +165,41 @@ export function najdiSekci(hodnota: string): SekceDef | null {
   return SEKCE_TEMATA.find((s) => s.cs === cs) ?? null;
 }
 
+// --- Jazyky ---------------------------------------------------------
+//
+// Na disku: displeje/<id>/<jazyk>/<slide>/... Struktura slidů (které slidy
+// existují, v jakém pořadí a jakého typu) se řídí VŽDY češtinou; ostatní
+// jazyky do svých složek přidávají jen text.txt s překladem.
+export const JAZYKY = ["cs", "en", "pl"] as const;
+export type Jazyk = (typeof JAZYKY)[number];
+export const VYCHOZI_JAZYK: Jazyk = "cs";
+
+// Validace vstupu z API. Zároveň brána proti cestě mimo datovou složku:
+// jazyk se lepí do cesty, takže se nesmí vzít nic jiného než tahle trojice.
+export function jeJazyk(hodnota: unknown): hodnota is Jazyk {
+  return typeof hodnota === "string" && (JAZYKY as readonly string[]).includes(hodnota);
+}
+
+export function jazykNeboVychozi(hodnota: unknown): Jazyk {
+  return jeJazyk(hodnota) ? hodnota : VYCHOZI_JAZYK;
+}
+
+// Pole info panelu, která píše kurátor v každém jazyce zvlášť.
+export const PREKLADANA_POLE = [
+  "Nazev",
+  "Strava",
+  "Velikost",
+  "DobaLihnuti",
+  "Ohrozeni",
+  "DelkaZivota",
+] as const;
+
+// Pole, která jsou pro všechny jazyky společná. Kurátor je zadává v češtině
+// a do ostatních jazyků se propíšou: latinské jméno beze změny, sekce
+// v překladu podle SEKCE_TEMATA. Do souboru se zapisují, aby měl tablet
+// v každém jazyce kompletní text.txt.
+export const SDILENA_POLE = ["Sekce", "Latinsky"] as const;
+
 export const MAPA_SOUBOR = "mapa.png";
 
 // Zajímavost (_gal): text.txt s jedním klíčem. Zapisujeme "Popis", při čtení
@@ -215,6 +250,8 @@ export interface DisplaySummary {
   // Sekce (téma) displeje z meta.json, kvůli filtru v přehledu. Může být
   // i starý název, přehled si ho přeloží přes SEKCE_STARE.
   category: string | null;
+  // Které jazyky jsou hotové (přehled „EN chybí" u 31 druhů).
+  jazyky: Record<Jazyk, boolean>;
   // AI koncept z importu, který ještě nikdo nezkontroloval.
   cekaNaRevizi: boolean;
   // Kvůli párování s analytikou chatbota (jeho species_latin proti našemu
@@ -233,8 +270,13 @@ function displayDir(id: string): string {
   return path.join(DISPLAYS_DIR, id);
 }
 
+function jazykDir(id: string, jazyk: Jazyk): string {
+  return path.join(displayDir(id), jazyk);
+}
+
+// Struktura slidů se čte z češtiny, ta je zdroj pravdy.
 function csDir(id: string): string {
-  return path.join(displayDir(id), "cs");
+  return jazykDir(id, "cs");
 }
 
 // URL, pod kterou server servíruje soubor z /data.
@@ -313,8 +355,8 @@ export async function slideTyp(id: string, n: number): Promise<SlideTyp | null> 
   return (await findSlide(id, n))?.typ ?? null;
 }
 
-function slideDirPath(id: string, slozka: string): string {
-  return path.join(csDir(id), slozka);
+function slideDirPath(id: string, slozka: string, jazyk: Jazyk = "cs"): string {
+  return path.join(jazykDir(id, jazyk), slozka);
 }
 
 async function listFiles(id: string, slozka: string, ext: string): Promise<string[]> {
@@ -347,9 +389,13 @@ export function serializeInfoText(pole: Record<string, string>): string {
   return lines.join("\n") + (lines.length ? "\n" : "");
 }
 
-async function readInfoPole(id: string, slozka: string): Promise<Record<string, string>> {
+async function readInfoPole(
+  id: string,
+  slozka: string,
+  jazyk: Jazyk = "cs",
+): Promise<Record<string, string>> {
   try {
-    const raw = await fs.readFile(path.join(slideDirPath(id, slozka), "text.txt"), "utf8");
+    const raw = await fs.readFile(path.join(slideDirPath(id, slozka, jazyk), "text.txt"), "utf8");
     return parseInfoText(raw);
   } catch {
     return {};
@@ -374,9 +420,11 @@ export function serializeZajimavostText(text: string): string {
   return t ? `${ZAJIMAVOST_KLIC}: ${t}\n` : "";
 }
 
-async function readZajimavost(id: string, slozka: string): Promise<string> {
+async function readZajimavost(id: string, slozka: string, jazyk: Jazyk = "cs"): Promise<string> {
   try {
-    return parseZajimavostText(await fs.readFile(path.join(slideDirPath(id, slozka), "text.txt"), "utf8"));
+    return parseZajimavostText(
+      await fs.readFile(path.join(slideDirPath(id, slozka, jazyk), "text.txt"), "utf8"),
+    );
   } catch {
     return "";
   }
@@ -386,25 +434,33 @@ export async function writeZajimavost(
   id: string,
   n: number,
   text: string,
+  jazyk: Jazyk = "cs",
 ): Promise<{ ok: boolean; chyba?: string }> {
   const slide = await findSlide(id, n);
   if (!slide || slide.typ !== "gal") {
     return { ok: false, chyba: "Slide není typu zajímavost." };
   }
-  await writeFileAtomic(
-    path.join(slideDirPath(id, slide.slozka), "text.txt"),
-    serializeZajimavostText(text),
-  );
+  const dir = slideDirPath(id, slide.slozka, jazyk);
+  await fs.mkdir(dir, { recursive: true }); // překladová složka nemusí existovat
+  await writeFileAtomic(path.join(dir, "text.txt"), serializeZajimavostText(text));
   await touchDisplay(id);
   // Zajímavost je souvislý text o druhu, chatbot ho může použít jako podklad.
-  void notifyReingest(id, `cs/${slide.slozka}/text.txt`);
+  void notifyReingest(id, `${jazyk}/${slide.slozka}/text.txt`);
   return { ok: true };
 }
 
 // Validace povinných polí; vrací text chyby, nebo null když je vše v pořádku.
-export function validateInfoPole(pole: Record<string, string>): string | null {
-  const sekce = (pole.Sekce ?? "").trim();
+// V překladu kurátor vyplňuje jen název a další překládaná pole; sekci
+// a latinské jméno drží čeština, takže se v en/pl nevaliduje.
+export function validateInfoPole(
+  pole: Record<string, string>,
+  jazyk: Jazyk = "cs",
+): string | null {
   const nazev = (pole.Nazev ?? "").trim();
+  if (jazyk !== "cs") {
+    return nazev ? null : "Vyplňte prosím název.";
+  }
+  const sekce = (pole.Sekce ?? "").trim();
   if (!sekce) return "Vyplňte prosím sekci.";
   // Starý název sekce (před srovnáním s oficiální tabulí) projde taky, jinak
   // by dřív uložený displej nešlo znovu uložit.
@@ -413,11 +469,38 @@ export function validateInfoPole(pole: Record<string, string>): string | null {
   return null;
 }
 
+// Sdílená pole (sekce, latinské jméno) do textu překladu. Kurátor je zadává
+// jednou v češtině; do en/pl je doplní server, aby měl tablet v každém
+// jazyce úplný text.txt. Sekce se přeloží podle oficiální tabule.
+async function doplnSdilenaPole(
+  id: string,
+  slozka: string,
+  pole: Record<string, string>,
+  jazyk: Jazyk,
+): Promise<Record<string, string>> {
+  if (jazyk === "cs") return pole;
+  const cs = await readInfoPole(id, slozka, "cs");
+  const meta = await readMeta(id);
+  const vysledek: Record<string, string> = { ...pole };
+
+  const latin = (meta?.latin_name ?? cs.Latinsky ?? "").trim();
+  if (latin) vysledek.Latinsky = latin;
+  else delete vysledek.Latinsky;
+
+  const sekceCs = (cs.Sekce ?? meta?.category ?? "").trim();
+  const def = najdiSekci(sekceCs);
+  if (def) vysledek.Sekce = jazyk === "en" ? def.en : def.pl;
+  else delete vysledek.Sekce;
+
+  return vysledek;
+}
+
 export async function writeInfoPole(
   id: string,
   n: number,
   pole: Record<string, string>,
   section?: string,
+  jazyk: Jazyk = "cs",
 ): Promise<{ ok: boolean; chyba?: string; latin: string; latinCorrected: boolean }> {
   const slide = await findSlide(id, n);
   if (!slide || slide.typ !== "info") {
@@ -429,21 +512,23 @@ export async function writeInfoPole(
   const latin = canonicalizeLatin(rawLatin);
   const latinCorrected = latin !== rawLatin;
 
-  const cleaned: Record<string, string> = { ...pole };
+  let cleaned: Record<string, string> = { ...pole };
   if (latin) cleaned.Latinsky = latin;
   else delete cleaned.Latinsky;
 
-  const chyba = validateInfoPole(cleaned);
+  const chyba = validateInfoPole(cleaned, jazyk);
   if (chyba) return { ok: false, chyba, latin, latinCorrected };
 
-  // 1) Fakta do cs/<slozka>/text.txt (formát Klic: Hodnota), atomicky.
-  await writeFileAtomic(
-    path.join(slideDirPath(id, slide.slozka), "text.txt"),
-    serializeInfoText(cleaned),
-  );
+  cleaned = await doplnSdilenaPole(id, slide.slozka, cleaned, jazyk);
 
-  // 2) Táž identita se propíše do meta.json, ať se soubory nerozejdou.
-  const meta = await readMeta(id);
+  // 1) Fakta do <jazyk>/<slozka>/text.txt (formát Klic: Hodnota), atomicky.
+  const dir = slideDirPath(id, slide.slozka, jazyk);
+  await fs.mkdir(dir, { recursive: true }); // překladová složka nemusí existovat
+  await writeFileAtomic(path.join(dir, "text.txt"), serializeInfoText(cleaned));
+
+  // 2) Identita v meta.json patří češtině: meta.json je jeden na displej
+  // a chatbot i přehled displejů podle něj pracují s českým názvem.
+  const meta = jazyk === "cs" ? await readMeta(id) : null;
   if (meta) {
     const nazev = (cleaned.Nazev ?? "").trim();
     meta.druh = nazev; // validace zaručuje, že Nazev není prázdný
@@ -462,8 +547,9 @@ export async function writeInfoPole(
   }
 
   // 3) Signál chatbotu, že se změnila fakta i identifikace (zatím vypnuto).
-  void notifyReingest(id, `cs/${slide.slozka}/text.txt`);
-  void notifyReingest(id, "meta.json");
+  void notifyReingest(id, `${jazyk}/${slide.slozka}/text.txt`);
+  if (jazyk === "cs") void notifyReingest(id, "meta.json");
+  if (jazyk !== "cs") await touchDisplay(id); // v cs to udělal zápis meta.json
 
   return { ok: true, latin, latinCorrected };
 }
@@ -481,7 +567,9 @@ async function sekvence(id: string, slozka: string): Promise<string[]> {
     .map((x) => x.f);
 }
 
-async function toContent(id: string, s: SlideDirInfo): Promise<SlideContent> {
+// Text se čte z požadovaného jazyka, média vždy z češtiny: fotky, video
+// i 3D sekvence jsou společné, kurátor je nahrává jednou.
+async function toContent(id: string, s: SlideDirInfo, jazyk: Jazyk): Promise<SlideContent> {
   const content: SlideContent = {
     n: s.n,
     typ: s.typ,
@@ -493,7 +581,7 @@ async function toContent(id: string, s: SlideDirInfo): Promise<SlideContent> {
     video: null,
   };
   if (s.typ === "info") {
-    content.pole = await readInfoPole(id, s.slozka);
+    content.pole = await readInfoPole(id, s.slozka, jazyk);
     const pngs = await listFiles(id, s.slozka, ".png");
     content.obrazky = pngs
       .filter((f) => f !== MAPA_SOUBOR)
@@ -504,7 +592,7 @@ async function toContent(id: string, s: SlideDirInfo): Promise<SlideContent> {
     content.video = videa.length ? slideFileUrl(id, s.slozka, videa[0]) : null;
   } else if (s.typ === "gal") {
     // Zajímavost: dlouhý text a jedna fotka.
-    content.text = await readZajimavost(id, s.slozka);
+    content.text = await readZajimavost(id, s.slozka, jazyk);
     const pngs = await listFiles(id, s.slozka, ".png");
     content.obrazky = pngs.length ? [slideFileUrl(id, s.slozka, pngs[0])] : [];
   } else if (s.typ === "3d") {
@@ -516,9 +604,9 @@ async function toContent(id: string, s: SlideDirInfo): Promise<SlideContent> {
   return content;
 }
 
-export async function readSlides(id: string): Promise<SlideContent[]> {
+export async function readSlides(id: string, jazyk: Jazyk = "cs"): Promise<SlideContent[]> {
   const slides = await listSlides(id);
-  return Promise.all(slides.map((s) => toContent(id, s)));
+  return Promise.all(slides.map((s) => toContent(id, s, jazyk)));
 }
 
 export async function displayExists(id: string): Promise<boolean> {
@@ -527,9 +615,15 @@ export async function displayExists(id: string): Promise<boolean> {
 
 // --- Znalostní báze (kb.md v kořeni displeje) ---
 
-export async function readKb(id: string): Promise<string> {
+// Znalostní báze: čeština zůstává v kb.md v kořeni displeje (přesně tam ji
+// hledá chatbot), překlady jsou vedle jako kb.en.md a kb.pl.md.
+export function kbSoubor(jazyk: Jazyk): string {
+  return jazyk === "cs" ? "kb.md" : `kb.${jazyk}.md`;
+}
+
+export async function readKb(id: string, jazyk: Jazyk = "cs"): Promise<string> {
   try {
-    const raw = await fs.readFile(path.join(displayDir(id), "kb.md"), "utf8");
+    const raw = await fs.readFile(path.join(displayDir(id), kbSoubor(jazyk)), "utf8");
     return raw.replace(/\r\n/g, "\n").replace(/\n+$/, "");
   } catch {
     return "";
@@ -540,15 +634,15 @@ export async function readKb(id: string): Promise<string> {
 // Kurátor text ukládá z různých důvodů (překlep, doplnění věty) a to ještě
 // neznamená, že ho celý přečetl a ručí za něj. Revizi ruší jen vědomé
 // schválení. POST /api/displays/:id/revize, viz oznacRevizi().
-export async function writeKb(id: string, text: string): Promise<void> {
+export async function writeKb(id: string, text: string, jazyk: Jazyk = "cs"): Promise<void> {
   const body = text.replace(/\r\n/g, "\n");
   await writeFileAtomic(
-    path.join(displayDir(id), "kb.md"),
+    path.join(displayDir(id), kbSoubor(jazyk)),
     body.endsWith("\n") ? body : body + "\n",
   );
   await touchDisplay(id);
   // Signál chatbotu, že se změnila znalostní báze (zatím vypnuto).
-  void notifyReingest(id, "kb.md");
+  void notifyReingest(id, kbSoubor(jazyk));
 }
 
 // Nastaví nebo zruší značku „AI koncept čeká na revizi kurátora".
@@ -818,8 +912,21 @@ export async function deleteVideo(id: string, n: number): Promise<void> {
 
 // Přejmenuje složky tak, aby prefixy tvořily souvislou řadu 1..k v zadaném
 // pořadí. Dvoufázově (přes dočasné názvy), aby se cílové názvy nesrazily.
+// Projde jazyky, které na disku existují. Struktura se řídí češtinou, ale
+// přejmenování i mazání se musí promítnout i do překladů, jinak by se
+// přeložený text po přečíslování přilepil k cizímu slidu.
+async function proJazyky(id: string, akce: (jazyk: Jazyk) => Promise<void>): Promise<void> {
+  for (const jazyk of JAZYKY) {
+    try {
+      await fs.access(jazykDir(id, jazyk));
+    } catch {
+      continue; // jazyk zatím nemá složku, není co řešit
+    }
+    await akce(jazyk);
+  }
+}
+
 async function renumberSlides(id: string, ordered: SlideDirInfo[]): Promise<void> {
-  const dir = csDir(id);
   const tmp: { from: string; to: string }[] = [];
   ordered.forEach((s, i) => {
     // Suffix se zachová takový, jaký je na disku (kvůli variantě _mod).
@@ -827,12 +934,26 @@ async function renumberSlides(id: string, ordered: SlideDirInfo[]): Promise<void
   });
   const changing = tmp.filter((t) => t.from !== t.to);
   if (changing.length === 0) return;
-  for (const t of changing) {
-    await renameSPokusy(path.join(dir, t.from), path.join(dir, `.tmp-${t.to}`));
-  }
-  for (const t of changing) {
-    await renameSPokusy(path.join(dir, `.tmp-${t.to}`), path.join(dir, t.to));
-  }
+
+  await proJazyky(id, async (jazyk) => {
+    const dir = jazykDir(id, jazyk);
+    // Překlad nemusí mít složku každého slidu, přejmenujeme jen co existuje.
+    const zdejsi: { from: string; to: string }[] = [];
+    for (const t of changing) {
+      try {
+        await fs.access(path.join(dir, t.from));
+        zdejsi.push(t);
+      } catch {
+        // tenhle slide v tomhle jazyce zatím nikdo nepřeložil
+      }
+    }
+    for (const t of zdejsi) {
+      await renameSPokusy(path.join(dir, t.from), path.join(dir, `.tmp-${t.to}`));
+    }
+    for (const t of zdejsi) {
+      await renameSPokusy(path.join(dir, `.tmp-${t.to}`), path.join(dir, t.to));
+    }
+  });
 }
 
 export async function addSlide(id: string, typ: SlideTyp): Promise<number> {
@@ -847,7 +968,10 @@ export async function removeSlide(id: string, n: number): Promise<{ ok: boolean;
   const slides = await listSlides(id);
   const slide = slides.find((s) => s.n === n);
   if (!slide) return { ok: false, chyba: "Slide nenalezen." };
-  await fs.rm(slideDirPath(id, slide.slozka), { recursive: true, force: true });
+  // Smaže se slide ve všech jazycích, ne jen český originál.
+  await proJazyky(id, async (jazyk) => {
+    await fs.rm(slideDirPath(id, slide.slozka, jazyk), { recursive: true, force: true });
+  });
   await renumberSlides(
     id,
     slides.filter((s) => s.n !== n),
@@ -868,6 +992,45 @@ export async function reorderSlides(id: string, poradi: number[]): Promise<void>
   for (const s of slides) if (!next.includes(s)) next.push(s);
   await renumberSlides(id, next);
   await touchDisplay(id);
+}
+
+// --- Stav jazyků -----------------------------------------------------
+//
+// Kolik přeložitelných položek čeština má a kolik z nich v daném jazyce
+// chybí. Položka = info panel (název druhu), text každé zajímavosti
+// a znalostní báze. Podle toho se v CMS ukazuje „EN chybí".
+
+export interface StavJazyka {
+  jazyk: Jazyk;
+  celkem: number; // kolik položek je vyplněných v češtině
+  chybi: number; // kolik z nich v tomhle jazyce není
+  hotovo: boolean;
+}
+
+export async function stavJazyku(id: string): Promise<StavJazyka[]> {
+  const slides = await listSlides(id);
+  const vyplneno = async (jazyk: Jazyk): Promise<Set<string>> => {
+    const mnozina = new Set<string>();
+    for (const s of slides) {
+      if (s.typ === "info") {
+        const pole = await readInfoPole(id, s.slozka, jazyk);
+        if ((pole.Nazev ?? "").trim()) mnozina.add(`info:${s.n}`);
+      } else if (s.typ === "gal") {
+        if ((await readZajimavost(id, s.slozka, jazyk)).trim()) mnozina.add(`gal:${s.n}`);
+      }
+    }
+    if ((await readKb(id, jazyk)).trim()) mnozina.add("kb");
+    return mnozina;
+  };
+
+  const cs = await vyplneno("cs");
+  const stav: StavJazyka[] = [];
+  for (const jazyk of JAZYKY) {
+    const moje = jazyk === "cs" ? cs : await vyplneno(jazyk);
+    const chybi = [...cs].filter((klic) => !moje.has(klic)).length;
+    stav.push({ jazyk, celkem: cs.size, chybi, hotovo: cs.size > 0 && chybi === 0 });
+  }
+  return stav;
 }
 
 // --- Přehled displejů ---
@@ -899,6 +1062,9 @@ export async function listDisplays(): Promise<DisplaySummary[]> {
       id,
       druh: meta.druh,
       category: meta.category ?? null,
+      jazyky: Object.fromEntries(
+        (await stavJazyku(id)).map((s) => [s.jazyk, s.hotovo]),
+      ) as Record<Jazyk, boolean>,
       latin_name: meta.latin_name ?? null,
       cekaNaRevizi: meta.cekaNaRevizi === true,
       stav: meta.stav,

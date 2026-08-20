@@ -2,7 +2,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ChevronLeft, ChevronRight, RefreshCw, X } from "lucide-react";
 import { api } from "../lib/api";
-import { INFO_POLE, NEPRIRAZENO, type DisplayDetail, type SlideContent } from "../lib/types";
+import {
+  INFO_POLE,
+  JAZYKY,
+  JAZYK_LABEL,
+  NEPRIRAZENO,
+  type DisplayDetail,
+  type Jazyk,
+  type SlideContent,
+} from "../lib/types";
 import { LogoMark } from "../components/Logo";
 
 const AUTO_ADVANCE_MS = 8000;
@@ -73,16 +81,18 @@ export default function Tablet() {
   const [index, setIndex] = useState(0);
   const [paused, setPaused] = useState(false);
   const [obal, setObal] = useState<HTMLDivElement | null>(null);
+  // Náhled si kurátor přepne do jazyka, který zrovna kontroluje.
+  const [jazyk, setJazyk] = useState<Jazyk>("cs");
   const meritko = useMeritko(obal);
 
   const load = useCallback(async () => {
     try {
-      const d = await api.display(id);
+      const d = await api.display(id, jazyk);
       setDetail(d);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Načtení selhalo.");
     }
-  }, [id]);
+  }, [id, jazyk]);
 
   useEffect(() => {
     load();
@@ -159,6 +169,22 @@ export default function Tablet() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {/* Přepínač jazyka náhledu. Na zařízení u expozice není, je to
+              nástroj CMS pro kontrolu překladů. */}
+          <div className="mr-1 flex items-center gap-1 rounded-lg border border-line p-0.5">
+            {JAZYKY.map((kod) => (
+              <button
+                key={kod}
+                onClick={() => setJazyk(kod)}
+                title={JAZYK_LABEL[kod]}
+                className={`rounded-md px-2 py-1 text-xs font-bold uppercase transition ${
+                  kod === jazyk ? "bg-accent text-white" : "text-fg-muted hover:text-fg"
+                }`}
+              >
+                {kod}
+              </button>
+            ))}
+          </div>
           <button
             onClick={load}
             title="Načíst znovu z disku"

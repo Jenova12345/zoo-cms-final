@@ -2,7 +2,13 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { ImageOff, Loader2, Search, Sparkles } from "lucide-react";
 import { api, formatDateTime } from "../lib/api";
-import { NEPRIRAZENO, SEKCE_TEMATA, najdiSekci, type DisplaySummary } from "../lib/types";
+import {
+  JAZYKY,
+  NEPRIRAZENO,
+  SEKCE_TEMATA,
+  najdiSekci,
+  type DisplaySummary,
+} from "../lib/types";
 
 export default function Displays() {
   const [displays, setDisplays] = useState<DisplaySummary[] | null>(null);
@@ -32,6 +38,9 @@ export default function Displays() {
 
   const prirazenoCount = displays?.filter((d) => d.druh !== NEPRIRAZENO).length ?? 0;
   const kRevizi = displays?.filter((d) => d.cekaNaRevizi).length ?? 0;
+  const bezPrekladu =
+    displays?.filter((d) => d.druh !== NEPRIRAZENO && d.jazyky && (!d.jazyky.en || !d.jazyky.pl))
+      .length ?? 0;
 
   return (
     <div className="space-y-8">
@@ -43,6 +52,13 @@ export default function Displays() {
               ? `${displays.length} displejů, ${prirazenoCount} přiřazeno. Obsah se ukládá přímo na disk.`
               : "Obsah se ukládá přímo na disk."}
           </p>
+          {bezPrekladu > 0 && (
+            <p className="mt-2 text-sm text-fg-muted">
+              {bezPrekladu === 1
+                ? "1 druh nemá kompletní překlady (EN nebo PL)."
+                : `${bezPrekladu} druhů nemá kompletní překlady (EN nebo PL).`}
+            </p>
+          )}
           {kRevizi > 0 && (
             <p className="mt-2 inline-flex items-center gap-1.5 text-sm font-semibold text-amber-deep">
               <Sparkles className="h-4 w-4" strokeWidth={1.75} />
@@ -147,6 +163,26 @@ export default function Displays() {
                     <div className="text-[11px] text-fg-dim mt-0.5 tnum">
                       {formatDateTime(d.posledniZmena)}
                     </div>
+                    {/* Stav jazyků: kurátor u 31 druhů uhlídá, kde co chybí. */}
+                    {prirazeno && d.jazyky && (
+                      <div className="mt-1.5 flex items-center gap-1.5">
+                        {JAZYKY.map((j) => (
+                          <span
+                            key={j}
+                            title={
+                              d.jazyky[j] ? `${j.toUpperCase()}: hotovo` : `${j.toUpperCase()}: chybí obsah`
+                            }
+                            className={`rounded px-1 py-0.5 text-[10px] font-bold uppercase ${
+                              d.jazyky[j]
+                                ? "bg-accent-soft text-accent"
+                                : "bg-canvas text-fg-muted ring-1 ring-line"
+                            }`}
+                          >
+                            {j}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </div>
                   <span
                     className={`mt-1 shrink-0 ${d.stav === "online" ? "dot-online" : "dot-offline"}`}

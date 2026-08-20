@@ -29,8 +29,12 @@ import { canonicalizeLatin } from "../lib/latin";
 import {
   INFO_POLE,
   NEPRIRAZENO,
+  JAZYKY,
+  JAZYK_LABEL,
   SEKCE_STARE,
   SEKCE_TEMATA,
+  jePrekladane,
+  type Jazyk,
   SLIDE_TYPY,
   SLIDE_TYP_LABEL,
   SLIDE_TYP_POPIS,
@@ -60,13 +64,9 @@ import { useNeulozeno } from "../lib/neulozeno";
 import { useToast } from "../components/Toast";
 import Confirm from "../components/Confirm";
 
-const LANGS = [
-  { code: "cs", label: "Čeština", active: true },
-  { code: "en", label: "EN", active: false },
-  { code: "pl", label: "PL", active: false },
-  { code: "de", label: "DE", active: false },
-  { code: "sk", label: "SK", active: false },
-];
+// Sdílené věci se ukládají jednou (do češtiny) a ostatní jazyky je čtou
+// odtud. Kurátor tak nenahrává 36 snímků třikrát.
+const SDILENE_HLASKA = "Společné pro všechny jazyky, nahrává se jednou.";
 
 const TYP_IKONA: Record<SlideTyp, typeof Info> = {
   info: Info,
@@ -181,6 +181,13 @@ export default function DisplayDetail() {
   const [dotcena, setDotcena] = useState<Dotcena>(() => new Set());
   const [odchodOpen, setOdchodOpen] = useState(false);
   const [revizeOpen, setRevizeOpen] = useState(false);
+  const [jazyk, setJazyk] = useState<Jazyk>("cs");
+  // Čeština jako reference při překládání (načte se, jen když je potřeba).
+  const [referenceCs, setReferenceCs] = useState<Detail | null>(null);
+  const [prepinam, setPrepinam] = useState(false);
+  // Jazyky, ve kterých kurátor něco rozepsal a přepnul jinam. Musí se
+  // počítat do „neuložených změn", jinak by o ně při odchodu tiše přišel.
+  const [neulozeneJazyky, setNeulozeneJazyky] = useState<Jazyk[]>([]);
   const navigate = useNavigate();
   const { nastavNeulozeno } = useNeulozeno();
 
@@ -188,6 +195,25 @@ export default function DisplayDetail() {
   // zrcadlo v ref (přepisuje se při každém renderu).
   const dotcenaRef = useRef(dotcena);
   dotcenaRef.current = dotcena;
+  const jazykRef = useRef(jazyk);
+  jazykRef.current = jazyk;
+
+  // Rozepsané změny odložené při přepnutí jazyka. Bez toho by kurátor
+  // přechodem na EN přišel o rozdělanou češtinu.
+  const zasoba = useRef<
+    Partial<
+      Record<
+        Jazyk,
+        {
+          infoDrafts: Record<number, Record<string, string>>;
+          galDrafts: Record<number, string>;
+          kbDraft: string;
+          sectionDraft: string;
+          dotcena: Dotcena;
+        }
+      >
+    >
+  >({});
 
   function oznacDotcene(klic: string) {
     setDotcena((prev) => (prev.has(klic) ? prev : new Set(prev).add(klic)));
@@ -209,7 +235,7 @@ export default function DisplayDetail() {
   const load = useCallback(
     async (rezim: "slouc" | "nechDrafty" = "slouc") => {
       try {
-        const d = await api.display(id);
+        const d = await api.display(id, jazykRef.current);
         setDetail(d);
         if (rezim === "slouc") {
           const dot = dotcenaRef.current;
@@ -231,6 +257,67 @@ export default function DisplayDetail() {
 
   // Přenačtení obsahu po práci se soubory: rozepsaný formulář zůstává.
   const reloadObsah = useCallback(() => load("nechDrafty"), [load]);
+
+  // Přepnutí jazyka: rozepsané změny se odloží stranou a při návratu se
+  // vrátí. Na disk se nic nezapisuje, dokud kurátor neklikne na Uložit.
+  async function prepniJazyk(cil: Jazyk) {
+    if (cil === jazykRef.current || prepinam) return;
+    const odkud = jazykRef.current;
+    zasoba.current[odkud] = {
+      infoDrafts,
+      galDrafts,
+      kbDraft,
+      sectionDraft,
+      dotcena: dotcenaRef.current,
+    };
+    setNeulozeneJazyky((prev) => {
+      const bez = prev.filter((j) => j !== odkud && j !== cil);
+      return neulozenoCokoliv ? [...bez, odkud] : bez;
+    });
+    setPrepinam(true);
+    try {
+      const d = await api.display(id, cil);
+      jazykRef.current = cil;
+      setJazyk(cil);
+      setDetail(d);
+      setUlozeno(null);
+
+      const odlozene = zasoba.current[cil];
+      if (odlozene) {
+        setInfoDrafts(odlozene.infoDrafts);
+        setGalDrafts(odlozene.galDrafts);
+        setKbDraft(odlozene.kbDraft);
+        setSectionDraft(odlozene.sectionDraft);
+        dotcenaRef.current = odlozene.dotcena;
+        setDotcena(odlozene.dotcena);
+      } else {
+        const prazdna: Dotcena = new Set();
+        dotcenaRef.current = prazdna;
+        setDotcena(prazdna);
+        setInfoDrafts(slucInfoDrafty({}, d.slides, prazdna));
+        setGalDrafts(slucZajimavosti({}, d.slides, prazdna));
+        setKbDraft(d.kb);
+        setSectionDraft(d.meta.section ?? "");
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Přepnutí jazyka selhalo.");
+    } finally {
+      setPrepinam(false);
+    }
+  }
+
+  // Čeština jako podklad pro překlad. Načte se jednou při prvním přepnutí.
+  useEffect(() => {
+    if (jazyk === "cs" || referenceCs) return;
+    let platne = true;
+    api
+      .display(id, "cs")
+      .then((d) => platne && setReferenceCs(d))
+      .catch(() => undefined);
+    return () => {
+      platne = false;
+    };
+  }, [jazyk, referenceCs, id]);
 
   useEffect(() => {
     load();
@@ -255,23 +342,29 @@ export default function DisplayDetail() {
   const neulozenoCokoliv =
     !!detail && (detail.slides.some(slideNeulozen) || kbNeulozena);
 
+  // Rozepsané je i to, co čeká odložené v jiném jazyce.
+  const neulozenoVJazycich = neulozenoCokoliv
+    ? [jazyk, ...neulozeneJazyky.filter((j) => j !== jazyk)]
+    : neulozeneJazyky;
+  const neulozenoKdekoliv = neulozenoVJazycich.length > 0;
+
   // Levý navigační panel se na neuložené změny ptá sám (odchod přes menu
   // nebo Odhlásit beforeunload nezachytí, uvnitř SPA se nespouští).
   useEffect(() => {
-    nastavNeulozeno(neulozenoCokoliv);
+    nastavNeulozeno(neulozenoKdekoliv);
     return () => nastavNeulozeno(false);
-  }, [neulozenoCokoliv, nastavNeulozeno]);
+  }, [neulozenoKdekoliv, nastavNeulozeno]);
 
   // Zavření okna nebo záložky s rozepsanými změnami: zeptá se prohlížeč sám.
   useEffect(() => {
-    if (!neulozenoCokoliv) return;
+    if (!neulozenoKdekoliv) return;
     function varuj(e: BeforeUnloadEvent) {
       e.preventDefault();
       e.returnValue = "";
     }
     window.addEventListener("beforeunload", varuj);
     return () => window.removeEventListener("beforeunload", varuj);
-  }, [neulozenoCokoliv]);
+  }, [neulozenoKdekoliv]);
 
   if (error) {
     return (
@@ -310,7 +403,7 @@ export default function DisplayDetail() {
   async function saveKb() {
     setSaving(true);
     try {
-      await api.saveKb(id, kbDraft);
+      await api.saveKb(id, kbDraft, jazyk);
       ulozeneZahod((d) => zapomen(d, KLIC_KB));
       await load();
       oznacUlozeno();
@@ -325,6 +418,7 @@ export default function DisplayDetail() {
   // Potvrzení „uloženo" u tlačítka aktivní záložky.
   function oznacUlozeno() {
     setUlozeno({ klic: String(active), cas: ted() });
+    setNeulozeneJazyky((prev) => prev.filter((j) => j !== jazykRef.current));
   }
 
   // Zveřejnění na tabletu vidí návštěvníci u expozice, proto se na něj vždycky
@@ -339,7 +433,7 @@ export default function DisplayDetail() {
   async function saveInfo(n: number, pole: Record<string, string>, odeslat: boolean) {
     setSaving(true);
     try {
-      const res = await api.saveInfo(id, n, pole, sectionDraft);
+      const res = await api.saveInfo(id, n, pole, sectionDraft, jazyk);
       if (odeslat) await api.refresh(id);
       // Uloženo = rozepsaná verze odpovídá disku. Značky pryč ještě před
       // přenačtením, ať se ve formuláři objeví serverová podoba (kanonizovaná
@@ -462,7 +556,7 @@ export default function DisplayDetail() {
           onClick={(e) => {
             // Odchod ze stránky je jediné místo, kde se rozepsané změny
             // ztratí, přepínání záložek slidů si je drží.
-            if (!neulozenoCokoliv) return;
+            if (!neulozenoKdekoliv) return;
             e.preventDefault();
             setOdchodOpen(true);
           }}
@@ -526,25 +620,44 @@ export default function DisplayDetail() {
         </div>
       )}
 
-      {/* Jazyk */}
-      <div className="flex items-center gap-5">
+      {/* Jazyk. U každého je vidět, kolik položek v něm ještě chybí. */}
+      <div className="flex flex-wrap items-center gap-5">
         <span className="kicker">Jazyk</span>
-        <div className="flex items-center gap-4">
-          {LANGS.map((l) => (
-            <button
-              key={l.code}
-              disabled={!l.active}
-              className={`text-sm font-semibold transition border-b-2 pb-0.5 ${
-                l.active
-                  ? "text-accent border-accent"
-                  : "text-fg-dim border-transparent cursor-not-allowed"
-              }`}
-            >
-              {l.label}
-              {!l.active && <span className="ml-1 text-[10px] font-normal">brzy</span>}
-            </button>
-          ))}
+        <div className="flex flex-wrap items-center gap-4">
+          {JAZYKY.map((kod) => {
+            const stav = detail.jazyky?.find((j) => j.jazyk === kod);
+            const aktivni = kod === jazyk;
+            return (
+              <button
+                key={kod}
+                onClick={() => prepniJazyk(kod)}
+                disabled={prepinam}
+                className={`flex items-center gap-1.5 text-sm font-semibold transition border-b-2 pb-0.5 disabled:opacity-60 ${
+                  aktivni
+                    ? "text-accent border-accent"
+                    : "text-fg-muted border-transparent hover:text-fg"
+                }`}
+              >
+                {JAZYK_LABEL[kod]}
+                {stav && (
+                  <span
+                    className={`text-[10px] font-medium ${
+                      stav.hotovo ? "text-accent" : "text-amber-deep"
+                    }`}
+                  >
+                    {stav.hotovo ? "hotovo" : `chybí ${stav.chybi}`}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+          {prepinam && <Loader2 className="h-4 w-4 animate-spin text-fg-muted" />}
         </div>
+        {jazyk !== "cs" && (
+          <span className="text-xs text-fg-muted">
+            Fotky, video, 3D snímky, mapa, latinský název a čeleď se berou z češtiny.
+          </span>
+        )}
       </div>
 
       {/* Záložky: slidy podle složek na disku + znalostní báze + přidání slidu.
@@ -732,6 +845,8 @@ export default function DisplayDetail() {
       {active === "kb" ? (
         <KbEditor
           cekaNaRevizi={detail.meta.cekaNaRevizi === true}
+          jazyk={jazyk}
+          referenceCs={jazyk === "cs" ? null : referenceCs?.kb ?? null}
           value={kbDraft}
           onChange={(v) => {
             setUlozeno(null);
@@ -794,6 +909,12 @@ export default function DisplayDetail() {
             }));
           }}
           onSave={(pole, odeslat) => saveInfo(slide.n, pole, odeslat)}
+          jazyk={jazyk}
+          referenceCs={
+            jazyk === "cs"
+              ? null
+              : referenceCs?.slides.find((x) => x.n === slide.n)?.pole ?? null
+          }
           zeptejSe={zeptejSeNaZverejneni}
           neulozeno={slideNeulozen(slide)}
           ulozenoCas={ulozeno?.klic === String(slide.n) ? ulozeno.cas : null}
@@ -812,6 +933,12 @@ export default function DisplayDetail() {
           reload={reloadObsah}
           withBusy={withBusy}
           zeptejSe={zeptejSeNaZverejneni}
+          jazyk={jazyk}
+          referenceCs={
+            jazyk === "cs"
+              ? null
+              : referenceCs?.slides.find((x) => x.n === slide.n)?.text ?? null
+          }
           text={galDrafts[slide.n] ?? slide.text}
           onZmena={(v) => {
             setUlozeno(null);
@@ -909,8 +1036,9 @@ export default function DisplayDetail() {
         titulek="Odejít bez uložení?"
         text={
           <>
-            Máte rozepsané změny, které nejsou uložené. Když teď odejdete na seznam displejů,
-            přijdete o ně a vrátit to nepůjde.
+            Máte rozepsané změny, které nejsou uložené (
+            {neulozenoVJazycich.map((j) => JAZYK_LABEL[j]).join(", ")}). Když teď odejdete na
+            seznam displejů, přijdete o ně a vrátit to nepůjde.
           </>
         }
         potvrdit="Odejít bez uložení"
@@ -976,6 +1104,21 @@ function Pocitadlo({
       {kolik} / {limit} {jednotka}
       {pres && " · na tabletu se může zkrátit"}
     </span>
+  );
+}
+
+// Český originál jako podklad k překladu. Ukazuje se jen u prázdného pole
+// a schválně se nikam nepředvyplňuje: předvyplněná čeština by se snadno
+// uložila jako "překlad".
+function CeskyOriginal({ text }: { text: string | null }) {
+  if (!text || !text.trim()) return null;
+  return (
+    <div className="rounded-lg border border-dashed border-line bg-canvas px-4 py-3">
+      <div className="text-[11px] font-semibold uppercase tracking-wider text-fg-muted">
+        Česky (podklad k překladu)
+      </div>
+      <p className="mt-1 whitespace-pre-wrap text-sm text-fg-muted">{text}</p>
+    </div>
   );
 }
 
@@ -1147,6 +1290,8 @@ function InfoEditor({
   onSectionChange,
   onChange,
   onSave,
+  jazyk,
+  referenceCs,
   zeptejSe,
   neulozeno,
   ulozenoCas,
@@ -1162,6 +1307,8 @@ function InfoEditor({
   onSectionChange: (v: string) => void;
   onChange: (patch: Record<string, string>) => void;
   onSave: (pole: Record<string, string>, odeslat: boolean) => Promise<void>;
+  jazyk: Jazyk;
+  referenceCs: Record<string, string> | null; // český originál při překladu
   zeptejSe: (popis: ReactNode, akce: () => Promise<void>) => void;
   neulozeno: boolean;
   ulozenoCas: string | null;
@@ -1183,7 +1330,11 @@ function InfoEditor({
     : null;
 
   const chybi = (klic: string) => !(pole[klic] ?? "").trim();
-  const chybejici = INFO_POLE.filter((d) => d.povinne && chybi(d.klic));
+  // V překladu se vyplňuje jen to, co je překládané; sekci a latinu drží
+  // čeština, takže je zbytečné je tady vymáhat.
+  const chybejici = INFO_POLE.filter(
+    (d) => d.povinne && chybi(d.klic) && (jazyk === "cs" || jePrekladane(d.klic)),
+  );
   const valid = chybejici.length === 0;
 
   // Živý náhled kanonického tvaru latinského jména (autoritativně čistí server).
@@ -1268,7 +1419,10 @@ function InfoEditor({
                   <span className="text-fg-muted font-normal"> · volitelné</span>
                 )}
               </label>
-              {def.klic === "Sekce" ? (
+              {jazyk !== "cs" && !jePrekladane(def.klic) ? (
+                // Sdílené pole: v překladu se needituje, mění se v češtině.
+                <div className="input bg-canvas text-fg-muted">{hodnota || "nevyplněno"}</div>
+              ) : def.klic === "Sekce" ? (
                 <select
                   id={`pole-${def.klic}`}
                   className={`input ${nevyplneno ? "border-danger" : ""}`}
@@ -1307,6 +1461,20 @@ function InfoEditor({
               {nevyplneno && (
                 <p className="mt-1 text-xs text-danger">Tohle pole je potřeba vyplnit.</p>
               )}
+              {jazyk !== "cs" && !jePrekladane(def.klic) && (
+                <p className="mt-1 text-xs text-fg-muted">
+                  Společné pro všechny jazyky, mění se v češtině.
+                </p>
+              )}
+              {/* Český originál jako podklad k překladu. Schválně se
+                  nepředvyplňuje, aby se čeština omylem neuložila jako
+                  angličtina. */}
+              {jazyk !== "cs" && jePrekladane(def.klic) && !hodnota.trim() &&
+                (referenceCs?.[def.klic] ?? "").trim() && (
+                  <p className="mt-1 text-xs text-fg-muted">
+                    <span className="font-semibold">Česky:</span> {referenceCs?.[def.klic]}
+                  </p>
+                )}
               {def.klic === "Sekce" && staraSekce && (
                 <p className="mt-1 text-xs text-amber-deep">
                   „{hodnota}" je starý název. Podle tabule v pavilonu je to teď{" "}
@@ -1330,13 +1498,22 @@ function InfoEditor({
           <label className="label">
             Čeleď (taxonomická)<span className="text-fg-muted font-normal"> · volitelné</span>
           </label>
-          <input
-            className="input"
-            value={section}
-            onChange={(e) => onSectionChange(e.target.value)}
-            placeholder="Např. Dendrobatidae"
-          />
-          <PodPolem hint="Na tabletu se nezobrazuje, slouží jen chatbotovi k rozpoznání druhu." />
+          {jazyk === "cs" ? (
+            <>
+              <input
+                className="input"
+                value={section}
+                onChange={(e) => onSectionChange(e.target.value)}
+                placeholder="Např. Dendrobatidae"
+              />
+              <PodPolem hint="Na tabletu se nezobrazuje, slouží jen chatbotovi k rozpoznání druhu." />
+            </>
+          ) : (
+            <>
+              <div className="input bg-canvas text-fg-muted">{section || "nevyplněno"}</div>
+              <PodPolem hint="Společné pro všechny jazyky, mění se v češtině." />
+            </>
+          )}
         </div>
 
         <div className="space-y-3 pt-1">
@@ -1388,7 +1565,7 @@ function InfoEditor({
           <span className="label">Fotky info panelu</span>
           <p className="text-xs text-fg-muted -mt-1">
             Hlavní vizuál druhu. Jednu fotku můžete označit jako mapu výskytu ikonkou mapy,
-            která se objeví po najetí na fotku.
+            která se objeví po najetí na fotku. {SDILENE_HLASKA}
           </p>
         </div>
 
@@ -1460,7 +1637,8 @@ function InfoEditor({
           <span className="label">Video info panelu <span className="text-fg-muted font-normal">· volitelné</span></span>
           <p className="text-xs text-fg-muted -mt-1 mb-3">
             Volitelné krátké video do galerie tohoto panelu. Pro velké video přes celou obrazovku
-            použijte samostatný slide <strong className="font-semibold text-fg-muted">Video</strong>.
+            použijte samostatný slide <strong className="font-semibold text-fg-muted">Video</strong>.{" "}
+            {SDILENE_HLASKA}
           </p>
           <VideoBlok
             slide={slide}
@@ -1502,6 +1680,8 @@ function ZajimavostEditor({
   reload,
   withBusy,
   zeptejSe,
+  jazyk,
+  referenceCs,
   text,
   onUlozeno,
   onZmena,
@@ -1514,6 +1694,8 @@ function ZajimavostEditor({
   reload: () => Promise<void>;
   withBusy: (fn: () => Promise<void>, fail: string) => Promise<void>;
   zeptejSe: (popis: ReactNode, akce: () => Promise<void>) => void;
+  jazyk: Jazyk;
+  referenceCs: string | null;
   text: string;
   onUlozeno: () => void;
   onZmena: (v: string) => void;
@@ -1530,7 +1712,7 @@ function ZajimavostEditor({
   async function ulozit(odeslat: boolean) {
     setSaving(true);
     try {
-      await api.saveSlideText(displayId, slide.n, text);
+      await api.saveSlideText(displayId, slide.n, text, jazyk);
       if (odeslat) await api.refresh(displayId);
       onUlozeno();
       await reload();
@@ -1582,6 +1764,7 @@ function ZajimavostEditor({
             onChange={(e) => onZmena(e.target.value)}
             placeholder="Např. Pralesnička harlekýn je drobná jedovatá žába obývající podrost tropických pralesů…"
           />
+          {!text.trim() && <CeskyOriginal text={referenceCs} />}
           <PodPolem
             hint={`Delší text, ideálně do ${ZAJIMAVOST_LIMIT_SLOV} slov. Delší text se na tabletu ořízne.`}
             pocitadlo={
@@ -1618,7 +1801,7 @@ function ZajimavostEditor({
         <div>
           <span className="label">Fotka zajímavosti</span>
           <p className="text-xs text-fg-muted -mt-1">
-            Jedna fotka, na zařízení vpravo vedle textu. Nová nahraná ji nahradí.
+            Jedna fotka, na zařízení vpravo vedle textu. Nová nahraná ji nahradí. {SDILENE_HLASKA}
           </p>
         </div>
 
@@ -1711,7 +1894,7 @@ function ModelEditor({
       <div>
         <span className="label">Snímky 3D modelu</span>
         <p className="text-xs text-fg-muted -mt-1">
-          Sekvence fotek, jak se model otáčí, tablet mezi nimi přepíná. Vyberte všechny snímky
+          {SDILENE_HLASKA} Sekvence fotek, jak se model otáčí, tablet mezi nimi přepíná. Vyberte všechny snímky
           najednou, seřadí se podle názvu souboru a uloží pod čísly{" "}
           <span className="font-mono">001.png</span>, <span className="font-mono">002.png</span>…
           Po smazání snímku se zbytek sám přečísluje, v sekvenci nezůstane díra.
@@ -1949,6 +2132,7 @@ function VidEditor({
         <span className="label">Video slidu</span>
         <p className="text-xs text-fg-muted -mt-1">
           Jedno velké video na celou obrazovku tabletu. Formát MP4, uloží se hned po nahrání.
+          {" "}{SDILENE_HLASKA}
           Krátké video do galerie info panelu patří naopak k Infopanelu.
         </p>
       </div>
@@ -2017,6 +2201,8 @@ function AiSlideInfo({ onOpenKb }: { onOpenKb: () => void }) {
 
 function KbEditor({
   cekaNaRevizi,
+  jazyk,
+  referenceCs,
   value,
   onChange,
   onPredvyplnit,
@@ -2026,6 +2212,8 @@ function KbEditor({
   ulozenoCas,
 }: {
   cekaNaRevizi: boolean;
+  jazyk: Jazyk;
+  referenceCs: string | null;
   value: string;
   onChange: (v: string) => void;
   onPredvyplnit: (v: string) => void; // šablona: není to zásah kurátora
@@ -2049,11 +2237,14 @@ function KbEditor({
   // Jen do rozepsaného konceptu (na disk se zapíše až po Uložit); existující
   // vyplněný kb.md se nikdy nepřepíše.
   useEffect(() => {
+    // Kostru předvyplňujeme jen v češtině: v překladu by se česká šablona
+    // snadno uložila jako anglický text.
+    if (jazyk !== "cs") return;
     if (template && prazdne && !prefilled.current) {
       prefilled.current = true;
       onPredvyplnit(template);
     }
-  }, [template, prazdne, onPredvyplnit]);
+  }, [template, prazdne, onPredvyplnit, jazyk]);
 
   // Před uložením zkontroluj, jestli v textu nezůstaly kusy šablony. Chatbot
   // by je vydával za fakta o druhu, takže na ně upozorníme, ale uložení
@@ -2123,9 +2314,13 @@ function KbEditor({
         </div>
       </details>
 
+      {jazyk !== "cs" && !value.trim() && <CeskyOriginal text={referenceCs} />}
+
       <div>
         <div className="flex items-center justify-between gap-3">
-          <label className="label">Znalostní báze (kb.md)</label>
+          <label className="label">
+            Znalostní báze ({jazyk === "cs" ? "kb.md" : `kb.${jazyk}.md`})
+          </label>
           <button
             onClick={vlozitSablonu}
             disabled={!template}
