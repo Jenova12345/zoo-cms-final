@@ -2,6 +2,7 @@ import { NAHRAVANI_MAX_MB } from "./limity";
 import type {
   Jazyk,
   Analytika,
+  PrehledUdalosti,
   AnalyticsQuestions,
   AnalyticsSummary,
   AuditEntry,
@@ -214,6 +215,28 @@ export const api = {
     const qs = params.toString();
     const data = await request<{ entries: AuditEntry[] }>(`/api/audit${qs ? `?${qs}` : ""}`);
     return data.entries;
+  },
+
+  // Události z tabletů. Vrací se v obálce jako analytika: dashboard nesmí
+  // spadnout jen proto, že složka s událostmi ještě neexistuje.
+  async udalosti(
+    filtr: { dny?: number; displej?: number } = {},
+  ): Promise<Analytika<PrehledUdalosti>> {
+    const params = new URLSearchParams();
+    if (filtr.dny !== undefined) params.set("dny", String(filtr.dny));
+    if (filtr.displej !== undefined) params.set("displej", String(filtr.displej));
+    const qs = params.toString();
+    try {
+      return {
+        dostupne: true,
+        data: await request<PrehledUdalosti>(`/api/udalosti/prehled${qs ? `?${qs}` : ""}`),
+      };
+    } catch (e) {
+      return {
+        dostupne: false,
+        duvod: e instanceof Error ? e.message : "Události se nepodařilo načíst.",
+      };
+    }
   },
 
   // Souhrn dotazů na chatbota (KPI karty a intenzita heat mapy).

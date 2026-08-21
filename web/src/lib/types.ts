@@ -89,6 +89,40 @@ export interface AuditEntry {
   cil: string;
 }
 
+// --- Události z tabletů (Michalovo Unity) ---
+// Tvar odpovídá server/src/udalosti.ts.
+
+export interface StavDispleje {
+  displej: number;
+  navstevyDnes: number;
+  navstevyTyden: number;
+  navstevyMesic: number;
+  prumernaDobaS: number | null;
+  chatu: number;
+  chyb: number;
+  posledniUdalost: string | null;
+  tichy: boolean;
+}
+
+export interface StavTypuSlidu {
+  typ: string;
+  znamy: boolean;
+  otevreni: number;
+  prumernaDobaS: number | null;
+}
+
+export interface PrehledUdalosti {
+  od: string;
+  do: string;
+  maData: boolean;
+  celkem: { relaci: number; udalosti: number; chatu: number; chyb: number };
+  displeje: StavDispleje[];
+  typySlidu: StavTypuSlidu[];
+  chyby: { cas: string; displej: number; zprava: string }[];
+  ticheDispleje: number[];
+  kvalita: { poskozeneRadky: number; zahozenaTrvani: number; neznameTypy: string[] };
+}
+
 // --- Analytika chatbota (Danielův backend) ---
 // Tvar podle jeho kontraktu; k nám to chodí přes náš proxy endpoint
 // /api/analytics/... (viz server/src/analytics.ts), který zaručí, že chybějící

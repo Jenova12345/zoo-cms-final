@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { Info, Loader2, RefreshCw } from "lucide-react";
-import { api, formatDateTime } from "../lib/api";
+import { Info, Loader2, MonitorCheck, MonitorX, RefreshCw } from "lucide-react";
+import { api, formatDate, formatDateTime } from "../lib/api";
 import { canonicalizeLatin } from "../lib/latin";
-import { NEPRIRAZENO } from "../lib/types";
+import { NEPRIRAZENO, SLIDE_TYP_LABEL, type SlideTyp } from "../lib/types";
 import type {
   Analytika,
   AnalyticsQuestion,
@@ -10,6 +10,7 @@ import type {
   AnalyticsSpecies,
   AnalyticsSummary,
   DisplaySummary,
+  PrehledUdalosti,
 } from "../lib/types";
 
 // Data dashboardu jsou reálná: displeje z našeho /api/displays (meta.json na
@@ -70,6 +71,28 @@ function nejnovejsi(questions: AnalyticsQuestion[], kolik: number): AnalyticsQue
   return [...questions]
     .sort((a, b) => (Date.parse(b.timestamp) || 0) - (Date.parse(a.timestamp) || 0))
     .slice(0, kolik);
+}
+
+// Doba u displeje: vteřiny se čtou blbě, minuty jsou pro kurátora užitečnější.
+function dobaCs(sekundy: number | null): string {
+  if (sekundy === null) return "?";
+  if (sekundy < 60) return `${sekundy} s`;
+  const m = Math.floor(sekundy / 60);
+  const zbytek = sekundy % 60;
+  return zbytek ? `${m} min ${zbytek} s` : `${m} min`;
+}
+
+// Druh u čísla displeje, ať kurátor nemusí dohledávat, který to je.
+function druhDispleje(displays: DisplaySummary[] | null, n: number): string {
+  const d = displays?.find((x) => Number(x.id) === n);
+  return !d || d.druh === NEPRIRAZENO ? "" : d.druh;
+}
+
+// Typ slidu z tabletu: známý přeložíme do názvosloví CMS, neznámý ukážeme
+// tak, jak přišel (Michal formát ještě může změnit).
+function typSlidoLabel(t: { typ: string; znamy: boolean }): string {
+  if (!t.znamy) return t.typ;
+  return SLIDE_TYP_LABEL[t.typ as SlideTyp] ?? t.typ;
 }
 
 // --- Heat mapa nad reálným půdorysem pavilonu ---
@@ -184,7 +207,11 @@ interface MapaData {
 // Párování analytiky na displeje: primárně přes species_latin proti latin_name
 // z našich meta.json (obojí kanonizované stejnými pravidly), display_id jen
 // jako záloha, podle kontraktu může být null.
-function naparuj(displays: DisplaySummary[], summary: AnalyticsSummary | null): MapaData {
+function naparuj(
+  displays: DisplaySummary[],
+  summary: AnalyticsSummary | null,
+  navstevy: Map<number, number> | null,
+): MapaData {
   const podleCisla = new Map(displays.map((d) => [Number(d.id), d]));
 
   const podleLatiny = new Map<string, { count: number; species_name: string }>();
@@ -236,7 +263,9 @@ function naparuj(displays: DisplaySummary[], summary: AnalyticsSummary | null): 
         popis: cmsDruh || zasah?.species_name || NEPRIRAZENO,
         x: bod.x,
         y: bod.y,
-        count: zasah?.count ?? 0,
+        // Když z tabletů chodí návštěvy, barví mapu ony: je to přímé měření
+        // toho, kde se lidi zastavili. Dotazy na chatbota jsou záloha.
+        count: navstevy ? (navstevy.get(bod.displej) ?? 0) : (zasah?.count ?? 0),
       },
     ];
   });
@@ -271,6 +300,7 @@ export default function Dashboard() {
   const [summary, setSummary] = useState<Analytika<AnalyticsSummary> | null>(null);
   const [posledni, setPosledni] = useState<Analytika<AnalyticsQuestions> | null>(null);
   const [nezvladnute, setNezvladnute] = useState<Analytika<AnalyticsQuestions> | null>(null);
+  const [udalosti, setUdalosti] = useState<Analytika<PrehledUdalosti> | null>(null);
   const [nacitani, setNacitani] = useState(true);
   const [hover, setHover] = useState<HeatNode | null>(null);
 
@@ -291,6 +321,7 @@ export default function Dashboard() {
           );
         },
       ),
+      api.udalosti({ dny: 30 }).then(setUdalosti),
       api.analyticsSummary().then(setSummary),
       api.analyticsQuestions({ limit: LIMIT_POSLEDNI }).then(setPosledni),
       api.analyticsQuestions({ answered: false, limit: LIMIT_NEZVLADNUTE }).then(setNezvladnute),
@@ -303,7 +334,27 @@ export default function Dashboard() {
   }, []);
 
   const summaryData = summary?.dostupne ? summary.data : null;
-  const mapa = useMemo(() => naparuj(displays ?? [], summaryData), [displays, summaryData]);
+  const udalostiData = udalosti?.dostupne ? udalosti.data : null;
+  const maUdalosti = !!udalostiData?.maData;
+
+  // Návštěvy z tabletů barví heat mapu, když nějaké jsou.
+  const navstevyProMapu = useMemo(() => {
+    if (!maUdalosti || !udalostiData) return null;
+    return new Map(udalostiData.displeje.map((d) => [d.displej, d.navstevyMesic]));
+  }, [maUdalosti, udalostiData]);
+
+  const mapa = useMemo(
+    () => naparuj(displays ?? [], summaryData, navstevyProMapu),
+    [displays, summaryData, navstevyProMapu],
+  );
+
+  // Tiché displeje: nejdůležitější věc na dashboardu, znamená spadlý tablet.
+  const tiche = udalostiData
+    ? udalostiData.displeje.filter((d) => d.tichy).sort((a, b) => a.displej - b.displej)
+    : [];
+  const navstivene = udalostiData
+    ? udalostiData.displeje.filter((d) => d.navstevyMesic > 0)
+    : [];
 
   const obdobi = summaryData?.since ? formatDateTime(summaryData.since) : null;
   const prazdnaAnalytika = summaryData !== null && summaryData.total_questions === 0;
@@ -339,6 +390,222 @@ export default function Dashboard() {
         </button>
       </div>
 
+      {/* Události z tabletů. Nejdřív tiché displeje: spadlý tablet je to
+          jediné, co kurátor musí řešit hned. */}
+      <section className="space-y-5">
+        <div className="flex flex-wrap items-baseline justify-between gap-3 border-b border-line pb-3">
+          <h2 className="font-display text-xl font-bold tracking-tight text-fg">
+            Provoz tabletů u expozice
+          </h2>
+          {udalostiData?.maData && (
+            <span className="text-xs text-fg-muted tnum">
+              {udalostiData.od} až {udalostiData.do}
+            </span>
+          )}
+        </div>
+
+        {udalosti === null ? (
+          <Cekam text="Načítám události z tabletů…" />
+        ) : !udalosti.dostupne ? (
+          <Hlaska text="Události z tabletů se nepodařilo načíst." detail={udalosti.duvod} />
+        ) : !udalostiData?.maData ? (
+          <Hlaska
+            text="Z tabletů zatím nepřišla žádná událost."
+            detail={`Čte se ${udalostiData?.od} až ${udalostiData?.do} ze složky udalosti/unity. Až tablety začnou zapisovat, objeví se tu návštěvy, doba u displeje i chyby.`}
+          />
+        ) : (
+          <>
+            {/* Tiché displeje */}
+            {tiche.length === 0 ? (
+              <div className="flex items-start gap-2.5 rounded-lg border border-accent/30 bg-accent-soft px-4 py-3">
+                <MonitorCheck className="h-5 w-5 shrink-0 text-accent" strokeWidth={1.75} />
+                <div className="text-sm text-fg-muted">
+                  <span className="font-semibold text-fg">Všechny tablety se hlásí.</span> Za
+                  posledních 24 hodin přišla událost z každého displeje.
+                </div>
+              </div>
+            ) : (
+              <div className="rounded-lg border border-danger/40 bg-danger-soft px-4 py-3">
+                <div className="flex items-start gap-2.5">
+                  <MonitorX className="h-5 w-5 shrink-0 text-danger" strokeWidth={1.75} />
+                  <div className="text-sm text-fg-muted">
+                    <span className="font-semibold text-fg">
+                      {tiche.length === 1
+                        ? "1 displej se 24 hodin neozval."
+                        : `${tiche.length} displejů se 24 hodin neozvalo.`}
+                    </span>{" "}
+                    Nejspíš spadlý nebo odpojený tablet, stojí za kontrolu na místě.
+                  </div>
+                </div>
+                <div className="mt-2 flex flex-wrap gap-1.5 pl-8">
+                  {tiche.map((d) => (
+                    <span
+                      key={d.displej}
+                      className="chip bg-surface text-fg tnum ring-1 ring-danger/30"
+                      title={
+                        d.posledniUdalost
+                          ? `Poslední událost: ${formatDateTime(d.posledniUdalost)}`
+                          : "Zatím nikdy nic neposlal"
+                      }
+                    >
+                      {d.displej}
+                      <span className="text-fg-muted">
+                        {d.posledniUdalost ? formatDate(d.posledniUdalost) : "nikdy"}
+                      </span>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Souhrn období */}
+            <div className="grid grid-cols-2 divide-x divide-line border-y border-line sm:grid-cols-4">
+              {[
+                { popis: "Návštěv (30 dní)", hodnota: cisloCs(udalostiData.celkem.relaci) },
+                { popis: "Událostí", hodnota: cisloCs(udalostiData.celkem.udalosti) },
+                { popis: "Otevření chatbota", hodnota: cisloCs(udalostiData.celkem.chatu) },
+                { popis: "Chyb z tabletů", hodnota: cisloCs(udalostiData.celkem.chyb) },
+              ].map((k) => (
+                <div key={k.popis} className="px-5 py-4 first:pl-0">
+                  <div className="font-display text-2xl font-bold text-fg tnum">{k.hodnota}</div>
+                  <div className="text-xs text-fg-muted mt-0.5">{k.popis}</div>
+                </div>
+              ))}
+            </div>
+
+            <div className="grid grid-cols-1 gap-10 lg:grid-cols-2">
+              {/* Návštěvy podle displeje */}
+              <div>
+                <h3 className="kicker mb-3">Návštěvy podle displeje</h3>
+                {navstivene.length === 0 ? (
+                  <Hlaska text="Zatím žádná návštěva." />
+                ) : (
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-left kicker">
+                        <th className="pb-2 font-semibold">Displej</th>
+                        <th className="pb-2 font-semibold text-right">Dnes</th>
+                        <th className="pb-2 font-semibold text-right">Týden</th>
+                        <th className="pb-2 font-semibold text-right">Měsíc</th>
+                        <th className="pb-2 font-semibold text-right">Průměr u displeje</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {navstivene.map((d) => (
+                        <tr key={d.displej} className="border-t border-lineSoft">
+                          <td className="py-2 pr-3">
+                            <span className="font-semibold text-fg tnum">{d.displej}</span>{" "}
+                            <span className="text-fg-muted">{druhDispleje(displays, d.displej)}</span>
+                          </td>
+                          <td className="py-2 text-right tnum text-fg-muted">{d.navstevyDnes}</td>
+                          <td className="py-2 text-right tnum text-fg-muted">{d.navstevyTyden}</td>
+                          <td className="py-2 text-right tnum font-semibold text-fg">
+                            {d.navstevyMesic}
+                          </td>
+                          <td className="py-2 text-right tnum text-fg-muted">
+                            {dobaCs(d.prumernaDobaS)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+
+              {/* Typy slidů */}
+              <div className="lg:border-l lg:border-line lg:pl-10">
+                <h3 className="kicker mb-3">Co lidi otevírají</h3>
+                {udalostiData.typySlidu.length === 0 ? (
+                  <Hlaska text="Zatím nikdo neotevřel žádný slide." />
+                ) : (
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-left kicker">
+                        <th className="pb-2 font-semibold">Typ slidu</th>
+                        <th className="pb-2 font-semibold text-right">Otevření</th>
+                        <th className="pb-2 font-semibold text-right">Průměrně u něj</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {udalostiData.typySlidu.map((t) => (
+                        <tr key={t.typ} className="border-t border-lineSoft">
+                          <td className="py-2 pr-3 text-fg">
+                            {typSlidoLabel(t)}
+                            {!t.znamy && (
+                              <span
+                                className="ml-2 text-[10px] font-semibold uppercase text-amber-deep"
+                                title="Tenhle typ CMS nezná, ukazuje se tak, jak přišel z tabletu"
+                              >
+                                neznámý typ
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-2 text-right tnum font-semibold text-fg">
+                            {cisloCs(t.otevreni)}
+                          </td>
+                          <td className="py-2 text-right tnum text-fg-muted">
+                            {dobaCs(t.prumernaDobaS)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </div>
+
+            {/* Chyby z tabletů */}
+            <div>
+              <h3 className="kicker mb-3">Chyby z tabletů</h3>
+              {udalostiData.chyby.length === 0 ? (
+                <Hlaska text="Žádná chyba, tablety nic nehlásily." />
+              ) : (
+                <table className="w-full text-sm">
+                  <tbody>
+                    {udalostiData.chyby.map((ch, i) => (
+                      <tr key={`${ch.cas}-${i}`} className="border-t border-lineSoft">
+                        <td className="py-2 pr-4 whitespace-nowrap text-fg-muted tnum">
+                          {formatDateTime(ch.cas)}
+                        </td>
+                        <td className="py-2 pr-4 whitespace-nowrap font-semibold text-fg tnum">
+                          Displej {ch.displej}
+                        </td>
+                        <td className="py-2 text-danger">{ch.zprava}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+
+            {/* Co se z dat vyhodilo. Bez téhle poznámky by tichá chyba
+                v datech vypadala jako pravda. */}
+            {(udalostiData.kvalita.zahozenaTrvani > 0 ||
+              udalostiData.kvalita.poskozeneRadky > 0 ||
+              udalostiData.kvalita.neznameTypy.length > 0) && (
+              <p className="text-xs text-fg-muted">
+                <span className="font-semibold text-fg">Poznámka k datům:</span>{" "}
+                {udalostiData.kvalita.zahozenaTrvani > 0 && (
+                  <>
+                    {udalostiData.kvalita.zahozenaTrvani}× se do průměrů nezapočítalo trvání delší
+                    než celá relace (zbytek stopek z minulé relace).{" "}
+                  </>
+                )}
+                {udalostiData.kvalita.poskozeneRadky > 0 && (
+                  <>{udalostiData.kvalita.poskozeneRadky}× se přeskočil poškozený řádek. </>
+                )}
+                {udalostiData.kvalita.neznameTypy.length > 0 && (
+                  <>
+                    Neznámé typy slidů z tabletu:{" "}
+                    {udalostiData.kvalita.neznameTypy.join(", ")}.
+                  </>
+                )}
+              </p>
+            )}
+          </>
+        )}
+      </section>
+
       {/* KPI ze summary; co z dat nejde spočítat, tady není */}
       {summaryData && !prazdnaAnalytika && (
         <div className="grid grid-cols-3 divide-x divide-line border-y border-line">
@@ -369,7 +636,9 @@ export default function Dashboard() {
       <section className="space-y-5">
         <div className="flex items-end justify-between gap-4">
           <div>
-            <div className="kicker">Mapa dotazů na AI</div>
+            <div className="kicker">
+              {navstevyProMapu ? "Kde se lidi zastavují" : "Mapa dotazů na AI"}
+            </div>
             <h2 className="font-display text-lg font-semibold text-fg mt-1.5">
               Půdorys pavilonu
             </h2>
@@ -502,7 +771,7 @@ export default function Dashboard() {
             ) : (
               <Hlaska
                 text={NEPRIPOJENO}
-                detail="Body ukazují displeje na půdorysu, intenzita se dokreslí, až začne chatbot vracet dotazy."
+                detail="Body ukazují displeje na půdorysu, intenzita se dokreslí, až začnou chodit návštěvy z tabletů nebo dotazy na chatbota."
               />
             )}
 

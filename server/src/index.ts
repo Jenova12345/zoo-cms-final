@@ -35,6 +35,7 @@ import {
 } from "./displays.js";
 import { KB_TEMPLATE } from "./kbTemplate.js";
 import { LIMIT_MAX, ziskejQuestions, ziskejSummary } from "./analytics.js";
+import { prehled as prehledUdalosti } from "./udalosti.js";
 import {
   SESSION_COOKIE,
   SESSION_TTL_S,
@@ -654,6 +655,39 @@ app.get<{ Querystring: { since?: string } }>("/api/analytics/summary", async (re
   if (neplatneSince(since)) return reply.code(400).send({ chyba: "Neplatný parametr since." });
   return ziskejSummary(since || undefined);
 });
+
+// --- Události z tabletů (zapisuje Michalovo Unity, my jen čteme) ---
+//
+// `dny` je okno zpět (výchozí 30), `displej` volitelný filtr. Soubory se
+// nečtou pokaždé znovu, modul si drží výsledky v paměti a přepočítá jen den,
+// jehož soubor se změnil.
+app.get<{ Querystring: { dny?: string; displej?: string } }>(
+  "/api/udalosti/prehled",
+  async (req, reply) => {
+    const { dny, displej } = req.query;
+
+    let oknoDnu: number | undefined;
+    if (dny !== undefined && dny !== "") {
+      oknoDnu = Number(dny);
+      if (!Number.isFinite(oknoDnu) || oknoDnu < 1) {
+        return reply.code(400).send({ chyba: "Neplatný parametr dny." });
+      }
+    }
+    let cisloDispleje: number | undefined;
+    if (displej !== undefined && displej !== "") {
+      cisloDispleje = Number(displej);
+      if (!Number.isInteger(cisloDispleje) || cisloDispleje < 1) {
+        return reply.code(400).send({ chyba: "Neplatný parametr displej." });
+      }
+    }
+
+    // Seznam displejů z CMS: podle něj se pozná i displej, ze kterého
+    // nepřišla ani jedna událost (tichý tablet).
+    const vsechnyDispleje = (await listDisplays()).map((d) => Number(d.id));
+
+    return prehledUdalosti({ dny: oknoDnu, displej: cisloDispleje, vsechnyDispleje });
+  },
+);
 
 // --- Audit ---
 // `limit` a `before` (ISO čas) umožní donačítat starší záznamy po stránkách;

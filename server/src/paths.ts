@@ -13,6 +13,10 @@ export const DATA_ROOT = process.env.DATA_ROOT
 export const DISPLAYS_DIR = path.join(DATA_ROOT, "displeje");
 export const AUDIT_FILE = path.join(DATA_ROOT, "audit.jsonl");
 
+// Události z tabletů (zapisuje Michalovo Unity): jeden soubor na den,
+// jeden JSON na řádek, append only.
+export const UDALOSTI_DIR = path.join(DATA_ROOT, "udalosti", "unity");
+
 // Buildnutý web (vzniká přes `npm run build`). Servíruje ho stejný proces.
 export const WEB_DIST = path.join(repoRoot, "web", "dist");
 
