@@ -21,11 +21,12 @@ Uživatelskou část najdete v [prirucka-kurator.md](prirucka-kurator.md).
 8. [Audit log](#8-audit-log)
 9. [Reingest signál pro chatbota](#9-reingest-signál-pro-chatbota)
 10. [Analytika chatbota v dashboardu](#10-analytika-chatbota-v-dashboardu)
-11. [API a ochrana endpointů](#11-api-a-ochrana-endpointů)
-12. [Údržbové skripty](#12-údržbové-skripty)
-13. [Zálohování a obnova](#13-zálohování-a-obnova)
-14. [Řešení potíží](#14-řešení-potíží)
-15. [Známá omezení](#15-známá-omezení)
+11. [Displej u deštného pralesa](#11-displej-u-deštného-pralesa)
+12. [API a ochrana endpointů](#12-api-a-ochrana-endpointů)
+13. [Údržbové skripty](#13-údržbové-skripty)
+14. [Zálohování a obnova](#14-zálohování-a-obnova)
+15. [Řešení potíží](#15-řešení-potíží)
+16. [Známá omezení](#16-známá-omezení)
 
 ---
 
@@ -96,6 +97,9 @@ Všechny se čtou při startu procesu; konfigurační soubor systém nemá.
 | `REINGEST_TOKEN` | prázdný | Posílá se v hlavičce `X-Reingest-Token`. |
 | `ANALYTICS_URL` | `http://127.0.0.1:8000` | Adresa analytického backendu chatbota (Daniel). **Tohle je ta jedna proměnná, která se nastaví, až bude adresa známá.** Koncové lomítko se ořeže. |
 | `ANALYTICS_TIMEOUT_MS` | `4000` | Kolik milisekund se čeká na odpověď analytiky. Neplatná nebo nekladná hodnota = výchozí. |
+| `POCASI_LAT` | `49.8265` | Zeměpisná šířka pro venkovní teplotu (ZOO Ostrava), viz [kapitola 11](#11-displej-u-deštného-pralesa). Neplatná hodnota = výchozí + varování v logu. |
+| `POCASI_LON` | `18.3242` | Zeměpisná délka pro venkovní teplotu. |
+| `POCASI_TIMEOUT_MS` | `5000` | Kolik milisekund se čeká na open-meteo.com. Stahuje se na pozadí, takže timeout nezdrží odpověď tabletům. |
 
 Příklad nasazení na síť s daty mimo repozitář:
 
@@ -203,6 +207,7 @@ Vše je pod `DATA_ROOT` (výchozí `<repo>/data`):
           text.txt              "Popis: <dlouhý odstavec>"
           foto-*.png            jedna fotka (na zařízení vpravo)
   audit.jsonl                   append-only audit log
+  prales.json                   nastavení displeje u deštného pralesa (kapitola 11)
   users.json                    účty kurátorů (bcrypt hashe), práva 0600
   session.key                   klíč pro podpis session cookie, práva 0600
 ```
@@ -610,7 +615,149 @@ označený jako přehled z CMS a rozlišuje jen „obsah přiřazen" / „nepři
 
 ---
 
-## 11. API a ochrana endpointů
+## 11. Displej u deštného pralesa
+
+Jeden displej v pavilonu neukazuje obsah druhu ze složek `data/displeje`, ale
+**prostředí pavilonu a odpočet do bouřky z videomappingu**. Je to samostatná
+věc: vlastní modul (`server/src/prales.ts`), vlastní soubor
+(`<DATA_ROOT>/prales.json`), vlastní endpoint a vlastní stránka v CMS.
+**Struktury `data/displeje` ani ostatních displejů se nijak netýká.**
+
+### Endpoint pro Unity
+
+```
+GET /api/prales        veřejný, bez přihlášení
+```
+
+```json
+{
+  "countdown_seconds": 724,
+  "temperature_internal": 20,
+  "humidity_text": "80-100%",
+  "temperature_external": 23,
+  "current_date": "12.8.26",
+  "alert_flashing_lights": true,
+  "alert_water_effects": false
+}
+```
+
+Veřejný je proto, že ho čtou tablety u expozice stejně jako
+`GET /api/displays/:id` (viz `VEREJNE_API` v `server/src/index.ts`). Unity si ho
+tahá **každých pět sekund z 31 tabletů**, tedy zhruba šest požadavků za sekundu
+nepřetržitě.
+
+**Odpověď proto nikdy nesahá na disk ani na síť.** Nastavení i venkovní teplota
+jsou v paměti procesu; požadavek je jen výpočet odpočtu a poskládání objektu
+(naměřeno pod 1 ms). Z disku se čte při startu a při změně souboru, z internetu
+nejvýš jednou za deset minut na pozadí.
+
+| Pole | Odkud se bere |
+|---|---|
+| `countdown_seconds` | dopočítává se z intervalu, viz níž; `0` = odpočet vypnutý |
+| `temperature_internal` | nastavuje kurátor v CMS |
+| `humidity_text` | nastavuje kurátor v CMS, **text** (smí být rozsah „80-100%") |
+| `temperature_external` | open-meteo.com, viz níž |
+| `current_date` | systémový čas serveru, formát `D.M.RR` bez vedoucích nul |
+| `alert_flashing_lights` | přepínač v CMS |
+| `alert_water_effects` | přepínač v CMS |
+
+### Odpočet do bouřky
+
+Kurátor zadá **interval opakování v minutách**; server z něj počítá, kolik
+sekund zbývá do další bouřky, a cyklus se pořád opakuje.
+
+Odpočet je odvozený od **půlnoci** (lokální čas serveru), ne od startu procesu:
+
+```
+zbývá = interval − ((teď − dnešní půlnoc) mod interval)
+```
+
+Při intervalu 15 min padnou bouřky na 0:15, 0:30, 0:45, 1:00 a tak dál. To je
+podstatné pro provoz: **po restartu serveru odpočet naváže tam, kde má být**, a
+nerozejde se s videomappingem. Kdyby se počítalo od startu procesu, každý
+restart by rastr posunul.
+
+Zaokrouhluje se **nahoru**, takže zapnutý odpočet nikdy nepošle `0` (nejmenší
+hodnota je 1). Nula je vyhrazená pro „kurátor odpočet vypnul".
+
+Interval, který se do dne nevejde beze zbytku (například 7 min), má poslední
+cyklus před půlnocí kratší. Pavilon je v tu dobu zavřený.
+
+### Venkovní teplota
+
+Zdroj je **open-meteo.com**, veřejné API bez klíče a bez registrace:
+
+```
+GET https://api.open-meteo.com/v1/forecast?latitude=<lat>&longitude=<lon>&current=temperature_2m
+```
+
+Souřadnice jsou v konfiguraci (`POCASI_LAT`, `POCASI_LON`, výchozí ZOO
+Ostrava), ne natvrdo v kódu. Timeout přes `POCASI_TIMEOUT_MS`.
+
+- Stahuje se **časovačem na pozadí, nejvýš jednou za deset minut** (interval je
+  konstanta, schválně se nedá zkrátit konfigurací).
+- Hodnota se zaokrouhluje na celé stupně, protože displej ukazuje celé stupně.
+- **Když stažení selže, použije se poslední známá hodnota z paměti.**
+- Když žádná není (třeba po restartu serveru bez internetu), použije se
+  **záloha, kterou nastavil kurátor v CMS**.
+- Selhání se nikdy nevyhazuje jako výjimka a nikdy nezdrží odpověď tabletu.
+  Cizí služba nesmí shodit ani zpomalit náš server, stejný přístup jako
+  u analytiky chatbota (kapitola 10).
+
+Poslední známá hodnota **nevyprší**; displej ji ukazuje dál, dokud se nepodaří
+stáhnout novou. V CMS se ale po hodině označí jako zastaralá, ať je poznat, že
+internet delší dobu nejede.
+
+### Nastavení v CMS
+
+Stránka **Deštný prales** v levém menu (`/prales`). Nastavuje se vnitřní
+teplota, vlhkost, záložní venkovní teplota, interval bouřky včetně vypnutí a
+dva přepínače varování. U každého pole je napsané, kde se na displeji projeví a
+jak se jmenuje v odpovědi endpointu.
+
+Vpravo je **náhled toho, co endpoint posílá teď**, obnovovaný každých pět
+sekund (stejný rytmus jako Unity), včetně toho, jestli venkovní teplota přišla
+z internetu, nebo je to záloha, a kdy naposledy. Náhled ukazuje **uložený**
+stav, ne rozepsané změny ve formuláři.
+
+Změny se zapisují do audit logu jako všechno ostatní, akce
+`úprava nastavení deštného pralesa`, cíl vyjmenovává, co se změnilo z čeho na
+co. Uložení beze změny se do logu nepíše.
+
+### `prales.json`
+
+```json
+{
+  "teplotaVnitrni": 20,
+  "vlhkost": "80-100%",
+  "teplotaVenkovniZaloha": 20,
+  "bourkaZapnuta": true,
+  "bourkaIntervalMin": 15,
+  "varovaniBlikaniSvetel": false,
+  "varovaniVodniEfekty": false
+}
+```
+
+Zapisuje se atomicky (tmp + rename) jako `meta.json`. Soubor se dá editovat
+i ručně: server sleduje složku `DATA_ROOT` a změnu převezme do sekundy, bez
+restartu. Ruční editace ale **neprojde přes audit log** ani přes validaci
+formuláře, takže se hodí spíš pro ladění.
+
+Tolerance k rozbitému souboru:
+
+- **Chybí** (první spuštění): použijí se výchozí hodnoty z tabulky výše.
+- **Není platný JSON za běhu**: server **nechá to, co má v paměti**, a zapíše
+  varování do logu. Displej jede dál na posledních dobrých hodnotách.
+- **Jednotlivá hodnota je nesmysl** (text místo čísla, interval 0): spadne na
+  výchozí, ostatní se převezmou. Přes CMS se takový vstup neuloží, formulář
+  i server ho odmítnou hláškou.
+
+Meze validace: teplota −50 až 60 °C, vlhkost nejvýš 40 znaků na jednom řádku,
+interval celé číslo 1 až 1440 minut.
+
+---
+
+## 12. API a ochrana endpointů
 
 Hook `onRequest` se vztahuje **jen na cesty začínající `/api`**. Ve výchozím
 stavu je vše zamčené; veřejné je pouze to, co je vyjmenované v množině
@@ -621,6 +768,7 @@ automaticky, dokud ho někdo vědomě nepřidá do seznamu.
 
 - `POST /api/login`, `POST /api/logout`, `GET /api/me`
 - `GET /api/displays/:id`, data pro náhled tabletu u expozice
+- `GET /api/prales`, data pro displej u deštného pralesa, viz [kapitola 11](#11-displej-u-deštného-pralesa)
 - `/data/displeje/...` (statické soubory) a SPA včetně `/tablet/:id`, hookem
   neprocházejí vůbec
 
@@ -645,6 +793,8 @@ automaticky, dokud ho někdo vědomě nepřidá do seznamu.
 | GET | `/api/kb-template` | výchozí šablona `kb.md` |
 | GET | `/api/analytics/questions` | dotazy návštěvníků z chatbota, `since`, `limit`, `answered`, viz [kapitola 10](#10-analytika-chatbota-v-dashboardu) |
 | GET | `/api/analytics/summary` | souhrn dotazů z chatbota, `since` |
+| GET | `/api/prales/nastaveni` | nastavení deštného pralesa + náhled odpovědi + stav stahování venkovní teploty |
+| PUT | `/api/prales/nastaveni` | uložení nastavení deštného pralesa, vrací stejný tvar jako GET |
 
 Chyby se vrací jako JSON `{"chyba": "..."}`; frontend tuto hlášku zobrazuje
 uživateli. Na `401` klient smaže lokální stav a přesměruje na `/login` (kromě
@@ -661,7 +811,7 @@ adresy typu `/displeje/12`). Nenalezené cesty pod `/api` a `/data` vrací
 
 ---
 
-## 12. Údržbové skripty
+## 13. Údržbové skripty
 
 Spouštějí se z kořene repozitáře a **respektují `DATA_ROOT`**.
 
@@ -680,7 +830,7 @@ rm -rf data/displeje data/audit.jsonl && npm run seed
 
 ---
 
-## 13. Zálohování a obnova
+## 14. Zálohování a obnova
 
 Celý stav systému je **jedna složka**, `DATA_ROOT`. Záloha je tedy prosté
 zkopírování:
@@ -701,7 +851,7 @@ všichni odhlásí.
 
 ---
 
-## 14. Řešení potíží
+## 15. Řešení potíží
 
 **`Web build nenalezen (…/web/dist). Spusť 'npm run build'.`**
 Chybí buildnutý web. API běží, ale `/` vrátí 404. Řešení: `npm run build`
@@ -753,7 +903,7 @@ Chybí nebo je poškozený `meta.json`, případně složka nemá čistě číse
 
 ---
 
-## 15. Známá omezení
+## 16. Známá omezení
 
 Stav k srpnu 2026, otevřené body jsou i v `handoff.md`.
 

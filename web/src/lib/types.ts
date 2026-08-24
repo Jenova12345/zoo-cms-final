@@ -360,3 +360,52 @@ export const SLIDE_TYP_POPIS: Record<SlideTyp, string> = {
   vid: "Velké video na celou obrazovku.",
   gal: "Delší text o druhu s jednou fotkou.",
 };
+
+// --- Displej u deštného pralesa ---
+// Samostatný displej: místo obsahu druhu ukazuje prostředí pavilonu a odpočet
+// do bouřky z videomappingu. Zrcadlí server/src/prales.ts.
+
+export interface PralesNastaveni {
+  teplotaVnitrni: number;
+  vlhkost: string;
+  teplotaVenkovniZaloha: number;
+  bourkaZapnuta: boolean;
+  bourkaIntervalMin: number;
+  varovaniBlikaniSvetel: boolean;
+  varovaniVodniEfekty: boolean;
+}
+
+// Plochý JSON pro Unity. Anglické názvy polí jsou z kontraktu, ne z rozmaru.
+export interface PralesPayload {
+  countdown_seconds: number;
+  temperature_internal: number;
+  humidity_text: string;
+  temperature_external: number;
+  current_date: string;
+  alert_flashing_lights: boolean;
+  alert_water_effects: boolean;
+}
+
+export interface PralesPocasi {
+  zdroj: "internet" | "zaloha";
+  teplota: number | null; // poslední stažená; null = zatím žádná
+  ziskano: string | null; // ISO čas posledního úspěšného stažení
+  posledniPokus: string | null;
+  chyba: string | null;
+  zastarale: boolean; // stažená hodnota je starší než hodina
+  souradnice: { lat: number; lon: number };
+}
+
+export interface PralesStav {
+  nastaveni: PralesNastaveni;
+  nahled: PralesPayload; // přesně to, co teď dostávají tablety
+  pocasi: PralesPocasi;
+}
+
+// Meze validace ze serveru (server/src/prales.ts). Tady jen pro hlášky
+// a atributy polí; zdroj pravdy je server, který vstup ověřuje znovu.
+export const PRALES_TEPLOTA_MIN = -50;
+export const PRALES_TEPLOTA_MAX = 60;
+export const PRALES_VLHKOST_MAX_ZNAKU = 40;
+export const PRALES_INTERVAL_MIN = 1;
+export const PRALES_INTERVAL_MAX = 1440;

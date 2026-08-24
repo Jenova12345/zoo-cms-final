@@ -37,6 +37,15 @@ import { KB_TEMPLATE } from "./kbTemplate.js";
 import { LIMIT_MAX, ziskejQuestions, ziskejSummary } from "./analytics.js";
 import { prehled as prehledUdalosti } from "./udalosti.js";
 import {
+  popisZmen,
+  sestavPayload,
+  spustPrales,
+  ulozNastaveni,
+  validujNastaveni,
+  ziskejNastaveni,
+} from "./prales.js";
+import { LAT, LON, ZASTARALE_PO_MS, spustPocasi, stavPocasi } from "./pocasi.js";
+import {
   SESSION_COOKIE,
   SESSION_TTL_S,
   nactiNeboZalozKlic,
@@ -136,6 +145,7 @@ const VEREJNE_API = new Set([
   "POST /api/logout",
   "GET /api/me",
   "GET /api/displays/:id", // data pro /tablet/:id
+  "GET /api/prales", // data pro displej u deštného pralesa (Unity, každých 5 s)
 ]);
 
 // Míří požadavek do /api namespace? Rozhodujeme podle SKUTEČNĚ napárované
@@ -609,6 +619,73 @@ app.post<{ Params: { id: string } }>("/api/displays/:id/refresh", async (req, re
   return { ok: true };
 });
 
+// --- Displej u deštného pralesa ---
+//
+// Samostatná věc pro jeden displej: neukazuje obsah druhu, ale prostředí
+// pavilonu a odpočet do bouřky z videomappingu. Se strukturou data/displeje
+// nemá nic společného, nastavení leží v data/prales.json.
+//
+// GET /api/prales je VEŘEJNÝ (viz VEREJNE_API), stejně jako čtení obsahu pro
+// tablet u expozice: Unity si ho tahá každých pět sekund z 31 tabletů a
+// přihlašovat se nemá jak. Odpověď je proto celá z paměti, bez čtení z disku
+// a bez čekání na síť, viz prales.ts a pocasi.ts.
+
+app.get("/api/prales", async () => {
+  return sestavPayload().payload;
+});
+
+// Podklad pro nastavovací stránku v CMS: uložené hodnoty, přesně to, co
+// zrovna dostávají tablety, a stav stahování venkovní teploty (odkud je a
+// kdy přišla). Stejný tvar vrací i PUT, ať si stránka po uložení jen
+// vymění stav a nemusí se ptát podruhé.
+function stavPraleseProCms() {
+  const { payload, zdrojTeploty } = sestavPayload();
+  const p = stavPocasi();
+  const stariMs = p.ziskano ? Date.now() - Date.parse(p.ziskano) : null;
+  return {
+    nastaveni: ziskejNastaveni(),
+    nahled: payload,
+    pocasi: {
+      zdroj: zdrojTeploty, // "internet" = stažená hodnota, "zaloha" = od kurátora
+      teplota: p.teplota,
+      ziskano: p.ziskano,
+      posledniPokus: p.posledniPokus,
+      chyba: p.chyba,
+      // Hodnota se používá dál (podle zadání), tohle je jen upozornění pro
+      // kurátora, že internet delší dobu nejede.
+      zastarale: stariMs !== null && stariMs > ZASTARALE_PO_MS,
+      souradnice: { lat: LAT, lon: LON },
+    },
+  };
+}
+
+// Chráněné přihlášením jako ostatní /api.
+app.get("/api/prales/nastaveni", async () => {
+  return stavPraleseProCms();
+});
+
+app.put<{ Body: unknown }>("/api/prales/nastaveni", async (req, reply) => {
+  const res = validujNastaveni(req.body);
+  if (!res.ok) return reply.code(400).send({ chyba: res.chyba });
+
+  const stare = ziskejNastaveni();
+  const zmeny = popisZmen(stare, res.nastaveni);
+  await ulozNastaveni(res.nastaveni);
+
+  // Uložení beze změny (kurátor otevřel stránku a klikl na Uložit) se do
+  // auditu nepíše, jen by ho zaplevelilo. Skutečné změny ano, i s tím,
+  // co se změnilo z čeho na co.
+  if (zmeny.length > 0) {
+    await appendAudit({
+      uzivatel: currentUser(req),
+      akce: "úprava nastavení deštného pralesa",
+      cil: zmeny.join(", "),
+    });
+  }
+
+  return { ok: true, ...stavPraleseProCms() };
+});
+
 // --- Analytika chatbota (Danielův backend) ---
 // Frontend cizí službu neoslovuje, jde to přes nás: jedno místo na adresu,
 // timeout, očištění odpovědi a hlášku, když backend ještě neběží. Endpointy
@@ -754,6 +831,11 @@ try {
       `Uklizeny dočasné zbytky po předchozím běhu (${uklizeno.length}): ${uklizeno.slice(0, 5).join(", ")}`,
     );
   }
+  // Displej u deštného pralesa: nastavení do paměti a start stahování
+  // venkovní teploty na pozadí. První stažení se nečeká, aby start serveru
+  // nezdržel výpadek internetu.
+  await spustPrales(app.log);
+  spustPocasi(app.log);
   if ((await pocetUzivatelu()) === 0) {
     app.log.warn(
       "Žádné účty v data/users.json, do CMS se nedá přihlásit. " +

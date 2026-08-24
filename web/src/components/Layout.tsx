@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
-import { LayoutDashboard, MonitorPlay, ScrollText, LogOut } from "lucide-react";
+import { LayoutDashboard, MonitorPlay, ScrollText, TreePalm, LogOut } from "lucide-react";
 import { useState } from "react";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
@@ -10,6 +10,9 @@ import Confirm from "./Confirm";
 const NAV = [
   { to: "/dashboard", label: "Přehled", icon: LayoutDashboard },
   { to: "/displeje", label: "Displeje", icon: MonitorPlay },
+  // Samostatný displej u deštného pralesa: prostředí pavilonu a odpočet do
+  // bouřky, ne obsah druhu. Proto vlastní položka, ne řádek v Displejích.
+  { to: "/prales", label: "Deštný prales", icon: TreePalm },
   { to: "/audit", label: "Audit log", icon: ScrollText },
 ];
 

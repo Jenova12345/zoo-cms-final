@@ -8,6 +8,8 @@ import type {
   AuditEntry,
   DisplayDetail,
   DisplaySummary,
+  PralesNastaveni,
+  PralesStav,
   SlideTyp,
 } from "./types";
 
@@ -237,6 +239,22 @@ export const api = {
         duvod: e instanceof Error ? e.message : "Události se nepodařilo načíst.",
       };
     }
+  },
+
+  // Displej u deštného pralesa: uložené nastavení, náhled toho, co zrovna
+  // dostávají tablety, a stav stahování venkovní teploty.
+  async prales(): Promise<PralesStav> {
+    return request<PralesStav>("/api/prales/nastaveni");
+  },
+
+  // Uloží nastavení a vrátí rovnou nový stav (stejný tvar jako `prales()`),
+  // takže se stránka nemusí ptát podruhé.
+  async savePrales(nastaveni: PralesNastaveni): Promise<PralesStav> {
+    return request<PralesStav>("/api/prales/nastaveni", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(nastaveni),
+    });
   },
 
   // Souhrn dotazů na chatbota (KPI karty a intenzita heat mapy).

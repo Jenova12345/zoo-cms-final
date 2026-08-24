@@ -22,8 +22,9 @@ a podklady pro AI průvodce (chatbota).
 9. [Znalostní báze pro chatbota (kb.md)](#9-znalostní-báze-pro-chatbota-kbmd)
 10. [Uložení a odeslání na displej](#10-uložení-a-odeslání-na-displej)
 11. [Náhled tabletu](#11-náhled-tabletu)
-12. [Audit log, kdo co změnil](#12-audit-log--kdo-co-změnil)
-13. [Časté otázky a drobné potíže](#13-časté-otázky-a-drobné-potíže)
+12. [Deštný prales, prostředí a bouřka](#12-deštný-prales-prostředí-a-bouřka)
+13. [Audit log, kdo co změnil](#13-audit-log--kdo-co-změnil)
+14. [Časté otázky a drobné potíže](#14-časté-otázky-a-drobné-potíže)
 
 ---
 
@@ -450,22 +451,90 @@ V náhledu:
 
 ---
 
-## 12. Audit log, kdo co změnil
+## 12. Deštný prales, prostředí a bouřka
+
+Displej u deštného pralesa je jiný než ostatní. Neukazuje informace o druhu,
+ale **stav prostředí v pavilonu** a **odpočet do další bouřky** z videomappingu.
+Nastavuje se proto na vlastní stránce: v levém menu **Deštný prales**.
+
+Ostatních displejů se tahle stránka nijak netýká a nic v nich nemění.
+
+### Co se nastavuje
+
+| Pole | Kde se to na displeji projeví |
+|---|---|
+| **Vnitřní teplota** | teplota uvnitř pavilonu vedle vlhkosti. Neměří se, zadáváte ji ručně. |
+| **Vlhkost** | údaj o vlhkosti. Je to **text**, ne číslo, takže smí být i rozsah („80-100%"). |
+| **Záložní venkovní teplota** | jen pro nouzi, viz níž. Za normálního provozu se nikde neukáže. |
+| **Odpočet do bouřky** (přepínač) | vypnutý odpočet displej neukazuje. |
+| **Bouřka každých… (minut)** | jak často se bouřka opakuje. |
+| **Blikající světla** (přepínač) | varování před blikajícími světly. |
+| **Vodní efekty** (přepínač) | varování před vodními efekty (u bouřky se doopravdy rozprašuje voda). |
+
+Desetinná čísla jde psát s čárkou i s tečkou, obojí systém přijme.
+
+### Odpočet do bouřky
+
+Zadáváte jen interval, třeba 15 minut. Zbytek si systém dopočítá sám a cyklus
+se pořád opakuje.
+
+Bouřky jedou v **pevném rastru od půlnoci**: při intervalu 15 minut padnou na
+0:15, 0:30, 0:45, 1:00 a tak dál. Pod polem je vidět, na jaké časy interval
+vyjde. Je to schválně: když se server v pavilonu restartuje, odpočet naváže
+tam, kde má být, a nerozejde se s videomappingem.
+
+Odpočet jde **vypnout** přepínačem. Nastavený interval přitom zůstane uložený,
+takže se dá kdykoli zapnout zpátky, aniž byste ho psali znovu.
+
+### Venkovní teplota
+
+Venkovní teplotu **nenastavujete**, stahuje si ji systém sám z internetu pro
+Ostravu, nejvýš jednou za deset minut. V rámečku nad polem je vidět, jaká
+hodnota se zrovna posílá, jestli přišla z internetu, nebo je to záloha, a kdy
+naposledy se ji podařilo stáhnout.
+
+**Záložní venkovní teplota** je pojistka pro výpadek internetu. Použije se jen
+tehdy, když se skutečnou teplotu nepodařilo stáhnout ani jednou (typicky po
+restartu serveru bez internetu). Když internet vypadne později, displej zatím
+ukazuje **poslední známou** hodnotu; rámeček vás upozorní, když je starší než
+hodina.
+
+Nastavte ji na hodnotu, která je pro roční období věrohodná, ať displej při
+výpadku neukazuje nesmysl.
+
+### Náhled vpravo
+
+Vpravo je vidět **přesně to, co displeji zrovna posíláme**, včetně odpočtu,
+který běží. Obnovuje se každých pět sekund, stejně jako se ptají tablety.
+
+Náhled ukazuje **uložený** stav. Dokud změny neuložíte, jsou vidět jen ve
+formuláři vlevo a displej o nich neví, což píše i text u tlačítka **Uložit
+nastavení**. Po uložení si displej nové hodnoty vezme do pěti sekund, nic se
+nikam neodesílá ručně.
+
+Tlačítkem **Zahodit změny** se vrátíte k naposledy uloženému stavu.
+
+Každá uložená změna se zapíše do audit logu i s tím, co se změnilo z čeho na
+co ([kapitola 13](#13-audit-log--kdo-co-změnil)).
+
+---
+
+## 13. Audit log, kdo co změnil
 
 V levém menu klikněte na **Audit log**. Je to seznam všech akcí v systému,
 nejnovější nahoře: čas, uživatel, akce a čeho se týkala.
 
 Zaznamenává se mimo jiné: přihlášení a odhlášení, **neúspěšné pokusy
 o přihlášení**, úpravy info panelu i znalostní báze, nahrání a mazání fotek a
-videí, označení mapy výskytu, přidání, odebrání a přesun slidů a odeslání na
-displej.
+videí, označení mapy výskytu, přidání, odebrání a přesun slidů, odeslání na
+displej a změny nastavení deštného pralesa.
 
 Záznamy se jen přidávají, nedají se smazat ani přepsat. Tlačítkem **Obnovit**
 vpravo nahoře si vyžádáte čerstvý výpis.
 
 ---
 
-## 13. Časté otázky a drobné potíže
+## 14. Časté otázky a drobné potíže
 
 **Systém mě vyhodil na přihlašovací stránku.**
 Vypršelo dvanáctihodinové přihlášení. Přihlaste se znovu. Rozepsaný a neuložený

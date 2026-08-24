@@ -5,6 +5,7 @@ import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import Displays from "./pages/Displays";
 import DisplayDetail from "./pages/DisplayDetail";
+import Prales from "./pages/Prales";
 import Tablet from "./pages/Tablet";
 import Audit from "./pages/Audit";
 
@@ -37,6 +38,7 @@ export default function App() {
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/displeje" element={<Displays />} />
         <Route path="/displeje/:id" element={<DisplayDetail />} />
+        <Route path="/prales" element={<Prales />} />
         <Route path="/audit" element={<Audit />} />
       </Route>
 

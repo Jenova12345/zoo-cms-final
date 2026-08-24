@@ -52,7 +52,7 @@ npm run userlist                                # výpis účtů
 
 | | |
 |---|---|
-| **Veřejné** (bez přihlášení) | `/tablet/:id`, `GET /api/displays/:id`, soubory `/data/displeje/...`, `/api/login`, `/api/logout`, `/api/me` |
+| **Veřejné** (bez přihlášení) | `/tablet/:id`, `GET /api/displays/:id`, `GET /api/prales`, soubory `/data/displeje/...`, `/api/login`, `/api/logout`, `/api/me` |
 | **Chráněné** (401 bez session) | všechny zápisy a mazání, `GET /api/displays`, `GET /api/audit`, `GET /api/kb-template` |
 
 Veřejné je záměrně přesně to, co potřebuje tablet u expozice. Nový endpoint je
@@ -103,6 +103,7 @@ data/displeje/<cislo>/cs/<n>_ai/                AI otázky (prázdná složka)
 data/displeje/<cislo>/cs/<n>_3d/001.png…        3D model: sekvence snímků (i varianta <n>_mod)
 data/displeje/<cislo>/cs/<n>_vid/<video>.mp4    Video (jedno na slide)
 data/displeje/<cislo>/cs/<n>_gal/text.txt       Zajímavost: "Popis: …" + jedna fotka
+data/prales.json                                nastavení displeje u deštného pralesa (není slide)
 data/audit.jsonl                                append-only audit log
 data/users.json                                 účty kurátorů (bcrypt hashe hesel)
 data/session.key                                klíč pro podpis session cookie
@@ -149,6 +150,9 @@ i na tabletu. Podrobně v `docs/provoz-a-udrzba.md`, kapitoly 5 až 7.
 | GET | `/api/audit` | audit log |
 | GET | `/api/analytics/questions` | dotazy návštěvníků z chatbota (proxy, `since`/`limit`/`answered`) |
 | GET | `/api/analytics/summary` | souhrn dotazů z chatbota (proxy, `since`) |
+| GET | `/api/prales` | **veřejný**, data pro displej u deštného pralesa (čte Unity každých 5 s) |
+| GET | `/api/prales/nastaveni` | nastavení pralesa + náhled odpovědi + stav venkovní teploty |
+| PUT | `/api/prales/nastaveni` | uložení nastavení pralesa (audit „úprava nastavení deštného pralesa") |
 | GET | `/data/...` | servírování souborů (fotky, video) |
 
 ## Poznámky
@@ -156,6 +160,13 @@ i na tabletu. Podrobně v `docs/provoz-a-udrzba.md`, kapitoly 5 až 7.
 - `data/audit.jsonl` je runtime artefakt (v `.gitignore`).
 - Pro reset demo dat: `rm -rf data/displeje data/audit.jsonl && npm run seed`.
 - Datový root lze přepsat proměnnou `DATA_ROOT`, port proměnnou `PORT`.
+- **Displej u deštného pralesa** je samostatná věc pro jeden displej: místo
+  obsahu druhu posílá prostředí pavilonu a odpočet do bouřky z videomappingu.
+  Nastavuje se na stránce „Deštný prales", data drží `data/prales.json`,
+  struktury `data/displeje` se to netýká. Venkovní teplota se stahuje
+  z open-meteo.com (souřadnice v `POCASI_LAT` / `POCASI_LON`), nejvýš jednou za
+  deset minut, s pádem zpět na poslední známou hodnotu a pak na zálohu od
+  kurátora. Podrobně v `docs/provoz-a-udrzba.md`, kapitola 11.
 - Dashboard („Přehled provozu") čte dotazy návštěvníků z analytiky chatbota.
   Adresa se nastavuje proměnnou `ANALYTICS_URL` (default `http://127.0.0.1:8000`).
   Když backend neběží, dashboard to napíše a funguje dál, viz
