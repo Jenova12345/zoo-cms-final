@@ -22,11 +22,12 @@ Uživatelskou část najdete v [prirucka-kurator.md](prirucka-kurator.md).
 9. [Reingest signál pro chatbota](#9-reingest-signál-pro-chatbota)
 10. [Analytika chatbota v dashboardu](#10-analytika-chatbota-v-dashboardu)
 11. [Displej u deštného pralesa](#11-displej-u-deštného-pralesa)
-12. [API a ochrana endpointů](#12-api-a-ochrana-endpointů)
-13. [Údržbové skripty](#13-údržbové-skripty)
-14. [Zálohování a obnova](#14-zálohování-a-obnova)
-15. [Řešení potíží](#15-řešení-potíží)
-16. [Známá omezení](#16-známá-omezení)
+12. [Videomapping](#12-videomapping)
+13. [API a ochrana endpointů](#13-api-a-ochrana-endpointů)
+14. [Údržbové skripty](#14-údržbové-skripty)
+15. [Zálohování a obnova](#15-zálohování-a-obnova)
+16. [Řešení potíží](#16-řešení-potíží)
+17. [Známá omezení](#17-známá-omezení)
 
 ---
 
@@ -100,6 +101,11 @@ Všechny se čtou při startu procesu; konfigurační soubor systém nemá.
 | `POCASI_LAT` | `49.8265` | Zeměpisná šířka pro venkovní teplotu (ZOO Ostrava), viz [kapitola 11](#11-displej-u-deštného-pralesa). Neplatná hodnota = výchozí + varování v logu. |
 | `POCASI_LON` | `18.3242` | Zeměpisná délka pro venkovní teplotu. |
 | `POCASI_TIMEOUT_MS` | `5000` | Kolik milisekund se čeká na open-meteo.com. Stahuje se na pozadí, takže timeout nezdrží odpověď tabletům. |
+| `VIDEOMAPPING_WATERSENSE_HOST` | `10.10.10.51` | Adresa počítače instalace WaterSense, viz [kapitola 12](#12-videomapping). Neplatná hodnota = výchozí + varování v logu. |
+| `VIDEOMAPPING_WATERSENSE_PORT` | `7000` | Port, na kterém WaterSense poslouchá OSC. |
+| `VIDEOMAPPING_LES_HOST` | `10.10.10.52` | Adresa počítače instalace Les. |
+| `VIDEOMAPPING_LES_PORT` | `7000` | Port, na kterém Les poslouchá OSC. |
+| `OSC_TIMEOUT_MS` | `3000` | Strop pro dokončení odeslání UDP datagramu. Pojistka pro zaseknutý překlad DNS, zápis do socketu je jinak okamžitý. |
 
 Příklad nasazení na síť s daty mimo repozitář:
 
@@ -468,6 +474,8 @@ Zaznamenávané akce (řetězce, na které se váže i obarvení v UI):
 | `upload videa`, `smazání videa` | `displej <id>, slide <n>` |
 | `přidání slidu`, `odebrání slidu`, `pořadí slidů` | `displej <id>` |
 | `odesláno na displej` | `displej <id>` |
+| `odeslán povel videomappingu` | `<instalace> (<host>:<port>): <povel> (/<osc>)` |
+| `povel videomappingu selhal` | totéž a za pomlčkou důvod |
 
 Jméno uživatele bere server z platné session; na chráněných cestách je vždy
 vyplněné (fallback `neznámý` se uplatní jen u veřejných cest).
@@ -791,7 +799,79 @@ interval celé číslo 1 až 1440 minut.
 
 ---
 
-## 12. API a ochrana endpointů
+## 12. Videomapping
+
+V pavilonu jsou dvě instalace videomappingu od firmy, která je dodala. Kurátor
+je zapíná a vypíná ze stránky **Videomapping** (`/videomapping`).
+
+### Jak se to ovládá
+
+Instalace poslouchají **OSC přes UDP**, každá na svém počítači. Stačí poslat
+jednu zprávu bez argumentů, zbytek si řídí samy:
+
+| Instalace | Výchozí adresa | Zprávy |
+|---|---|---|
+| WaterSense | `10.10.10.51:7000` | `/start`, `/stop` |
+| Les | `10.10.10.52:7000` | `/start`, `/stop` |
+
+Adresy a porty jsou v proměnných prostředí (`VIDEOMAPPING_*`, viz
+[kapitola 3](#3-proměnné-prostředí)), **ne v kódu**. Když je firma změní, stačí
+přepsat proměnnou a restartovat službu; aplikace se kvůli tomu nepřekládá.
+Nesmyslná hodnota (prázdno, port mimo rozsah) se nepoužije, spadne se na
+výchozí a do logu jde varování, aby se tiše nemačkala tlačítka naprázdno.
+
+### Co CMS neví a proč to tak zůstane
+
+**UDP je jednosměrné a nikdo ho nepotvrzuje.** Odeslání datagramu neříká nic
+o tom, jestli dorazil, jestli ho instalace přečetla ani jestli se rozeběhla.
+Zpráva poslaná na vypnutý počítač nebo na špatnou IP odejde úplně stejně
+úspěšně jako ta správná.
+
+Z toho plyne, jak se systém chová:
+
+- CMS **nikde neukazuje stav instalace** a nikdy nenapíše „zapnuto“. Píše
+  „odeslán povel k zapnutí“ a čas odeslání.
+- **Chyba se zobrazí jen tehdy, když selže naše strana**: neplatná nebo
+  nepřeložitelná adresa, síť je dole, socket nešel otevřít. Endpoint na to
+  vrací `502` a hlášku, kterou CMS ukáže u příslušné instalace.
+- Přehled „naposledy odesláno z CMS“ drží server **v paměti** a jen za svůj
+  běh. Není to stav mappingu, je to poslední povel, který odsud odešel. Po
+  restartu je prázdný, celá historie zůstává v audit logu.
+
+Jestli mapping opravdu běží, se pozná **jen pohledem do pavilonu**. Kdyby bylo
+potřeba skutečný stav zobrazovat, musela by firma poslat zpátky zprávu (OSC
+odpověď nebo jiný kanál), a to zatím není domluvené.
+
+### Kódování OSC zprávy
+
+Kvůli dvěma zprávám bez argumentů se netahá knihovna, zpráva má dvanáct bajtů
+(`server/src/osc.ts`). OSC string je text + aspoň jedna nula + doplnění nulami
+na násobek čtyř; typový řetězec (samotná čárka) je povinný i bez argumentů:
+
+```
+/start  2f 73 74 61 72 74 00 00   "/start" + 2 nuly (6+1 → 8)
+        2c 00 00 00               ","      + 3 nuly (1+1 → 4)
+
+/stop   2f 73 74 6f 70 00 00 00   "/stop"  + 3 nuly (5+1 → 8)
+        2c 00 00 00               ","      + 3 nuly
+```
+
+Odesílá se přes `node:dgram` (`udp4`), socket se otevře a zavře pro každý povel
+zvlášť. Do adresy se nikdy nedostane nic jiného než `/start` a `/stop`; kontrola
+platnosti OSC adresy je v `jePlatnaOscAdresa`.
+
+### Audit
+
+Do audit logu jde **každý** pokus, i neúspěšný:
+
+| Akce | Cíl |
+|---|---|
+| `odeslán povel videomappingu` | `WaterSense (10.10.10.51:7000): zapnout (/start)` |
+| `povel videomappingu selhal` | totéž + důvod selhání |
+
+---
+
+## 13. API a ochrana endpointů
 
 Hook `onRequest` se vztahuje **jen na cesty začínající `/api`**. Ve výchozím
 stavu je vše zamčené; veřejné je pouze to, co je vyjmenované v množině
@@ -824,6 +904,8 @@ automaticky, dokud ho někdo vědomě nepřidá do seznamu.
 | DELETE | `/api/displays/:id/slides/:n` | odebrání slidu |
 | PUT | `/api/displays/:id/slides/reorder` | změna pořadí, tělo `{poradi: [n, …]}` |
 | POST | `/api/displays/:id/refresh` | odeslání na displej |
+| GET | `/api/videomapping` | instalace videomappingu + poslední odeslaný povel (z paměti serveru) |
+| POST | `/api/videomapping/:id/:povel` | OSC povel instalaci; `:id` = `watersense`/`les`, `:povel` = `start`/`stop`. `200 {ok, odeslano}` = předáno systému, **ne** potvrzení doručení; `502` = odeslání selhalo u nás |
 | GET | `/api/audit` | audit log |
 | GET | `/api/kb-template` | výchozí šablona `kb.md` |
 | GET | `/api/analytics/questions` | dotazy návštěvníků z chatbota, `since`, `limit`, `answered`, viz [kapitola 10](#10-analytika-chatbota-v-dashboardu) |
@@ -846,7 +928,7 @@ adresy typu `/displeje/12`). Nenalezené cesty pod `/api` a `/data` vrací
 
 ---
 
-## 13. Údržbové skripty
+## 14. Údržbové skripty
 
 Spouštějí se z kořene repozitáře a **respektují `DATA_ROOT`**.
 
@@ -865,7 +947,7 @@ rm -rf data/displeje data/audit.jsonl && npm run seed
 
 ---
 
-## 14. Zálohování a obnova
+## 15. Zálohování a obnova
 
 Celý stav systému je **jedna složka**, `DATA_ROOT`. Záloha je tedy prosté
 zkopírování:
@@ -886,7 +968,7 @@ všichni odhlásí.
 
 ---
 
-## 15. Řešení potíží
+## 16. Řešení potíží
 
 **`Web build nenalezen (…/web/dist). Spusť 'npm run build'.`**
 Chybí buildnutý web. API běží, ale `/` vrátí 404. Řešení: `npm run build`
@@ -938,7 +1020,7 @@ Chybí nebo je poškozený `meta.json`, případně složka nemá čistě číse
 
 ---
 
-## 16. Známá omezení
+## 17. Známá omezení
 
 Stav k srpnu 2026, otevřené body jsou i v `handoff.md`.
 

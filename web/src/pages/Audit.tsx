@@ -12,6 +12,8 @@ const ACTION_STYLE: Record<string, string> = {
   "odesláno na displej": "text-accent",
   "hromadný import": "text-amber-deep",
   "potvrzení revize AI textů": "text-accent",
+  "odeslán povel videomappingu": "text-accent",
+  "povel videomappingu selhal": "text-danger",
 };
 
 const ACTION_DOT: Record<string, string> = {
@@ -23,6 +25,8 @@ const ACTION_DOT: Record<string, string> = {
   "odesláno na displej": "bg-accent",
   "hromadný import": "bg-amber",
   "potvrzení revize AI textů": "bg-accent",
+  "odeslán povel videomappingu": "bg-accent",
+  "povel videomappingu selhal": "bg-danger",
 };
 
 // Kolik záznamů se načte naráz. Log může mít desítky tisíc řádků, takže se

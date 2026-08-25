@@ -23,8 +23,9 @@ a podklady pro AI průvodce (chatbota).
 10. [Uložení a odeslání na displej](#10-uložení-a-odeslání-na-displej)
 11. [Náhled tabletu](#11-náhled-tabletu)
 12. [Deštný prales, prostředí a bouřka](#12-deštný-prales-prostředí-a-bouřka)
-13. [Audit log, kdo co změnil](#13-audit-log--kdo-co-změnil)
-14. [Časté otázky a drobné potíže](#14-časté-otázky-a-drobné-potíže)
+13. [Videomapping, zapnutí a vypnutí](#13-videomapping-zapnutí-a-vypnutí)
+14. [Audit log, kdo co změnil](#14-audit-log--kdo-co-změnil)
+15. [Časté otázky a drobné potíže](#15-časté-otázky-a-drobné-potíže)
 
 ---
 
@@ -541,11 +542,58 @@ nikam neodesílá ručně.
 Tlačítkem **Zahodit změny** se vrátíte k naposledy uloženému stavu.
 
 Každá uložená změna se zapíše do audit logu i s tím, co se změnilo z čeho na
-co ([kapitola 13](#13-audit-log--kdo-co-změnil)).
+co ([kapitola 14](#14-audit-log--kdo-co-změnil)).
 
 ---
 
-## 13. Audit log, kdo co změnil
+## 13. Videomapping, zapnutí a vypnutí
+
+V levém menu je položka **Videomapping**. Jsou tam dvě instalace, tak jak je
+znáte z pavilonu:
+
+- **WaterSense**
+- **Les**
+
+U každé je tlačítko **Zapnout** a **Vypnout**. Kliknutím se instalaci pošle
+povel, o zbytek se postará sama.
+
+### Co vám systém řekne a co ne
+
+**CMS nepozná, jestli mapping opravdu běží.** Povel se posílá jednosměrně a
+instalace na něj neodpovídá, takže systém umí potvrdit jen to, že povel
+**odeslal**, a kdy. Proto nikde nenajdete nápis „zapnuto“ ani kontrolku stavu.
+
+Po kliknutí se pod tlačítky objeví například:
+
+```
+NAPOSLEDY ODESLÁNO Z CMS
+Odeslán povel k zapnutí dnes v 13:17:55, uživatel novakova.
+```
+
+Jestli se mapping rozeběhl, se pozná **jen pohledem do pavilonu**. Když si
+nejste jistí, klidně tlačítko zmáčkněte znovu, opakovaný povel nevadí.
+
+### Když se něco pokazí
+
+Když se povel nepodaří odeslat **od nás** (nefunguje síť, firma změnila adresu
+počítače), ukáže se u instalace červené hlášení **„Povel se nepodařilo
+odeslat“** i s důvodem. V takovém případě se k instalaci nedostal a je potřeba
+volat správce.
+
+Pozor: **žádná chyba ještě neznamená, že povel dorazil.** Znamená jen, že
+odešel z našeho serveru. Když se mapping nerozeběhne a přitom se nezobrazila
+chyba, je problém na straně instalace nebo sítě v pavilonu.
+
+### Zápis do audit logu
+
+Každé zmáčknutí tlačítka se zapíše do audit logu i s vaším jménem, časem,
+povelem a instalací, a to **i když se odeslání nepovede**
+([kapitola 14](#14-audit-log--kdo-co-změnil)). Přehled „naposledy odesláno“ na
+stránce platí od posledního spuštění serveru, úplná historie je v audit logu.
+
+---
+
+## 14. Audit log, kdo co změnil
 
 V levém menu klikněte na **Audit log**. Je to seznam všech akcí v systému,
 nejnovější nahoře: čas, uživatel, akce a čeho se týkala.
@@ -553,14 +601,14 @@ nejnovější nahoře: čas, uživatel, akce a čeho se týkala.
 Zaznamenává se mimo jiné: přihlášení a odhlášení, **neúspěšné pokusy
 o přihlášení**, úpravy info panelu i znalostní báze, nahrání a mazání fotek a
 videí, označení mapy výskytu, přidání, odebrání a přesun slidů, odeslání na
-displej a změny nastavení deštného pralesa.
+displej, změny nastavení deštného pralesa a povely videomappingu.
 
 Záznamy se jen přidávají, nedají se smazat ani přepsat. Tlačítkem **Obnovit**
 vpravo nahoře si vyžádáte čerstvý výpis.
 
 ---
 
-## 14. Časté otázky a drobné potíže
+## 15. Časté otázky a drobné potíže
 
 **Systém mě vyhodil na přihlašovací stránku.**
 Vypršelo dvanáctihodinové přihlášení. Přihlaste se znovu. Rozepsaný a neuložený

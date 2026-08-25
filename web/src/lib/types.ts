@@ -444,3 +444,33 @@ export const PRALES_TEPLOTA_MAX = 60;
 export const PRALES_VLHKOST_MAX_ZNAKU = 40;
 export const PRALES_INTERVAL_MIN = 1;
 export const PRALES_INTERVAL_MAX = 1440;
+
+
+// --- Videomapping ---
+// Dvě instalace v pavilonu, ovládané OSC zprávou přes UDP.
+// Zrcadlí server/src/videomapping.ts.
+
+export type VideomappingPovel = "start" | "stop";
+
+// Co jsme z CMS naposledy poslali. NENÍ to stav instalace: UDP doručení
+// nepotvrzuje, takže CMS skutečný stav videomappingu nezná. Drží se jen
+// v paměti serveru, po jeho restartu je prázdné (historie je v audit logu).
+export interface VideomappingPosledni {
+  povel: VideomappingPovel;
+  odeslano: string; // ISO čas odeslání
+  uzivatel: string;
+  ok: boolean;
+}
+
+export interface VideomappingInstalace {
+  id: string;
+  nazev: string; // jak instalaci zná obsluha (WaterSense, Les)
+  host: string;
+  port: number;
+  posledni: VideomappingPosledni | null;
+}
+
+export const VIDEOMAPPING_POVEL_LABEL: Record<VideomappingPovel, string> = {
+  start: "zapnout",
+  stop: "vypnout",
+};

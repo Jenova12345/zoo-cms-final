@@ -149,6 +149,8 @@ i na tabletu. Podrobně v `docs/provoz-a-udrzba.md`, kapitoly 5 až 7.
 | DELETE | `/api/displays/:id/slides/:n` | odebrání slidu |
 | PUT | `/api/displays/:id/slides/reorder` | změna pořadí slidů (`{poradi:[...]}`) |
 | POST | `/api/displays/:id/refresh` | mock odeslání na displej (audit) |
+| GET | `/api/videomapping` | instalace videomappingu a co jsme jim naposledy poslali |
+| POST | `/api/videomapping/:id/:povel` | OSC povel instalaci (`start`/`stop`), audit; 502 když se nepodaří odeslat |
 | GET | `/api/audit` | audit log |
 | GET | `/api/analytics/questions` | dotazy návštěvníků z chatbota (proxy, `since`/`limit`/`answered`) |
 | GET | `/api/analytics/summary` | souhrn dotazů z chatbota (proxy, `since`) |
@@ -169,6 +171,11 @@ i na tabletu. Podrobně v `docs/provoz-a-udrzba.md`, kapitoly 5 až 7.
   z open-meteo.com (souřadnice v `POCASI_LAT` / `POCASI_LON`), nejvýš jednou za
   deset minut, s pádem zpět na poslední známou hodnotu a pak na zálohu od
   kurátora. Podrobně v `docs/provoz-a-udrzba.md`, kapitola 11.
+- **Videomapping** (stránka „Videomapping") zapíná a vypíná dvě instalace
+  v pavilonu OSC zprávou přes UDP (`/start`, `/stop`). Adresy jsou
+  v proměnných `VIDEOMAPPING_*`, ne v kódu. **UDP doručení nepotvrzuje**,
+  takže CMS hlásí jen „povel odeslán" a čas, nikdy „zapnuto"; skutečný stav
+  instalace nezná. Podrobně v `docs/provoz-a-udrzba.md`, kapitola 12.
 - Dashboard („Přehled provozu") čte dotazy návštěvníků z analytiky chatbota.
   Adresa se nastavuje proměnnou `ANALYTICS_URL` (default `http://127.0.0.1:8000`).
   Když backend neběží, dashboard to napíše a funguje dál, viz

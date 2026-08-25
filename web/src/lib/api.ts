@@ -11,6 +11,8 @@ import type {
   PralesNastaveni,
   PralesStav,
   SlideTyp,
+  VideomappingInstalace,
+  VideomappingPovel,
 } from "./types";
 
 // Jméno přihlášeného v localStorage (jen kvůli okamžitému vykreslení; zdrojem
@@ -270,6 +272,24 @@ export const api = {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(nastaveni),
+    });
+  },
+
+  // Instalace videomappingu i s tím, co jsme jim naposledy poslali.
+  async videomapping(): Promise<VideomappingInstalace[]> {
+    const d = await request<{ instalace: VideomappingInstalace[] }>("/api/videomapping");
+    return d.instalace;
+  },
+
+  // Odešle OSC povel jedné instalaci. Vrácený čas je čas ODESLÁNÍ, ne
+  // potvrzení: UDP doručení nepotvrzuje a CMS stav instalace nezná.
+  // Chyba znamená, že se povel nepodařilo odeslat z naší strany.
+  async videomappingPovel(
+    id: string,
+    povel: VideomappingPovel,
+  ): Promise<{ odeslano: string }> {
+    return request<{ ok: boolean; odeslano: string }>(`/api/videomapping/${id}/${povel}`, {
+      method: "POST",
     });
   },
 

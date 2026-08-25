@@ -47,6 +47,16 @@ import {
 } from "./prales.js";
 import { LAT, LON, ZASTARALE_PO_MS, spustPocasi, stavPocasi } from "./pocasi.js";
 import {
+  jePovel,
+  najdiInstalaci,
+  popisPovelu,
+  posliPovel,
+  seznamInstalaci,
+  spustVideomapping,
+  zapisPosledni,
+  ziskejPosledni,
+} from "./videomapping.js";
+import {
   SESSION_COOKIE,
   SESSION_TTL_S,
   nactiNeboZalozKlic,
@@ -726,6 +736,58 @@ app.put<{ Body: unknown }>("/api/prales/nastaveni", async (req, reply) => {
   return { ok: true, ...stavPraleseProCms() };
 });
 
+// --- Videomapping ---
+//
+// Dvě instalace od firmy, která je dodala. Poslouchají OSC přes UDP, stačí
+// jedna zpráva bez argumentů (/start, /stop). Viz videomapping.ts a osc.ts.
+//
+// UDP NEPOTVRZUJE DORUČENÍ. Endpoint proto nikdy neříká „zapnuto“, jen
+// „odesláno“ a kdy. Chyba znamená, že selhala naše strana (neplatná adresa,
+// síť je dole); že zpráva nedorazila na cílový počítač, se nedozvíme ani my,
+// ani kurátor. Chráněné přihlášením jako ostatní /api.
+
+app.get("/api/videomapping", async () => {
+  return {
+    instalace: seznamInstalaci().map((i) => ({
+      ...i,
+      // Co jsme odsud naposledy poslali. Není to stav instalace, ten CMS nezná.
+      posledni: ziskejPosledni(i.id),
+    })),
+  };
+});
+
+app.post<{ Params: { id: string; povel: string } }>(
+  "/api/videomapping/:id/:povel",
+  async (req, reply) => {
+    const { id, povel } = req.params;
+    if (!jePovel(povel)) return reply.code(400).send({ chyba: "Neplatný povel." });
+    const cil = najdiInstalaci(id);
+    if (!cil) return reply.code(404).send({ chyba: "Instalace nenalezena." });
+
+    const uzivatel = currentUser(req);
+    const res = await posliPovel(id, povel);
+    const kam = `${cil.nazev} (${cil.host}:${cil.port})`;
+    const co = `${popisPovelu(povel)} (/${povel})`;
+
+    // Do auditu jde i neúspěch: kurátor se ptá „mačkal jsem to, nebo ne“ a
+    // v logu musí být vidět obojí, včetně důvodu.
+    await appendAudit({
+      uzivatel,
+      akce: res.ok ? "odeslán povel videomappingu" : "povel videomappingu selhal",
+      cil: res.ok ? `${kam}: ${co}` : `${kam}: ${co} — ${res.chyba ?? "neznámá chyba"}`,
+    });
+
+    zapisPosledni(id, { povel, odeslano: res.odeslano, uzivatel, ok: res.ok });
+
+    if (!res.ok) {
+      req.log.error(`[videomapping] ${kam}: ${res.chyba}`);
+      // 502: náš server běží, nepovedlo se předat povel dál do sítě.
+      return reply.code(502).send({ chyba: res.chyba });
+    }
+    return { ok: true, odeslano: res.odeslano, povel, instalace: cil.nazev };
+  },
+);
+
 // --- Analytika chatbota (Danielův backend) ---
 // Frontend cizí službu neoslovuje, jde to přes nás: jedno místo na adresu,
 // timeout, očištění odpovědi a hlášku, když backend ještě neběží. Endpointy
@@ -876,6 +938,9 @@ try {
   // nezdržel výpadek internetu.
   await spustPrales(app.log);
   spustPocasi(app.log);
+  // Adresy instalací videomappingu z prostředí (jen se přečtou a zalogují,
+  // nic se nikam neposílá).
+  spustVideomapping(app.log);
   if ((await pocetUzivatelu()) === 0) {
     app.log.warn(
       "Žádné účty v data/users.json, do CMS se nedá přihlásit. " +
