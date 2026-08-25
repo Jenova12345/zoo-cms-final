@@ -106,6 +106,22 @@ export const api = {
     });
   },
 
+  // Obecné informace (slide _txt): oba texty naráz. Na disku vznikne text.txt
+  // s klíči "ObecnyText:" a "Zajimavosti:". Oba se překládají, takže se posílá
+  // i jazyk; sdílené s češtinou tu není nic.
+  async saveTextSlide(
+    id: string,
+    n: number,
+    pole: Record<string, string>,
+    jazyk: Jazyk = "cs",
+  ): Promise<void> {
+    await request(`/api/displays/${id}/slides/${n}/txt`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pole, jazyk }),
+    });
+  },
+
   // Výchozí šablona znalostní báze (kb.md) pro nový/prázdný druh.
   async kbTemplate(): Promise<string> {
     const d = await request<{ text: string }>("/api/kb-template");

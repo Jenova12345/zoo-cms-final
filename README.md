@@ -103,6 +103,7 @@ data/displeje/<cislo>/cs/<n>_ai/                AI otázky (prázdná složka)
 data/displeje/<cislo>/cs/<n>_3d/001.png…        3D model: sekvence snímků (i varianta <n>_mod)
 data/displeje/<cislo>/cs/<n>_vid/<video>.mp4    Video (jedno na slide)
 data/displeje/<cislo>/cs/<n>_gal/text.txt       Zajímavost: "Popis: …" + jedna fotka
+data/displeje/<cislo>/cs/<n>_txt/text.txt       Obecné informace: "ObecnyText: …" a "Zajimavosti: …" (jen text)
 data/prales.json                                nastavení displeje u deštného pralesa (není slide)
 data/audit.jsonl                                append-only audit log
 data/users.json                                 účty kurátorů (bcrypt hashe hesel)
@@ -112,7 +113,7 @@ data/session.key                                klíč pro podpis session cookie
 > `users.json`, `session.key` ani `audit.jsonl` se neservírují přes HTTP,
 > přes `/data/` jde ven jen složka `displeje`.
 
-Typ slidu je **suffix** názvu složky (`_info`, `_ai`, `_3d` i `_mod`, `_vid`, `_gal`),
+Typ slidu je **suffix** názvu složky (`_info`, `_ai`, `_3d` i `_mod`, `_vid`, `_gal`, `_txt`),
 pořadí **číselný prefix**. Přehled drží i pole `slidy` v `meta.json`, zdrojem pravdy
 jsou ale složky na disku. Soubor ručně přetažený do složky slidu se objeví v CMS
 i na tabletu. Podrobně v `docs/provoz-a-udrzba.md`, kapitoly 5 až 7.
@@ -139,6 +140,7 @@ i na tabletu. Podrobně v `docs/provoz-a-udrzba.md`, kapitoly 5 až 7.
 | GET | `/api/displays/:id` | meta + slidy displeje |
 | PUT | `/api/displays/:id/slides/:n` | zápis polí info panelu (audit „úprava info panelu“) |
 | PUT | `/api/displays/:id/slides/:n/text` | text zajímavosti (slide `_gal`) |
+| PUT | `/api/displays/:id/slides/:n/txt` | oba texty obecných informací (slide `_txt`, audit „úprava obecných informací“) |
 | POST | `/api/displays/:id/slides/:n/image` | multipart upload fotky (audit „upload“) |
 | DELETE | `/api/displays/:id/slides/:n/images/:nazev` | smazání jedné fotky |
 | POST | `/api/displays/:id/slides/:n/video` | multipart upload videa (mp4) |

@@ -187,6 +187,11 @@ async function coJeNaDispleji(id: string): Promise<string[]> {
       nalezeno.push("vyplněný info panel");
     }
     if (s.typ === "gal" && s.text.trim()) nalezeno.push("text zajímavosti");
+    // Obecné informace drží texty v `pole` stejně jako info panel; bez téhle
+    // větve by import považoval vyplněný slide za prázdný a přepsal ho.
+    if (s.typ === "txt" && Object.values(s.pole).some((v) => v.trim())) {
+      nalezeno.push("vyplněné obecné informace");
+    }
     if (s.obrazky.length) nalezeno.push(`${s.obrazky.length}× obrázek`);
     if (s.video) nalezeno.push("video");
   }

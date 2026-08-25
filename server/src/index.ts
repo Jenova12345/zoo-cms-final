@@ -20,6 +20,7 @@ import {
   writeKb,
   writeInfoPole,
   writeZajimavost,
+  writeTextSlide,
   saveImage,
   deleteImage,
   setMapa,
@@ -400,6 +401,45 @@ app.put<{ Params: { id: string; n: string }; Body: { text?: string; jazyk?: stri
     return { ok: true };
   },
 );
+
+// Obecné informace (slide _txt): dva dlouhé texty, na disku
+// cs/<slozka>/text.txt jako "ObecnyText: …" a "Zajimavosti: …".
+//
+// Vlastní cesta, ne rozšíření endpointu info panelu: ten má jinou validaci
+// (povinná sekce a název) i jiná sdílená pole, a chování stávajících typů
+// se měnit nemá. Oba texty se překládají, takže se posílá i `jazyk`.
+app.put<{
+  Params: { id: string; n: string };
+  Body: { pole?: Record<string, string>; jazyk?: string };
+}>("/api/displays/:id/slides/:n/txt", async (req, reply) => {
+  const { id } = req.params;
+  const n = Number(req.params.n);
+  if (!validId(id) || !validSlide(n)) return reply.code(400).send({ chyba: "Neplatné parametry." });
+  if (!(await slideExists(id, n))) return reply.code(404).send({ chyba: "Slide nenalezen." });
+
+  // Prázdné texty projdou (rozdělaná práce), chybějící objekt `pole` ne:
+  // to by znamenalo špatně poskládaný požadavek a tiché smazání obsahu.
+  // Stejné pravidlo jako u zajímavosti.
+  const pole = req.body?.pole;
+  if (!pole || typeof pole !== "object" || Array.isArray(pole)) {
+    return reply.code(400).send({ chyba: "Chybí texty slidu." });
+  }
+  for (const hodnota of Object.values(pole)) {
+    if (typeof hodnota !== "string") {
+      return reply.code(400).send({ chyba: "Texty slidu musí být řetězce." });
+    }
+  }
+
+  const jazyk = jazykNeboVychozi(req.body?.jazyk);
+  const res = await writeTextSlide(id, n, pole, jazyk);
+  if (!res.ok) return reply.code(400).send({ chyba: res.chyba });
+  await appendAudit({
+    uzivatel: currentUser(req),
+    akce: "úprava obecných informací",
+    cil: `displej ${id}, slide ${n} (${jazyk})`,
+  });
+  return { ok: true };
+});
 
 // Upload fotky (info panel, zajímavost, snímek 3D sekvence). Vždy se převádí
 // do PNG kvůli Unity.

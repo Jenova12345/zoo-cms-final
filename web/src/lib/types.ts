@@ -46,7 +46,7 @@ export interface DisplaySummary {
 // Finální struktura od Michala má pevných pět typů. Pozor: "gal" je
 // ZAJÍMAVOST (dlouhý text + jedna fotka), ne galerie, suffix zůstal kvůli
 // Unity. Typ "3d" má na disku suffix _3d nebo _mod, server čte obojí.
-export type SlideTyp = "info" | "ai" | "3d" | "vid" | "gal";
+export type SlideTyp = "info" | "ai" | "3d" | "vid" | "gal" | "txt";
 
 export interface DisplayMeta {
   druh: string;
@@ -341,7 +341,7 @@ export const ZAJIMAVOST_LIMIT_SLOV = 200;
 
 // České názvy typů podle finální struktury (stejné popisky jako tlačítka na
 // zařízení). Pořadí = pořadí v nabídce "Přidat slide".
-export const SLIDE_TYPY: SlideTyp[] = ["info", "ai", "3d", "vid", "gal"];
+export const SLIDE_TYPY: SlideTyp[] = ["info", "ai", "3d", "vid", "gal", "txt"];
 
 export const SLIDE_TYP_LABEL: Record<SlideTyp, string> = {
   info: "Infopanel",
@@ -349,6 +349,7 @@ export const SLIDE_TYP_LABEL: Record<SlideTyp, string> = {
   "3d": "3D model",
   vid: "Video",
   gal: "Zajímavost",
+  txt: "Obecné informace",
 };
 
 // Krátké vysvětlení pro kurátora, co který typ slidu na tabletu dělá
@@ -359,7 +360,41 @@ export const SLIDE_TYP_POPIS: Record<SlideTyp, string> = {
   "3d": "Otočení modelu ze sekvence fotek.",
   vid: "Velké video na celou obrazovku.",
   gal: "Delší text o druhu s jednou fotkou.",
+  txt: "Dva delší texty o druhu. Bez fotek a videa.",
 };
+
+// --- Obecné informace (slide _txt) ---
+// Dvě dlouhá textová pole, obě se překládají (sdílené s češtinou není nic).
+// Klíče musí sedět na server/src/displays.ts (TEXTOVE_KLICE), zapisují se
+// v tomhle tvaru do text.txt.
+
+export interface TextovePoleDef {
+  klic: string;
+  label: string;
+  hint: string;
+  limitSlov: number;
+}
+
+export const TEXTOVA_POLE: TextovePoleDef[] = [
+  {
+    klic: "ObecnyText",
+    label: "Obecný text",
+    hint: "Souvislý text o druhu, klidně na několik odstavců.",
+    limitSlov: 250,
+  },
+  {
+    klic: "Zajimavosti",
+    label: "Zajímavosti",
+    hint: "Co návštěvníka zaujme. Klidně několik bodů pod sebou.",
+    limitSlov: 250,
+  },
+];
+
+// Je slide obecných informací prázdný? Prázdný slide nejde označit za hotový,
+// stejně jako u ostatních typů.
+export function textovyPrazdny(pole: Record<string, string>): boolean {
+  return TEXTOVA_POLE.every((def) => !(pole[def.klic] ?? "").trim());
+}
 
 // --- Displej u deštného pralesa ---
 // Samostatný displej: místo obsahu druhu ukazuje prostředí pavilonu a odpočet

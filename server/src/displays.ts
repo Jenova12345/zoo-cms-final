@@ -8,7 +8,8 @@ import { notifyReingest } from "./reingest.js";
 import { writeFileAtomic } from "./atomic.js";
 
 // Zdroj pravdy pro Unity je struktura složek na disku. Finální struktura od
-// Michala: pevných pět typů slidů (_info, _ai, _3d, _vid, _gal).
+// Michala měla pevných pět typů slidů (_info, _ai, _3d, _vid, _gal);
+// _txt (obecné informace) k nim přibyl na žádost ZOO.
 //
 //   data/displeje/<id>/
 //     kb.md                 znalostní báze pro chatbota (NENÍ slide)
@@ -22,6 +23,8 @@ import { writeFileAtomic } from "./atomic.js";
 //       4_vid/<video>.mp4   jedno video
 //       5_gal/text.txt      zajímavost: "Popis: <dlouhý odstavec>"
 //       5_gal/<fotka>.png   zajímavost: jedna fotka (na zařízení vpravo)
+//       6_txt/text.txt      obecné informace: "ObecnyText:" a "Zajimavosti:"
+//                           (jen text, žádné fotky ani video)
 //
 // Typ slidu určuje suffix názvu složky, pořadí číslo na začátku. Při změně
 // pořadí nebo odebrání slidu se prefixy složek přečíslují na souvislou řadu.
@@ -29,10 +32,11 @@ import { writeFileAtomic } from "./atomic.js";
 // POZOR: `_gal` je podle finální struktury ZAJÍMAVOST (text + jedna fotka),
 // ne galerie fotek. Název suffixu zůstal kvůli kompatibilitě s Unity.
 
-export type SlideTyp = "info" | "ai" | "3d" | "vid" | "gal";
+export type SlideTyp = "info" | "ai" | "3d" | "vid" | "gal" | "txt";
 
-// Pořadí = pořadí v nabídce "Přidat slide".
-export const SLIDE_TYPY: SlideTyp[] = ["info", "ai", "3d", "vid", "gal"];
+// Pořadí = pořadí v nabídce "Přidat slide". Nový typ se přidává na KONEC,
+// ať se kurátorovi nepřehází nabídka, na kterou je zvyklý.
+export const SLIDE_TYPY: SlideTyp[] = ["info", "ai", "3d", "vid", "gal", "txt"];
 
 // Suffix složky pro nově zakládaný slide. Pro 3D model bere Michalovo Unity
 // obojí (`_3d` i `_mod`); zakládáme `_3d`, existující `_mod` se zachová.
@@ -43,6 +47,7 @@ const SUFFIX_ALIAS: Record<string, SlideTyp> = {
   mod: "3d",
   vid: "vid",
   gal: "gal",
+  txt: "txt",
 };
 
 // Klíče polí info panelu v pořadí, ve kterém se zapisují do text.txt.
@@ -207,6 +212,23 @@ export const MAPA_SOUBOR = "mapa.png";
 export const ZAJIMAVOST_KLIC = "Popis";
 const ZAJIMAVOST_RE = /^\s*(?:Popis|Text)\s*:\s?(.*)$/i;
 
+// Obecné informace (_txt): text.txt se dvěma klíči ve stejném tvaru
+// "Klic: Hodnota" jako info panel. Oba texty jsou dlouhé, takže hodnota smí
+// pokračovat na dalších řádcích; blok končí až dalším klíčem nebo koncem
+// souboru (stejná úmluva jako u zajímavosti). Klíče jsou bez diakritiky,
+// aby soubor přečetlo Unity i skripty, které počítají s ASCII.
+export const TEXTOVE_KLICE = ["ObecnyText", "Zajimavosti"] as const;
+export type TextovyKlic = (typeof TEXTOVE_KLICE)[number];
+
+// Při čtení jsme k velikosti písmen tolerantní (ruční zásah do souboru,
+// jiný zdroj), při zápisu píšeme vždy kanonický tvar z TEXTOVE_KLICE.
+const TEXTOVY_KLIC_RE = new RegExp(`^\\s*(${TEXTOVE_KLICE.join("|")})\\s*:\\s?(.*)$`, "i");
+
+function kanonickyTextovyKlic(raw: string): TextovyKlic | null {
+  const dolu = raw.trim().toLowerCase();
+  return TEXTOVE_KLICE.find((k) => k.toLowerCase() === dolu) ?? null;
+}
+
 // 3D model (_3d): sekvence snímků 001.png, 002.png, … Unity je řadí podle čísla.
 const SEKVENCE_RE = /^(\d{3,})\.png$/i;
 
@@ -264,7 +286,7 @@ export interface DisplaySummary {
 
 export const NEPRIRAZENO = "Nepřiřazeno";
 
-const SLIDE_DIR_RE = /^(\d+)_(info|vid|gal|ai|3d|mod)$/;
+const SLIDE_DIR_RE = /^(\d+)_(info|vid|gal|ai|3d|mod|txt)$/;
 
 function displayDir(id: string): string {
   return path.join(DISPLAYS_DIR, id);
@@ -449,6 +471,95 @@ export async function writeZajimavost(
   return { ok: true };
 }
 
+// --- text.txt obecných informací (_txt): dva klíče, dlouhé hodnoty ---
+
+// Blokový parser: řádek s klíčem začíná nový blok, všechny další řádky až
+// k dalšímu klíči k němu patří. Soubor BEZ jakéhokoli klíče (ruční zásah)
+// se přečte celý jako obecný text, ať se obsah neztratí; stejně se chová
+// i zajímavost.
+export function parseTextSlide(raw: string): Record<string, string> {
+  const radky = raw.replace(/\r\n/g, "\n").split("\n");
+  const bloky = new Map<TextovyKlic, string[]>();
+  let aktualni: TextovyKlic | null = null;
+
+  for (const radek of radky) {
+    const m = TEXTOVY_KLIC_RE.exec(radek);
+    const klic = m ? kanonickyTextovyKlic(m[1]) : null;
+    if (klic) {
+      aktualni = klic;
+      bloky.set(klic, [m![2]]);
+      continue;
+    }
+    if (aktualni) bloky.get(aktualni)!.push(radek);
+  }
+
+  if (bloky.size === 0) {
+    const cely = radky.join("\n").trim();
+    return cely ? { ObecnyText: cely } : {};
+  }
+
+  const pole: Record<string, string> = {};
+  for (const [klic, obsah] of bloky) {
+    const text = obsah.join("\n").trim();
+    if (text) pole[klic] = text;
+  }
+  return pole;
+}
+
+// Prázdné pole se nezapisuje (stejně jako u info panelu), takže prázdný
+// slide má na disku prázdný text.txt a pozná se jako nevyplněný.
+export function serializeTextSlide(pole: Record<string, string>): string {
+  const bloky: string[] = [];
+  for (const klic of TEXTOVE_KLICE) {
+    const v = (pole[klic] ?? "").replace(/\r\n/g, "\n").trim();
+    if (v) bloky.push(`${klic}: ${v}`);
+  }
+  return bloky.length ? bloky.join("\n") + "\n" : "";
+}
+
+async function readTextSlide(
+  id: string,
+  slozka: string,
+  jazyk: Jazyk = "cs",
+): Promise<Record<string, string>> {
+  try {
+    return parseTextSlide(
+      await fs.readFile(path.join(slideDirPath(id, slozka, jazyk), "text.txt"), "utf8"),
+    );
+  } catch {
+    return {};
+  }
+}
+
+// Zápis obou textů. Na rozdíl od info panelu tu nejsou žádná sdílená pole:
+// obojí se píše v každém jazyce zvlášť, takže se nic nedoplňuje z češtiny.
+export async function writeTextSlide(
+  id: string,
+  n: number,
+  pole: Record<string, string>,
+  jazyk: Jazyk = "cs",
+): Promise<{ ok: boolean; chyba?: string }> {
+  const slide = await findSlide(id, n);
+  if (!slide || slide.typ !== "txt") {
+    return { ok: false, chyba: "Slide není typu obecné informace." };
+  }
+  // Neznámé klíče zahazujeme, do souboru půjde jen to, co typ slidu zná.
+  const ocistene: Record<string, string> = {};
+  for (const klic of TEXTOVE_KLICE) {
+    const v = pole[klic];
+    if (typeof v === "string") ocistene[klic] = v;
+  }
+
+  const dir = slideDirPath(id, slide.slozka, jazyk);
+  await fs.mkdir(dir, { recursive: true }); // překladová složka nemusí existovat
+  await writeFileAtomic(path.join(dir, "text.txt"), serializeTextSlide(ocistene));
+  await touchDisplay(id);
+  // Souvislý text o druhu, chatbot ho může použít jako podklad (stejně jako
+  // zajímavost).
+  void notifyReingest(id, `${jazyk}/${slide.slozka}/text.txt`);
+  return { ok: true };
+}
+
 // Validace povinných polí; vrací text chyby, nebo null když je vše v pořádku.
 // V překladu kurátor vyplňuje jen název a další překládaná pole; sekci
 // a latinské jméno drží čeština, takže se v en/pl nevaliduje.
@@ -600,6 +711,10 @@ async function toContent(id: string, s: SlideDirInfo, jazyk: Jazyk): Promise<Sli
   } else if (s.typ === "vid") {
     const videos = await listFiles(id, s.slozka, ".mp4");
     content.video = videos.length ? slideFileUrl(id, s.slozka, videos[0]) : null;
+  } else if (s.typ === "txt") {
+    // Obecné informace: jen dva texty, žádná média. Jdou do `pole` stejně
+    // jako u info panelu, takže se tvar odpovědi API nemění.
+    content.pole = await readTextSlide(id, s.slozka, jazyk);
   }
   return content;
 }
@@ -1017,6 +1132,13 @@ export async function stavJazyku(id: string): Promise<StavJazyka[]> {
         if ((pole.Nazev ?? "").trim()) mnozina.add(`info:${s.n}`);
       } else if (s.typ === "gal") {
         if ((await readZajimavost(id, s.slozka, jazyk)).trim()) mnozina.add(`gal:${s.n}`);
+      } else if (s.typ === "txt") {
+        // Oba texty se překládají zvlášť, proto se počítají jako dvě
+        // položky: přeložený jen jeden z nich = jazyk ještě není hotový.
+        const pole = await readTextSlide(id, s.slozka, jazyk);
+        for (const klic of TEXTOVE_KLICE) {
+          if ((pole[klic] ?? "").trim()) mnozina.add(`txt:${s.n}:${klic}`);
+        }
       }
     }
     if ((await readKb(id, jazyk)).trim()) mnozina.add("kb");

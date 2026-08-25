@@ -19,6 +19,7 @@ import {
   ChevronRight,
   Film,
   FileText,
+  AlignLeft,
   GripVertical,
   Map,
   X,
@@ -38,6 +39,8 @@ import {
   SLIDE_TYPY,
   SLIDE_TYP_LABEL,
   SLIDE_TYP_POPIS,
+  TEXTOVA_POLE,
+  textovyPrazdny,
   ZAJIMAVOST_LIMIT_SLOV,
   type DisplayDetail as Detail,
   type SlideContent,
@@ -46,12 +49,15 @@ import {
 import {
   infoNeulozeno,
   klicPole,
+  klicTextovehoPole,
   klicZajimavosti,
   premapujDotcena,
   premapujDrafty,
   slucInfoDrafty,
   slucText,
+  slucTextoveDrafty,
   slucZajimavosti,
+  textovyNeulozeno,
   textZmeneno,
   zapomen,
   zapomenSlide,
@@ -84,6 +90,7 @@ const TYP_IKONA: Record<SlideTyp, typeof Info> = {
   "3d": Box,
   vid: Film,
   gal: Lightbulb, // _gal = zajímavost (text + jedna fotka)
+  txt: AlignLeft, // _txt = obecné informace (dva texty, žádná média)
 };
 
 // Záložka "kb" = znalostní báze (kb.md v kořeni displeje), mimo slidy.
@@ -107,6 +114,10 @@ function jePrazdny(s: SlideContent): boolean {
       return s.obrazky.length === 0;
     case "vid":
       return !s.video;
+    case "txt":
+      // Obecné informace jsou prázdné, dokud není vyplněný aspoň jeden
+      // z obou textů. Média tenhle typ nemá.
+      return textovyPrazdny(s.pole);
     default:
       return false; // AI slide se nevyplňuje, prázdná složka je správný stav
   }
@@ -128,6 +139,7 @@ const PRAZDNY_NAVOD: Record<SlideTyp, string> = {
   gal: "Napište text zajímavosti, přidejte k němu fotku a uložte.",
   "3d": "Nahrajte sekvenci snímků modelu. Ukládají se hned po nahrání a tablet si je pak vyzvedne sám.",
   vid: "Nahrajte video ve formátu MP4. Uloží se hned po nahrání a tablet si ho pak vyzvedne sám.",
+  txt: "Napište obecný text o druhu, doplňte zajímavosti a uložte. Stačí vyplnit aspoň jedno z obou polí.",
   ai: "",
 };
 
@@ -142,6 +154,11 @@ function obsahSlidu(s: SlideContent): string[] {
   if (s.text.trim()) kusy.push("text zajímavosti");
   if (s.typ === "info" && Object.values(s.pole).some((v) => v.trim())) {
     kusy.push("vyplněné údaje o druhu");
+  }
+  if (s.typ === "txt") {
+    for (const def of TEXTOVA_POLE) {
+      if ((s.pole[def.klic] ?? "").trim()) kusy.push(def.label.toLowerCase());
+    }
   }
   return kusy;
 }
@@ -167,6 +184,8 @@ export default function DisplayDetail() {
   // Text zajímavosti drží rodič stejně jako pole info panelu, jako lokální
   // stav editoru se ztrácel při přepnutí záložky.
   const [galDrafts, setGalDrafts] = useState<Record<number, string>>({});
+  // Obecné informace (_txt): dvě pole na slide, stejný tvar jako info panel.
+  const [txtDrafts, setTxtDrafts] = useState<Record<number, Record<string, string>>>({});
   const [kbDraft, setKbDraft] = useState("");
   const [sectionDraft, setSectionDraft] = useState(""); // meta.section (čeleď), na úrovni displeje
   const [saving, setSaving] = useState(false);
@@ -217,6 +236,7 @@ export default function DisplayDetail() {
         {
           infoDrafts: Record<number, Record<string, string>>;
           galDrafts: Record<number, string>;
+          txtDrafts: Record<number, Record<string, string>>;
           kbDraft: string;
           sectionDraft: string;
           dotcena: Dotcena;
@@ -251,6 +271,7 @@ export default function DisplayDetail() {
           const dot = dotcenaRef.current;
           setInfoDrafts((prev) => slucInfoDrafty(prev, d.slides, dot));
           setGalDrafts((prev) => slucZajimavosti(prev, d.slides, dot));
+          setTxtDrafts((prev) => slucTextoveDrafty(prev, d.slides, dot));
           setKbDraft((prev) => slucText(prev, d.kb, KLIC_KB, dot));
           setSectionDraft((prev) => slucText(prev, d.meta.section ?? "", KLIC_CELED, dot));
         }
@@ -276,6 +297,7 @@ export default function DisplayDetail() {
     zasoba.current[odkud] = {
       infoDrafts,
       galDrafts,
+      txtDrafts,
       kbDraft,
       sectionDraft,
       dotcena: dotcenaRef.current,
@@ -296,6 +318,7 @@ export default function DisplayDetail() {
       if (odlozene) {
         setInfoDrafts(odlozene.infoDrafts);
         setGalDrafts(odlozene.galDrafts);
+        setTxtDrafts(odlozene.txtDrafts);
         setKbDraft(odlozene.kbDraft);
         setSectionDraft(odlozene.sectionDraft);
         dotcenaRef.current = odlozene.dotcena;
@@ -306,6 +329,7 @@ export default function DisplayDetail() {
         setDotcena(prazdna);
         setInfoDrafts(slucInfoDrafty({}, d.slides, prazdna));
         setGalDrafts(slucZajimavosti({}, d.slides, prazdna));
+        setTxtDrafts(slucTextoveDrafty({}, d.slides, prazdna));
         setKbDraft(d.kb);
         setSectionDraft(d.meta.section ?? "");
       }
@@ -345,6 +369,9 @@ export default function DisplayDetail() {
     }
     if (s.typ === "gal") {
       return dotcena.has(klicZajimavosti(s.n)) && textZmeneno(galDrafts[s.n] ?? s.text, s.text);
+    }
+    if (s.typ === "txt") {
+      return textovyNeulozeno(s.n, txtDrafts[s.n], s.pole, dotcena);
     }
     return false;
   }
@@ -528,6 +555,7 @@ export default function DisplayDetail() {
       setDetail(d);
       setInfoDrafts((prev) => slucInfoDrafty(premapujDrafty(prev, poradi), d.slides, preskladana));
       setGalDrafts((prev) => slucZajimavosti(premapujDrafty(prev, poradi), d.slides, preskladana));
+      setTxtDrafts((prev) => slucTextoveDrafty(premapujDrafty(prev, poradi), d.slides, preskladana));
       setKbDraft((prev) => slucText(prev, d.kb, KLIC_KB, preskladana));
       setSectionDraft((prev) => slucText(prev, d.meta.section ?? "", KLIC_CELED, preskladana));
       setActive(d.slides[indexPoZmene]?.n ?? d.slides[0]?.n ?? ZADNY_SLIDE);
@@ -881,7 +909,7 @@ export default function DisplayDetail() {
           <p className="mx-auto mt-1.5 max-w-md text-sm text-fg-muted">
             Začněte přidáním <strong className="font-semibold text-fg">Infopanelu</strong>: to
             je základní panel s názvem druhu, údaji o něm a fotkami. Další typy slidů (video,
-            zajímavost, 3D model, AI otázky) můžete přidat kdykoliv potom.
+            zajímavost, obecné informace, 3D model, AI otázky) můžete přidat kdykoliv potom.
           </p>
           <div className="mt-5 flex flex-wrap items-center justify-center gap-3">
             <button onClick={() => addSlide("info")} disabled={busy} className="btn-primary">
@@ -954,6 +982,38 @@ export default function DisplayDetail() {
             setUlozeno(null);
             oznacDotcene(klicZajimavosti(slide.n));
             setGalDrafts((prev) => ({ ...prev, [slide.n]: v }));
+          }}
+          onUlozeno={() => {
+            ulozeneZahod((d) => zapomenSlide(d, slide.n));
+            oznacUlozeno();
+          }}
+          neulozeno={slideNeulozen(slide)}
+          ulozenoCas={ulozeno?.klic === String(slide.n) ? ulozeno.cas : null}
+        />
+      ) : slide.typ === "txt" ? (
+        <ObecneEditor
+          key={slide.n}
+          slide={slide}
+          displayId={id}
+          busy={busy}
+          reload={reloadObsah}
+          zeptejSe={zeptejSeNaZverejneni}
+          jazyk={jazyk}
+          referenceCs={
+            jazyk === "cs"
+              ? null
+              : referenceCs?.slides.find((x) => x.n === slide.n)?.pole ?? null
+          }
+          pole={txtDrafts[slide.n] ?? slide.pole}
+          onZmena={(patch) => {
+            setUlozeno(null);
+            for (const klic of Object.keys(patch)) {
+              oznacDotcene(klicTextovehoPole(slide.n, klic));
+            }
+            setTxtDrafts((prev) => ({
+              ...prev,
+              [slide.n]: { ...(prev[slide.n] ?? slide.pole), ...patch },
+            }));
           }}
           onUlozeno={() => {
             ulozeneZahod((d) => zapomenSlide(d, slide.n));
@@ -1948,6 +2008,148 @@ function ZajimavostEditor({
         onPotvrdit={() => fotka && removeImage(fotka)}
         onZrusit={() => setSmazatFotku(false)}
       />
+    </div>
+  );
+}
+
+// --- Obecné informace (_txt): dva dlouhé texty, žádná média ---
+//
+// Oba texty se překládají, sdílené s češtinou není nic. Slide nemá fotky ani
+// video, takže se tu neukládá nic „hned při nahrání": všechno jde na disk až
+// tlačítkem, stejně jako u zajímavosti.
+
+function ObecneEditor({
+  slide,
+  displayId,
+  busy,
+  reload,
+  zeptejSe,
+  jazyk,
+  referenceCs,
+  pole,
+  onZmena,
+  onUlozeno,
+  neulozeno,
+  ulozenoCas,
+}: {
+  slide: SlideContent;
+  displayId: string;
+  busy: boolean;
+  reload: () => Promise<void>;
+  zeptejSe: (popis: ReactNode, akce: () => Promise<void>) => void;
+  jazyk: Jazyk;
+  referenceCs: Record<string, string> | null;
+  pole: Record<string, string>;
+  onZmena: (patch: Record<string, string>) => void;
+  onUlozeno: () => void;
+  neulozeno: boolean;
+  ulozenoCas: string | null;
+}) {
+  const toast = useToast();
+  const [saving, setSaving] = useState(false);
+  const [chybiObsah, setChybiObsah] = useState(false);
+
+  const prazdny = textovyPrazdny(pole);
+
+  // `odeslat` = navíc zapsat do auditu, že je kurátor s texty hotový.
+  async function ulozit(odeslat: boolean) {
+    setSaving(true);
+    try {
+      await api.saveTextSlide(displayId, slide.n, pole, jazyk);
+      if (odeslat) await api.refresh(displayId);
+      onUlozeno();
+      await reload();
+      toast.success(
+        odeslat
+          ? `Obecné informace uloženy a zapsány jako hotové (displej ${displayId}).`
+          : "Obecné informace uloženy. Tablet si je vyzvedne sám, obvykle do minuty.",
+      );
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Uložení selhalo.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // Prázdný slide se dá uložit (rozdělaná práce), ale ne označit za hotový:
+  // na tabletu by zůstalo prázdné místo a v auditu by stálo, že to někdo
+  // zkontroloval. Stejné pravidlo jako u ostatních typů.
+  function zverejnit() {
+    if (prazdny) {
+      setChybiObsah(true);
+      toast.error("Ještě chybí vyplnit: aspoň jeden z obou textů.");
+      document.getElementById(`txt-${slide.n}-${TEXTOVA_POLE[0].klic}`)?.focus();
+      return;
+    }
+    setChybiObsah(false);
+    zeptejSe(
+      <>
+        Označí se jako hotový slide{" "}
+        <strong className="font-semibold text-fg">Obecné informace</strong> displeje {displayId}.
+      </>,
+      () => ulozit(true),
+    );
+  }
+
+  return (
+    <div className="max-w-3xl space-y-6">
+      {TEXTOVA_POLE.map((def) => {
+        const hodnota = pole[def.klic] ?? "";
+        return (
+          <div key={def.klic}>
+            <label className="label" htmlFor={`txt-${slide.n}-${def.klic}`}>
+              {def.label}
+              <span className="text-fg-muted font-normal"> · překládá se</span>
+            </label>
+            <textarea
+              id={`txt-${slide.n}-${def.klic}`}
+              className="input min-h-[200px] resize-y leading-relaxed"
+              value={hodnota}
+              onChange={(e) => onZmena({ [def.klic]: e.target.value })}
+            />
+            {/* Český originál jako podklad k překladu. Schválně se
+                nepředvyplňuje, aby se čeština omylem neuložila jako
+                angličtina. */}
+            {!hodnota.trim() && <CeskyOriginal text={referenceCs?.[def.klic] ?? null} />}
+            <PodPolem
+              hint={`${def.hint} Ideálně do ${def.limitSlov} slov, delší text se na tabletu ořízne.`}
+              pocitadlo={
+                hodnota.trim() ? (
+                  <Pocitadlo kolik={pocetSlov(hodnota)} limit={def.limitSlov} jednotka="slov" />
+                ) : undefined
+              }
+            />
+          </div>
+        );
+      })}
+
+      <div className="flex flex-wrap items-center gap-3">
+        <button onClick={() => ulozit(false)} className="btn-primary" disabled={saving || busy}>
+          {saving ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Save className="h-4 w-4" strokeWidth={1.75} />
+          )}
+          Uložit
+        </button>
+        <button onClick={zverejnit} className="btn-ghost" disabled={saving || busy}>
+          <Send className="h-4 w-4" strokeWidth={1.75} />
+          Uložit a označit jako hotové
+        </button>
+        <StavUlozeni neulozeno={neulozeno} ulozenoCas={ulozenoCas} />
+      </div>
+
+      {chybiObsah && prazdny && (
+        <p className="text-sm text-danger">
+          Ještě chybí vyplnit: <span className="font-semibold">aspoň jeden z obou textů</span>.
+          Bez toho slide nejde označit za hotový, uložit rozepsaný ale můžete.
+        </p>
+      )}
+
+      <p className="text-xs text-fg-muted">
+        <strong className="font-semibold text-fg">Uložit</strong> zapíše oba texty na disk.{" "}
+        {VYZVEDNE_SI_SAM} Druhé tlačítko navíc zapíše do auditu, že jsou texty hotové.
+      </p>
     </div>
   );
 }

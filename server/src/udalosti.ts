@@ -41,6 +41,8 @@ const TYP_MAPA: Record<string, string> = {
   chat: "ai",
   video: "vid",
   vid: "vid",
+  txt: "txt",
+  text: "txt",
 };
 
 export function namapujTyp(surovy: unknown): string | undefined {

@@ -206,6 +206,8 @@ Vše je pod `DATA_ROOT` (výchozí `<repo>/data`):
         5_gal/                  Zajímavost (NE galerie)
           text.txt              "Popis: <dlouhý odstavec>"
           foto-*.png            jedna fotka (na zařízení vpravo)
+        6_txt/                  Obecné informace (jen text, žádná média)
+          text.txt              "ObecnyText: …" a "Zajimavosti: …"
   audit.jsonl                   append-only audit log
   prales.json                   nastavení displeje u deštného pralesa (kapitola 11)
   users.json                    účty kurátorů (bcrypt hashe), práva 0600
@@ -272,7 +274,8 @@ DelkaZivota: 10 až 15 let
     { "slozka": "2_ai",   "typ": "ai"   },
     { "slozka": "3_3d",   "typ": "3d"   },
     { "slozka": "4_vid",  "typ": "vid"  },
-    { "slozka": "5_gal",  "typ": "gal"  }
+    { "slozka": "5_gal",  "typ": "gal"  },
+    { "slozka": "6_txt",  "typ": "txt"  }
   ],
   "name": "Axolotl mexický",
   "latin_name": "Ambystoma mexicanum",
@@ -313,6 +316,33 @@ končetiny, ocas, části srdce i míchy bez vzniku jizev…
 - Píše se přes `PUT /api/displays/:id/slides/:n/text` (tělo `{text}`).
 - Text se na displeji **neroluje**, doporučený limit je 150 až 200 slov, editor
   průběžně počítá slova.
+
+### `text.txt`, obecné informace (slide `_txt`)
+
+Dva dlouhé texty o druhu, každý pod svým klíčem, ve stejném tvaru
+`Klic: Hodnota` jako info panel:
+
+```
+ObecnyText: Axolotl mexický je ocasatý obojživelník, který si po celý život
+zachovává larvální podobu včetně vnějších keříčkovitých žaber.
+Zajimavosti: Dokáže regenerovat končetiny, ocas i části srdce.
+```
+
+- **Klíče jsou `ObecnyText` a `Zajimavosti`**, bez diakritiky (ASCII), aby
+  soubor přečetlo Unity i skripty. Zapisují se vždy v tomhle tvaru, při čtení
+  je server tolerantní k velikosti písmen.
+- **Hodnota smí pokračovat na dalších řádcích** (dlouhý text, odstavce). Blok
+  končí až dalším klíčem nebo koncem souboru, stejná úmluva jako u zajímavosti.
+  Důsledek: řádek uvnitř textu, který sám začíná `Zajimavosti:`, by se přečetl
+  jako začátek druhého bloku.
+- Soubor **bez klíče** (ruční zásah) se přečte celý jako `ObecnyText`, ať se
+  obsah neztratí.
+- **Nevyplněné pole se nezapisuje.** Prázdný slide = prázdný soubor, podle toho
+  se pozná, že ještě není hotový.
+- **Oba texty se překládají**, sdílené s češtinou tu není nic (na rozdíl od
+  info panelu, kde se sekce a latinské jméno doplňují z češtiny).
+- Píše se přes `PUT /api/displays/:id/slides/:n/txt` (tělo `{pole, jazyk}`).
+- Slide **nemá žádná média**: fotku, video ani mapu server odmítne.
 
 ### Sekvence 3D modelu (slide `_3d`)
 
@@ -370,8 +400,8 @@ strukturu bez ručního zásahu. Kontrakt je:
 cs/<pořadí>_<typ>/
 ```
 
-- **Typ slidu** = suffix názvu složky. Finální struktura od Michala má pevných
-  **pět typů**:
+- **Typ slidu** = suffix názvu složky. Finální struktura od Michala měla pevných
+  **pět typů**, `_txt` k nim přibyl na žádost ZOO:
 
   | Suffix | Typ v CMS | Obsah složky |
   |---|---|---|
@@ -380,15 +410,18 @@ cs/<pořadí>_<typ>/
   | `_3d` (i `_mod`) | 3D model | sekvence `001.png`, `002.png`, … |
   | `_vid` | Video | jedno `.mp4` |
   | `_gal` | Zajímavost | `text.txt` (`Popis: …`) + jedna `.png` |
+  | `_txt` | Obecné informace | `text.txt` (`ObecnyText: …`, `Zajimavosti: …`), **žádná média** |
 
 - **Pořadí** = číselný prefix. Složka musí odpovídat regulárnímu výrazu
-  `^(\d+)_(info|vid|gal|ai|3d|mod)$`, jinak ji server ignoruje.
+  `^(\d+)_(info|vid|gal|ai|3d|mod|txt)$`, jinak ji server ignoruje.
 - **`_gal` je Zajímavost, ne galerie fotek.** Suffix zůstal kvůli Unity, obsah
   se ale změnil na finální strukturu: dlouhý text vlevo, jedna fotka vpravo.
 - **`_3d` i `_mod`** znamenají 3D model. Nově zakládaný slide dostane `_3d`;
   existující `_mod` se zachová i při změně pořadí (nepřejmenovává se).
 - **AI slide** je prázdná složka `<n>_ai`, její existence říká tabletu, že se
   na tomto místě má zobrazit AI průvodce. Žádný obsah nemá.
+- **`_txt` je jen text.** Fotku, video ani mapu na něj server nepřijme
+  (vrátí 400), takže ve složce nikdy nebude nic než `text.txt`.
 - **`kb.md` a `meta.json`** jsou v kořeni displeje, mimo `cs/`.
 
 Operace se slidy:
@@ -428,6 +461,7 @@ Zaznamenávané akce (řetězce, na které se váže i obarvení v UI):
 | `neúspěšné přihlášení` | `systém, IP <adresa>`, `uzivatel` = zadané jméno (ořezáno na 64 znaků) |
 | `úprava info panelu` | `displej <id>, slide <n>` |
 | `úprava zajímavosti` | `displej <id>, slide <n>` |
+| `úprava obecných informací` | `displej <id>, slide <n> (<jazyk>)` |
 | `úprava znalostní báze` | `displej <id>` |
 | `upload`, `smazání fotky` | `displej <id>, slide <n>: <soubor>` |
 | `označení mapy výskytu`, `zrušení mapy výskytu` | `displej <id>, slide <n>` |
@@ -780,12 +814,13 @@ automaticky, dokud ho někdo vědomě nepřidá do seznamu.
 | PUT | `/api/displays/:id/slides/:n` | uložení polí info panelu, tělo `{pole, section}`, vrací `{ok, latin, latinCorrected}` |
 | PUT | `/api/displays/:id/kb` | zápis `kb.md`, tělo `{text}` |
 | PUT | `/api/displays/:id/slides/:n/text` | text zajímavosti (`_gal`), tělo `{text}`, na disk jako `Popis: …` |
+| PUT | `/api/displays/:id/slides/:n/txt` | obecné informace (`_txt`), tělo `{pole, jazyk}` s klíči `ObecnyText` a `Zajimavosti` |
 | POST | `/api/displays/:id/slides/:n/image` | multipart upload fotky (konverze na PNG); `_gal` nahradí jedinou fotku, `_3d` přidá snímek na konec sekvence |
 | DELETE | `/api/displays/:id/slides/:n/images/:nazev` | smazání fotky |
 | PUT | `/api/displays/:id/slides/:n/images/mapa` | označení mapy, tělo `{nazev}`, `null` značení zruší |
 | POST | `/api/displays/:id/slides/:n/video` | multipart upload MP4 (slide `_vid` i `_info`) |
 | DELETE | `/api/displays/:id/slides/:n/video` | smazání videa |
-| POST | `/api/displays/:id/slides` | přidání slidu, tělo `{typ}` (`info`/`ai`/`3d`/`vid`/`gal`) |
+| POST | `/api/displays/:id/slides` | přidání slidu, tělo `{typ}` (`info`/`ai`/`3d`/`vid`/`gal`/`txt`) |
 | DELETE | `/api/displays/:id/slides/:n` | odebrání slidu |
 | PUT | `/api/displays/:id/slides/reorder` | změna pořadí, tělo `{poradi: [n, …]}` |
 | POST | `/api/displays/:id/refresh` | odeslání na displej |

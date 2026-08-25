@@ -281,6 +281,10 @@ function tlacitkoProSlide(typ: SlideContent["typ"] | null): Tlacitko {
   if (typ === "3d") return "3d";
   if (typ === "vid") return "video";
   if (typ === "gal") return "zajimavost";
+  // `info` i `txt` zvýrazňují domeček. Obecné informace vlastní tlačítko
+  // zatím nemají: sada tlačítek i jejich ikony jsou z Michalových předloh
+  // (/michal/ikona-*.png) a pro nový typ ikona neexistuje. Až ji dodá,
+  // přibude sem větev a položka ve SpodniLista.
   return "domu";
 }
 
@@ -331,6 +335,8 @@ function Zarizeni({
         <ObsahInfo slide={slide} onPrev={onPrev} onNext={onNext} />
       ) : slide.typ === "gal" ? (
         <ObsahZajimavost slide={slide} identita={id} />
+      ) : slide.typ === "txt" ? (
+        <ObsahObecne slide={slide} identita={id} />
       ) : slide.typ === "3d" ? (
         <ObsahModel slide={slide} identita={id} />
       ) : slide.typ === "vid" ? (
@@ -705,6 +711,61 @@ function ObsahAi({ identita: id }: { identita: Identita }) {
             Připravujeme
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// Obecné informace (_txt): dva texty vedle sebe, žádná média. Předlohu pro
+// tenhle typ Michal zatím nedodal, náhled proto drží typografii zajímavosti
+// (stejná velikost písma i svislá linka) a ukazuje hlavně OBSAH, ať kurátor
+// vidí, co se na displej dostane. Finální vzhled na zařízení kreslí Unity.
+function ObsahObecne({ slide, identita }: { slide: SlideContent; identita: Identita }) {
+  const obecny = (slide.pole.ObecnyText ?? "").trim();
+  const zajimavosti = (slide.pole.Zajimavosti ?? "").trim();
+  if (!obecny && !zajimavosti) return <PrazdnyObsah />;
+
+  const sloupec = {
+    fontSize: 19,
+    color: "#fff",
+    marginTop: 14,
+    lineHeight: 1.55,
+    whiteSpace: "pre-wrap" as const,
+  };
+  const nadpis = {
+    fontSize: 13,
+    letterSpacing: "0.14em",
+    textTransform: "uppercase" as const,
+    color: "#fff",
+    opacity: 0.55,
+  };
+
+  return (
+    <div className="absolute inset-0">
+      <div className="absolute top-0" style={{ left: OKRAJ, width: 620 }}>
+        <Hlavicka {...identita} cara={false} />
+      </div>
+
+      {/* Levý sloupec: obecný text */}
+      <div className="absolute overflow-hidden" style={{ left: OKRAJ, top: 210, bottom: 135, width: 429 }}>
+        <div style={nadpis}>Obecný text</div>
+        {obecny ? (
+          <div style={sloupec}>{obecny}</div>
+        ) : (
+          <div style={{ ...sloupec, color: "#666" }}>Bez textu</div>
+        )}
+      </div>
+
+      <div className="absolute" style={{ left: 540, top: 164, bottom: 135, width: 2, background: "#fff" }} />
+
+      {/* Pravý sloupec: zajímavosti */}
+      <div className="absolute overflow-hidden" style={{ left: 580, right: 40, top: 210, bottom: 135 }}>
+        <div style={nadpis}>Zajímavosti</div>
+        {zajimavosti ? (
+          <div style={sloupec}>{zajimavosti}</div>
+        ) : (
+          <div style={{ ...sloupec, color: "#666" }}>Bez textu</div>
+        )}
       </div>
     </div>
   );
