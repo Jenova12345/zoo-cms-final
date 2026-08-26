@@ -973,7 +973,8 @@ export async function setMapa(
 // zápis pod nimi na Windows selže nebo míří na zařízení, ne na soubor.
 const WIN_REZERVOVANA = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\.|$)/i;
 
-function sanitizeFilename(name: string): string {
+// Exportované, protože stejnou ochranu potřebují i díry v zemi (diry.ts).
+export function sanitizeFilename(name: string): string {
   let base = path
     .basename(name)
     .replace(/[^\w.\- áčďéěíňóřšťúůýžÁČĎÉĚÍŇÓŘŠŤÚŮÝŽ]/g, "_")

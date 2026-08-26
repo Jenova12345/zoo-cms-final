@@ -12,6 +12,11 @@ data/audit.jsonl
 data/users.json
 data/session.key
 
+# Videa zapuštěných prvků (díry v zemi). Lokálně je DATA_ROOT uvnitř repa,
+# na serveru je mimo něj; stovky MB mp4 do gitu nepatří.
+data/Cervori/
+data/Paleonaleziste/
+
 # Lokální proměnné prostředí (tajemství). Šablona je .env.example (ta v gitu zůstává).
 .env
 # Archivy (zálohy, exporty, podklady) do gitu nepatří.

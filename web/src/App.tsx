@@ -7,6 +7,7 @@ import Displays from "./pages/Displays";
 import DisplayDetail from "./pages/DisplayDetail";
 import Prales from "./pages/Prales";
 import Videomapping from "./pages/Videomapping";
+import Diry from "./pages/Diry";
 import Tablet from "./pages/Tablet";
 import Audit from "./pages/Audit";
 
@@ -41,6 +42,7 @@ export default function App() {
         <Route path="/displeje/:id" element={<DisplayDetail />} />
         <Route path="/prales" element={<Prales />} />
         <Route path="/videomapping" element={<Videomapping />} />
+        <Route path="/diry" element={<Diry />} />
         <Route path="/audit" element={<Audit />} />
       </Route>
 

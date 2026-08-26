@@ -46,6 +46,7 @@ import {
   ziskejNastaveni,
 } from "./prales.js";
 import { LAT, LON, ZASTARALE_PO_MS, spustPocasi, stavPocasi } from "./pocasi.js";
+import { najdiDiru, stavDiry, stavVsech, ulozVideo } from "./diry.js";
 import {
   jePovel,
   najdiInstalaci,
@@ -734,6 +735,38 @@ app.put<{ Body: unknown }>("/api/prales/nastaveni", async (req, reply) => {
   }
 
   return { ok: true, ...stavPraleseProCms() };
+});
+
+// --- Díry v zemi (zapuštěné expoziční prvky) ---
+//
+// Dva prvky, které nejsou displeje: Michalův přehrávač si video čte přímo
+// z disku ze složky v datovém kořeni. Jediné, co CMS dělá, je dostat do té
+// složky právě jeden .mp4. Viz diry.ts. Chráněné přihlášením jako ostatní
+// /api; soubory se přes HTTP neservírují (static je zúžený na displeje/).
+
+app.get("/api/diry", async () => {
+  return { diry: await stavVsech() };
+});
+
+app.post<{ Params: { id: string } }>("/api/diry/:id/video", async (req, reply) => {
+  const dira = najdiDiru(req.params.id);
+  if (!dira) return reply.code(404).send({ chyba: "Neznámý prvek." });
+
+  const file = await req.file();
+  if (!file) return reply.code(400).send({ chyba: "Chybí soubor." });
+  // Stejná kontrola jako u videa na slidu: přehrávač bere jen .mp4.
+  const ext = path.extname(file.filename).toLowerCase();
+  const jeMp4 = file.mimetype === "video/mp4" || ext === ".mp4";
+  if (!jeMp4) return reply.code(400).send({ chyba: "Nahrajte prosím video ve formátu MP4." });
+
+  const buffer = await file.toBuffer();
+  const res = await ulozVideo(dira, file.filename, buffer);
+  await appendAudit({
+    uzivatel: currentUser(req),
+    akce: "upload videa",
+    cil: `díra ${dira.nazev}: ${res.soubor}`,
+  });
+  return { ok: true, stav: await stavDiry(dira) };
 });
 
 // --- Videomapping ---

@@ -474,3 +474,19 @@ export const VIDEOMAPPING_POVEL_LABEL: Record<VideomappingPovel, string> = {
   start: "zapnout",
   stop: "vypnout",
 };
+
+
+// --- Díry v zemi (zapuštěné expoziční prvky) ---
+// Nejsou to displeje: jen složka v datovém kořeni s jedním .mp4, které si
+// Michalův přehrávač čte přímo z disku. Zrcadlí server/src/diry.ts.
+
+export interface DiraStav {
+  id: string;
+  nazev: string; // s diakritikou, pro kurátora
+  slozka: string; // název složky na disku (bez diakritiky)
+  cesta: string; // plná cesta na disku, ať jde zkontrolovat
+  soubor: string | null; // název videa, null když ještě nic nenahráno
+  velikost: number | null; // v bajtech
+  nahrano: string | null; // ISO čas poslední změny souboru
+  vicSouboru: string[]; // víc .mp4 ve složce = přehrávač neví, co pustit
+}

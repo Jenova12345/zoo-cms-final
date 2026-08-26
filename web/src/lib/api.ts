@@ -11,6 +11,7 @@ import type {
   PralesNastaveni,
   PralesStav,
   SlideTyp,
+  DiraStav,
   VideomappingInstalace,
   VideomappingPovel,
 } from "./types";
@@ -273,6 +274,24 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(nastaveni),
     });
+  },
+
+  // Díry v zemi: co teď leží ve složkách obou prvků.
+  async diry(): Promise<DiraStav[]> {
+    const d = await request<{ diry: DiraStav[] }>("/api/diry");
+    return d.diry;
+  },
+
+  // Nahrání nebo výměna videa díry. Stejně jako u videa na slidu jde přes XHR
+  // kvůli procentům a možnosti zrušit; soubor má běžně stovky MB.
+  async uploadDiraVideo(
+    id: string,
+    file: File,
+    opts: { onProgress?: (procenta: number) => void; signal?: AbortSignal } = {},
+  ): Promise<{ stav: DiraStav }> {
+    const form = new FormData();
+    form.append("file", file);
+    return xhrUpload<{ ok: boolean; stav: DiraStav }>(`/api/diry/${id}/video`, form, opts);
   },
 
   // Instalace videomappingu i s tím, co jsme jim naposledy poslali.
