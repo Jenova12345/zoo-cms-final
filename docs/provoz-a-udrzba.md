@@ -207,12 +207,12 @@ Vše je pod `DATA_ROOT` (výchozí `<repo>/data`):
         2_ai/                   prázdná složka = AI otázky
         3_3d/                   3D model (i varianta 3_mod)
           001.png, 002.png, …   sekvence snímků, číslovaná od 001
-        4_vid/
-          <nazev>.mp4           jedno video
-        5_gal/                  Zajímavost (NE galerie)
-          text.txt              "Popis: <dlouhý odstavec>"
+        4_gal/                  Text a fotka (NE galerie!)
+          text.txt              "ObecnyText:", "Zajimavosti:", "Taxonomie:"
           foto-*.png            jedna fotka (na zařízení vpravo)
-        6_txt/                  Obecné informace (jen text, žádná média)
+        5_vid/                  GALERIE fotek i videí (NE jen video!)
+          01.jpg, 02.mp4, …     jedna číslovaná řada, Unity ji řadí abecedně
+        6_txt/                  Obecné informace (pozůstalý typ, nový nejde založit)
           text.txt              "ObecnyText: …" a "Zajimavosti: …"
   audit.jsonl                   append-only audit log
   prales.json                   nastavení displeje u deštného pralesa (kapitola 11)
@@ -231,8 +231,13 @@ nepatří.
 
 Soubor přetažený přímo do složky slidu se objeví v CMS i na tabletu bez
 restartu. API čte disk při každém požadavku. Musí ale splňovat konvenci:
-fotky `.png` (jiné přípony se ignorují), video `.mp4`, název složky slidu
-`<číslo>_<typ>`.
+fotky `.png` (jiné přípony se ignorují; v galerii `_vid` projde i `.jpg`),
+video `.mp4`, název složky slidu `<číslo>_<typ>`.
+
+V galerii `_vid` navíc platí, že položky mají být číslované s vodící nulou
+a **se stejným počtem cifer** (`01`, `02`, … nebo `001`, `002`, …). Ručně
+přidaný soubor s jiným názvem se zobrazí, ale zařadí se až za očíslované;
+srovná se sám, jakmile do slidu kurátor v CMS něco přidá nebo z něj smaže.
 
 ---
 
@@ -279,8 +284,8 @@ DelkaZivota: 10 až 15 let
     { "slozka": "1_info", "typ": "info" },
     { "slozka": "2_ai",   "typ": "ai"   },
     { "slozka": "3_3d",   "typ": "3d"   },
-    { "slozka": "4_vid",  "typ": "vid"  },
-    { "slozka": "5_gal",  "typ": "gal"  },
+    { "slozka": "4_gal",  "typ": "gal"  },
+    { "slozka": "5_vid",  "typ": "vid"  },
     { "slozka": "6_txt",  "typ": "txt"  }
   ],
   "name": "Axolotl mexický",
@@ -299,31 +304,66 @@ DelkaZivota: 10 až 15 let
 | `name` | = `Nazev`, identifikace pro chatbota. |
 | `latin_name` | Kanonizované latinské jméno; chatbot podle něj páruje druh. |
 | `category` | = `Sekce` (zóna expozice). |
-| `section` | Taxonomická čeleď (např. `Dendrobatidae`). Existuje **jen v `meta.json`**, do `text.txt` se nezapisuje a na tabletu se nezobrazuje. |
+| `section` | Taxonomická čeleď latinsky (např. `Dendrobatidae`). Existuje **jen v `meta.json`**, do `text.txt` se nezapisuje a na tabletu se nezobrazuje: je to identifikace pro chatbota. Zařazení druhu, které vidí návštěvník, je jinde, viz `Taxonomie:` u slidu `_gal`. |
 
 Displej bez čitelného `meta.json` se v seznamu `GET /api/displays` vůbec
 neobjeví, soubor je tedy povinný.
 
-### `text.txt`, zajímavost (slide `_gal`)
+### `text.txt`, textový slide (slide `_gal`)
 
-Jeden dlouhý odstavec o druhu, na zařízení vlevo vedle fotky:
+Pozor: **`_gal` není galerie.** Je to textový slide: dva dlouhé texty,
+zařazení druhu a jedna fotka. Suffix zůstal, protože ho tak čte Unity.
 
 ```
-Popis: Axolotl má mimořádnou schopnost regenerace: dokáže obnovit ztracené
-končetiny, ocas, části srdce i míchy bez vzniku jizev…
+ObecnyText: Axolotl mexický je ocasatý obojživelník, který si po celý život
+zachovává larvální podobu včetně vnějších keříčkovitých žaber.
+Zajimavosti: Dokáže regenerovat končetiny, ocas i části srdce.
+Taxonomie: Třída: Obojživelníci | Řád: Mloci | Čeleď: Axolotlovití
 ```
 
-- **Zapisuje se vždy klíč `Popis:`**, při čtení se bere i `Text:` (Michal
-  používá obojí). Text může na disku pokračovat na dalších řádcích, server
-  bere všechno za klíčem.
-- Soubor **bez klíče** (ruční zásah) se přečte celý jako holý odstavec, ať se
-  obsah neztratí.
-- Prázdný text = prázdný soubor.
-- Píše se přes `PUT /api/displays/:id/slides/:n/text` (tělo `{text}`).
-- Text se na displeji **neroluje**, doporučený limit je 150 až 200 slov, editor
-  průběžně počítá slova.
+- **Klíče jsou `ObecnyText`, `Zajimavosti` a `Taxonomie`**, bez diakritiky
+  (ASCII) a case-sensitive. `ObecnyText` a `Zajimavosti` čte Unity DataLoader
+  beze změny, jsou to tytéž klíče jako u pozůstalého `_txt`.
+- **Hodnota obou textů smí pokračovat na dalších řádcích.** Blok končí až
+  dalším klíčem nebo koncem souboru. Důsledek: řádek uvnitř textu, který sám
+  začíná `Zajimavosti:`, by se přečetl jako začátek druhého bloku.
+- **`Taxonomie` je jeden řádek**, který skládá server ze tří polí editoru
+  (Třída, Řád, Čeleď). Oddělovač je ` | `, nevyplněná část se vynechá i s
+  popiskem, všechny tři prázdné = řádek se nezapíše vůbec.
+- **Popisky uvnitř `Taxonomie` se překládají**, klíč `Taxonomie:` zůstává ve
+  všech jazycích stejný, aby ho Unity našlo:
 
-### `text.txt`, obecné informace (slide `_txt`)
+  | Jazyk | Tvar hodnoty |
+  |---|---|
+  | cs | `Třída: … \| Řád: … \| Čeleď: …` |
+  | en | `Class: … \| Order: … \| Family: …` |
+  | pl | `Gromada: … \| Rząd: … \| Rodzina: …` |
+
+  Při čtení je parser tolerantní: rozpozná popisky ve všech třech jazycích,
+  bez ohledu na diakritiku a velikost písmen. Co rozpozná nedokáže, nezahodí
+  tiše, ale ukáže kurátorovi v editoru s poznámkou, že to uložení přepíše.
+- **Zpětná kompatibilita:** soubory z doby, kdy `_gal` byla „zajímavost"
+  s jediným odstavcem pod klíčem `Popis:` (nebo `Text:`), se dál načtou,
+  obsah spadne do `ObecnyText`. Prvním uložením přejde soubor do nového tvaru.
+- Soubor **bez klíče** (ruční zásah) se přečte celý jako `ObecnyText`.
+- **Nevyplněné pole se nezapisuje.** Prázdný slide = prázdný soubor.
+- **Všechno se překládá**, sdílené s češtinou tu není nic (na rozdíl od info
+  panelu, kde se sekce a latinské jméno doplňují z češtiny). Fotka je naopak
+  společná, leží v `cs/`.
+- Píše se přes `PUT /api/displays/:id/slides/:n/text` (tělo `{pole, jazyk}`,
+  kde `pole` nese `ObecnyText`, `Zajimavosti`, `Trida`, `Rad`, `Celed`).
+  Do jednoho řádku `Taxonomie:` je složí **až server**, aby tvar, který čte
+  Unity, vznikal na jednom místě.
+- Text se na displeji **neroluje**, doporučený limit je 250 slov na pole,
+  editor průběžně počítá slova.
+
+### `text.txt`, obecné informace (slide `_txt`, pozůstalý typ)
+
+**Nový slide tohoto typu už nejde založit**: v cílové struktuře od Michala
+není, chybí proto v nabídce „Přidat slide" i v serverové validaci
+(`SLIDE_TYPY_NABIDKA`). Existující složky se dál čtou i editují, aby se
+nikomu neztratil rozepsaný obsah. Nástupcem je slide `_gal`, který má tytéž
+dva klíče a k nim zařazení druhu a fotku.
 
 Dva dlouhé texty o druhu, každý pod svým klíčem, ve stejném tvaru
 `Klic: Hodnota` jako info panel:
@@ -338,7 +378,7 @@ Zajimavosti: Dokáže regenerovat končetiny, ocas i části srdce.
   soubor přečetlo Unity i skripty. Zapisují se vždy v tomhle tvaru, při čtení
   je server tolerantní k velikosti písmen.
 - **Hodnota smí pokračovat na dalších řádcích** (dlouhý text, odstavce). Blok
-  končí až dalším klíčem nebo koncem souboru, stejná úmluva jako u zajímavosti.
+  končí až dalším klíčem nebo koncem souboru, stejná úmluva jako u `_gal`.
   Důsledek: řádek uvnitř textu, který sám začíná `Zajimavosti:`, by se přečetl
   jako začátek druhého bloku.
 - Soubor **bez klíče** (ruční zásah) se přečte celý jako `ObecnyText`, ať se
@@ -370,8 +410,12 @@ nepřepisuje automaticky.
 
 ### Fotky
 
-- Každý upload se převádí přes `sharp` do **PNG** (`.rotate()` srovná orientaci
-  podle EXIF). Když převod selže, API vrátí 400 a nic se neuloží.
+- Každý upload projde přes `sharp` (`.rotate()` srovná orientaci podle EXIF,
+  strop 40 Mpx na vstupu, zmenšení na 4096 px, SVG se odmítá). Když zpracování
+  selže, API vrátí 400 a nic se neuloží.
+- Mimo galerii se výstup vždy převádí do **PNG**. **V galerii (`_vid`) si fotka
+  drží příponu** (JPG zůstane JPG), protože tam Unity řadí abecedně a na
+  formátu nezáleží; co není JPG ani PNG, převede se na PNG.
 - Název je vždy unikátní: `foto-<base36 čas>-<6 hex znaků>.png`. (Safari
   pojmenovává přetažené obrázky `Unknown.jpeg`, bez unikátního jména by se
   soubory přepisovaly.)
@@ -379,19 +423,43 @@ nepřepisuje automaticky.
   přejmenuje; předchozí `mapa.png` se vrátí mezi běžné fotky pod novým názvem.
   Mapa je jen na slidu typu `info`.
 - Fotky se čtou jen s příponou `.png`, řazené abecedně podle názvu souboru.
-- **Zajímavost (`_gal`) má právě jednu fotku**, nová nahraná předchozí smaže.
+- **Textový slide (`_gal`) má právě jednu fotku**, nová nahraná předchozí smaže.
 - **3D model (`_3d`)** má místo unikátních názvů číslovanou sekvenci, viz výš.
+- **Galerie (`_vid`)** má taky číslovanou sekvenci, viz níž.
 
 ### Video
 
 - Přijímá se **jen MP4** (kontroluje se MIME `video/mp4` nebo přípona `.mp4`),
   konverze se nedělá.
-- Video patří na slide **`_vid`** a nově i volitelně na **`_info`** (Michal ho
-  na zařízení řadí na začátek galerie fotek info panelu).
-- Na slidu je vždy **jedno** video, starší `.mp4` se před zápisem smažou.
-- Název souboru se očistí (ponechá písmena včetně české diakritiky, číslice,
+- Video patří do galerie **`_vid`** a volitelně na **`_info`** (Michal ho na
+  zařízení řadí na začátek galerie fotek info panelu).
+- **Na info panelu je vždy jedno** video, starší `.mp4` se před zápisem smažou.
+  Název souboru se očistí (ponechá písmena včetně české diakritiky, číslice,
   tečku, pomlčku, podtržítko a mezeru) a přípona se vynutí na `.mp4`.
+- **V galerii jich může být víc**, nové se přidá na konec řady a dostane
+  pořadové číslo; původní název souboru se zahazuje, viz níž.
 - Limit uploadu je **200 MB** (`@fastify/multipart`).
+
+### Galerie (slide `_vid`)
+
+Pozor: **`_vid` není jen video.** Je to galerie fotek a videí dohromady,
+v jedné číslované řadě. Suffix zůstal, protože ho tak čte Unity.
+
+- Položky se ukládají jako **`01.jpg`, `02.mp4`, `03.png`, …**: pořadové číslo
+  s vodící nulou a původní přípona. **Unity je řadí abecedně**, ne číselně.
+- Proto mají všechny položky **stejný počet cifer**. Šířka se počítá z počtu
+  položek, takže při přechodu přes stovku se celá řada přečísluje z `01`
+  na `001` (jinak by se `100` abecedně zařadilo před `99`).
+- Pořadí = pořadí nahrání. Když se nahraje víc souborů najednou, seřadí se
+  podle názvu.
+- Po přidání i smazání se řada **přečísluje** na souvislou (dvoufázově, přes
+  `.tmp-*`), takže v ní nezůstane díra.
+- Maže se **po jedné položce** přes `DELETE .../slides/:n/images/:nazev`
+  (v galerii projde i `.mp4`). `DELETE .../slides/:n/video` je jen pro info
+  panel, v galerii by smazal všechna videa najednou.
+- Soubor s neočíslovaným názvem (obsah nahraný starším CMS) se **nezahazuje**:
+  zobrazí se a zařadí se za očíslované, kam ho zařadí i Unity. Do konvence se
+  dostane při první změně ve slidu. **Žádná dávková migrace se nekoná.**
 
 ---
 
@@ -407,27 +475,29 @@ cs/<pořadí>_<typ>/
 ```
 
 - **Typ slidu** = suffix názvu složky. Finální struktura od Michala měla pevných
-  **pět typů**, `_txt` k nim přibyl na žádost ZOO:
+  **pět typů**, `_txt` je pozůstatek (nový už nejde založit):
 
   | Suffix | Typ v CMS | Obsah složky |
   |---|---|---|
   | `_info` | Infopanel | `text.txt` (Klic: Hodnota), fotky `.png`, volitelně `mapa.png` a jedno `.mp4` |
   | `_ai` | AI otázky | prázdná složka |
   | `_3d` (i `_mod`) | 3D model | sekvence `001.png`, `002.png`, … |
-  | `_vid` | Video | jedno `.mp4` |
-  | `_gal` | Zajímavost | `text.txt` (`Popis: …`) + jedna `.png` |
+  | `_vid` | Galerie | fotky i videa v jedné řadě: `01.jpg`, `02.mp4`, `03.png`, … |
+  | `_gal` | Text a fotka | `text.txt` (`ObecnyText:`, `Zajimavosti:`, `Taxonomie:`) + jedna `.png` |
   | `_txt` | Obecné informace | `text.txt` (`ObecnyText: …`, `Zajimavosti: …`), **žádná média** |
 
 - **Pořadí** = číselný prefix. Složka musí odpovídat regulárnímu výrazu
   `^(\d+)_(info|vid|gal|ai|3d|mod|txt)$`, jinak ji server ignoruje.
-- **`_gal` je Zajímavost, ne galerie fotek.** Suffix zůstal kvůli Unity, obsah
-  se ale změnil na finální strukturu: dlouhý text vlevo, jedna fotka vpravo.
+- **Dva suffixy neodpovídají svému obsahu.** Zůstaly kvůli tomu, že je tak čte
+  Unity: **`_gal` není galerie**, ale textový slide (dva texty, zařazení druhu
+  a jedna fotka), a **`_vid` není jen video**, ale galerie fotek i videí.
 - **`_3d` i `_mod`** znamenají 3D model. Nově zakládaný slide dostane `_3d`;
   existující `_mod` se zachová i při změně pořadí (nepřejmenovává se).
 - **AI slide** je prázdná složka `<n>_ai`, její existence říká tabletu, že se
   na tomto místě má zobrazit AI průvodce. Žádný obsah nemá.
 - **`_txt` je jen text.** Fotku, video ani mapu na něj server nepřijme
-  (vrátí 400), takže ve složce nikdy nebude nic než `text.txt`.
+  (vrátí 400), takže ve složce nikdy nebude nic než `text.txt`. Nový slide
+  tohoto typu už nejde založit, viz kapitola 6.
 - **`kb.md` a `meta.json`** jsou v kořeni displeje, mimo `cs/`.
 
 Operace se slidy:
@@ -466,10 +536,10 @@ Zaznamenávané akce (řetězce, na které se váže i obarvení v UI):
 | `přihlášení`, `odhlášení` | `systém, IP <adresa>` (u odhlášení jen `systém`) |
 | `neúspěšné přihlášení` | `systém, IP <adresa>`, `uzivatel` = zadané jméno (ořezáno na 64 znaků) |
 | `úprava info panelu` | `displej <id>, slide <n>` |
-| `úprava zajímavosti` | `displej <id>, slide <n>` |
+| `úprava textového slidu` | `displej <id>, slide <n> (<jazyk>)` |
 | `úprava obecných informací` | `displej <id>, slide <n> (<jazyk>)` |
 | `úprava znalostní báze` | `displej <id>` |
-| `upload`, `smazání fotky` | `displej <id>, slide <n>: <soubor>` |
+| `upload`, `smazání souboru` | `displej <id>, slide <n>: <soubor>` |
 | `označení mapy výskytu`, `zrušení mapy výskytu` | `displej <id>, slide <n>` |
 | `upload videa`, `smazání videa` | `displej <id>, slide <n>` |
 | `přidání slidu`, `odebrání slidu`, `pořadí slidů` | `displej <id>` |
@@ -893,14 +963,14 @@ automaticky, dokud ho někdo vědomě nepřidá do seznamu.
 | GET | `/api/displays` | seznam displejů (id, druh, `latin_name`, stav, poslední změna, náhledová fotka) |
 | PUT | `/api/displays/:id/slides/:n` | uložení polí info panelu, tělo `{pole, section}`, vrací `{ok, latin, latinCorrected}` |
 | PUT | `/api/displays/:id/kb` | zápis `kb.md`, tělo `{text}` |
-| PUT | `/api/displays/:id/slides/:n/text` | text zajímavosti (`_gal`), tělo `{text}`, na disk jako `Popis: …` |
+| PUT | `/api/displays/:id/slides/:n/text` | texty a zařazení druhu (`_gal`), tělo `{pole, jazyk}` s klíči `ObecnyText`, `Zajimavosti`, `Trida`, `Rad`, `Celed`; řádek `Taxonomie:` skládá server |
 | PUT | `/api/displays/:id/slides/:n/txt` | obecné informace (`_txt`), tělo `{pole, jazyk}` s klíči `ObecnyText` a `Zajimavosti` |
-| POST | `/api/displays/:id/slides/:n/image` | multipart upload fotky (konverze na PNG); `_gal` nahradí jedinou fotku, `_3d` přidá snímek na konec sekvence |
-| DELETE | `/api/displays/:id/slides/:n/images/:nazev` | smazání fotky |
+| POST | `/api/displays/:id/slides/:n/image` | multipart upload fotky; `_gal` nahradí jedinou fotku, `_3d` přidá snímek na konec sekvence, `_vid` položku na konec galerie (tam se drží přípona, jinde konverze na PNG) |
+| DELETE | `/api/displays/:id/slides/:n/images/:nazev` | smazání jedné položky (v galerii i `.mp4`) |
 | PUT | `/api/displays/:id/slides/:n/images/mapa` | označení mapy, tělo `{nazev}`, `null` značení zruší |
-| POST | `/api/displays/:id/slides/:n/video` | multipart upload MP4 (slide `_vid` i `_info`) |
-| DELETE | `/api/displays/:id/slides/:n/video` | smazání videa |
-| POST | `/api/displays/:id/slides` | přidání slidu, tělo `{typ}` (`info`/`ai`/`3d`/`vid`/`gal`/`txt`) |
+| POST | `/api/displays/:id/slides/:n/video` | multipart upload MP4; v galerii `_vid` přibude jako další položka, na `_info` nahradí to jediné |
+| DELETE | `/api/displays/:id/slides/:n/video` | smazání videa info panelu (galerie se maže po položkách) |
+| POST | `/api/displays/:id/slides` | přidání slidu, tělo `{typ}` (`info`/`ai`/`3d`/`vid`/`gal`; `txt` už ne) |
 | DELETE | `/api/displays/:id/slides/:n` | odebrání slidu |
 | PUT | `/api/displays/:id/slides/reorder` | změna pořadí, tělo `{poradi: [n, …]}` |
 | POST | `/api/displays/:id/refresh` | odeslání na displej |
@@ -934,7 +1004,7 @@ Spouštějí se z kořene repozitáře a **respektují `DATA_ROOT`**.
 
 | Příkaz | Co dělá |
 |---|---|
-| `npm run seed` | **Destruktivní.** Smaže a znovu vygeneruje `data/displeje/1..37`. Displeje 1 až 3 dostanou obsah (`1_info`, `2_vid`, `3_gal` se zajímavostí, `4_ai`, `kb.md`), 4 až 37 jsou `Nepřiřazeno` bez slidů. Displeje s číslem dělitelným 11 dostanou `stav: "offline"`. Zakládá výchozí účet, pokud žádný neexistuje. |
+| `npm run seed` | **Destruktivní.** Smaže a znovu vygeneruje `data/displeje/1..37`. Displeje 1 až 3 dostanou obsah (`1_info`, `2_vid` prázdná galerie, `3_gal` s texty a fotkou, `4_ai`, `kb.md`), 4 až 37 jsou `Nepřiřazeno` bez slidů. Displeje s číslem dělitelným 11 dostanou `stav: "offline"`. Zakládá výchozí účet, pokud žádný neexistuje. |
 | `npm run migrate` | Jednorázová migrace staré struktury (`cs/slide-1..6`, `text.md`, `kb.md` uvnitř slidu) na formát pro Unity. Zachová média (obrázky se převedou na PNG, první MP4 jde do `2_vid`), texty starých slidů připojí do `kb.md`. **Idempotentní**, displej bez složek `slide-*` přeskočí. |
 | `npm run backfill --workspace server` | Doplní do existujících `meta.json` identifikaci pro chatbota (`name`, `druh`, `latin_name`, `category`) z `text.txt`. Idempotentní, médií ani textů se nedotýká. `section` (čeleď) nezná, tu doplní kurátor v UI. V kořenovém `package.json` zkratka není. |
 | `npm run useradd -- …` / `npm run userlist` | Správa účtů, viz [kapitola 4](#4-účty-a-přihlašování). |

@@ -186,13 +186,17 @@ async function coJeNaDispleji(id: string): Promise<string[]> {
     if (s.typ === "info" && Object.values(s.pole).some((v) => v.trim())) {
       nalezeno.push("vyplněný info panel");
     }
-    if (s.typ === "gal" && s.text.trim()) nalezeno.push("text zajímavosti");
-    // Obecné informace drží texty v `pole` stejně jako info panel; bez téhle
-    // větve by import považoval vyplněný slide za prázdný a přepsal ho.
+    // Textový slide i obecné informace drží texty v `pole` stejně jako info
+    // panel; bez téhle větve by import považoval vyplněný slide za prázdný
+    // a přepsal ho.
+    if (s.typ === "gal" && Object.values(s.pole).some((v) => v.trim())) {
+      nalezeno.push("vyplněný textový slide");
+    }
     if (s.typ === "txt" && Object.values(s.pole).some((v) => v.trim())) {
       nalezeno.push("vyplněné obecné informace");
     }
     if (s.obrazky.length) nalezeno.push(`${s.obrazky.length}× obrázek`);
+    if (s.media.length) nalezeno.push(`galerii (${s.media.length} položek)`);
     if (s.video) nalezeno.push("video");
   }
   return nalezeno;

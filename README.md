@@ -101,9 +101,9 @@ data/displeje/<cislo>/kb.md                     znalostní báze chatbota (není
 data/displeje/<cislo>/cs/<n>_info/text.txt      Infopanel: řádky "Klic: Hodnota" + fotky, mapa.png, volitelné mp4
 data/displeje/<cislo>/cs/<n>_ai/                AI otázky (prázdná složka)
 data/displeje/<cislo>/cs/<n>_3d/001.png…        3D model: sekvence snímků (i varianta <n>_mod)
-data/displeje/<cislo>/cs/<n>_vid/<video>.mp4    Video (jedno na slide)
-data/displeje/<cislo>/cs/<n>_gal/text.txt       Zajímavost: "Popis: …" + jedna fotka
-data/displeje/<cislo>/cs/<n>_txt/text.txt       Obecné informace: "ObecnyText: …" a "Zajimavosti: …" (jen text)
+data/displeje/<cislo>/cs/<n>_vid/01.jpg, 02.mp4… Galerie: fotky i videa, číslovaná s vodící nulou
+data/displeje/<cislo>/cs/<n>_gal/text.txt       Text a fotka: "ObecnyText:", "Zajimavosti:", "Taxonomie:" + jedna fotka
+data/displeje/<cislo>/cs/<n>_txt/text.txt       Obecné informace (pozůstalý typ, nový nejde založit)
 data/prales.json                                nastavení displeje u deštného pralesa (není slide)
 data/audit.jsonl                                append-only audit log
 data/users.json                                 účty kurátorů (bcrypt hashe hesel)
@@ -117,6 +117,18 @@ Typ slidu je **suffix** názvu složky (`_info`, `_ai`, `_3d` i `_mod`, `_vid`, 
 pořadí **číselný prefix**. Přehled drží i pole `slidy` v `meta.json`, zdrojem pravdy
 jsou ale složky na disku. Soubor ručně přetažený do složky slidu se objeví v CMS
 i na tabletu. Podrobně v `docs/provoz-a-udrzba.md`, kapitoly 5 až 7.
+
+> **Pozor na dva suffixy, jejichž název neodpovídá obsahu.** Zůstaly kvůli tomu,
+> že je tak čte Unity: **`_gal` není galerie**, ale textový slide (dva texty,
+> zařazení druhu a jedna fotka), a **`_vid` není jen video**, ale galerie fotek
+> i videí dohromady. Položky galerie se ukládají sekvenčně s vodící nulou
+> (`01.jpg`, `02.mp4`, `03.png`), protože je Unity řadí abecedně; po přidání
+> i smazání se celá řada přečísluje, aby měly všechny stejný počet cifer.
+
+**Těžká média jsou vždycky jen v `cs/`.** Fotky, videa i 3D sekvence se ukládají
+výhradně do české složky, Unity si je odtud „vypůjčí" i pro `en` a `pl`. Ve
+složkách `en/` a `pl/` je jen `text.txt` s překladem. CMS média do překladů
+nekopíruje.
 
 ## Dva toky, které lze předvést
 
@@ -139,12 +151,12 @@ i na tabletu. Podrobně v `docs/provoz-a-udrzba.md`, kapitoly 5 až 7.
 | GET | `/api/displays` | seznam displejů |
 | GET | `/api/displays/:id` | meta + slidy displeje |
 | PUT | `/api/displays/:id/slides/:n` | zápis polí info panelu (audit „úprava info panelu“) |
-| PUT | `/api/displays/:id/slides/:n/text` | text zajímavosti (slide `_gal`) |
+| PUT | `/api/displays/:id/slides/:n/text` | texty a zařazení druhu (slide `_gal`; taxonomii skládá server) |
 | PUT | `/api/displays/:id/slides/:n/txt` | oba texty obecných informací (slide `_txt`, audit „úprava obecných informací“) |
 | POST | `/api/displays/:id/slides/:n/image` | multipart upload fotky (audit „upload“) |
-| DELETE | `/api/displays/:id/slides/:n/images/:nazev` | smazání jedné fotky |
-| POST | `/api/displays/:id/slides/:n/video` | multipart upload videa (mp4) |
-| DELETE | `/api/displays/:id/slides/:n/video` | smazání videa |
+| DELETE | `/api/displays/:id/slides/:n/images/:nazev` | smazání jedné fotky, v galerii i videa |
+| POST | `/api/displays/:id/slides/:n/video` | multipart upload videa (mp4); v galerii přibude jako další položka |
+| DELETE | `/api/displays/:id/slides/:n/video` | smazání videa info panelu (galerie se maže po položkách) |
 | POST | `/api/displays/:id/slides` | přidání nového slidu |
 | DELETE | `/api/displays/:id/slides/:n` | odebrání slidu |
 | PUT | `/api/displays/:id/slides/reorder` | změna pořadí slidů (`{poradi:[...]}`) |

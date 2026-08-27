@@ -100,12 +100,20 @@ export const api = {
     );
   },
 
-  // Text zajímavosti (slide _gal). Na disku vznikne text.txt s "Popis: …".
-  async saveSlideText(id: string, n: number, text: string, jazyk: Jazyk = "cs"): Promise<void> {
+  // Texty textového slidu (_gal): dva dlouhé texty a taxonomie po částech
+  // (Trida, Rad, Celed). Do jednoho řádku "Taxonomie: …" je složí až server,
+  // aby tvar, který čte Unity, vznikal na jednom místě. Všechno se překládá,
+  // proto se posílá i jazyk; sdílené s češtinou tu není nic.
+  async saveSlideText(
+    id: string,
+    n: number,
+    pole: Record<string, string>,
+    jazyk: Jazyk = "cs",
+  ): Promise<void> {
     await request(`/api/displays/${id}/slides/${n}/text`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text, jazyk }),
+      body: JSON.stringify({ pole, jazyk }),
     });
   },
 
@@ -141,7 +149,7 @@ export const api = {
   },
 
   // `signal` umožní kurátorovi rozdělané nahrávání zrušit (u 3D sekvence
-  // jde o desítky souborů za sebou).
+  // a u galerie jde o desítky souborů za sebou).
   async uploadImage(
     id: string,
     n: number,
@@ -157,7 +165,9 @@ export const api = {
     });
   },
 
-  async deleteImage(id: string, n: number, nazev: string): Promise<void> {
+  // Smaže jednu položku slidu: fotku (info panel, textový slide, snímek 3D
+  // sekvence) nebo jednu položku galerie, tam i video.
+  async deleteMedia(id: string, n: number, nazev: string): Promise<void> {
     await request(`/api/displays/${id}/slides/${n}/images/${encodeURIComponent(nazev)}`, {
       method: "DELETE",
     });

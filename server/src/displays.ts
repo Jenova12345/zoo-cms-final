@@ -7,9 +7,8 @@ import { canonicalizeLatin } from "./latin.js";
 import { notifyReingest } from "./reingest.js";
 import { writeFileAtomic } from "./atomic.js";
 
-// Zdroj pravdy pro Unity je struktura složek na disku. Finální struktura od
-// Michala měla pevných pět typů slidů (_info, _ai, _3d, _vid, _gal);
-// _txt (obecné informace) k nim přibyl na žádost ZOO.
+// Zdroj pravdy pro Unity je struktura složek na disku. Unity čte typ slidu
+// podle SUFFIXU složky, pořadí podle číselného PREFIXU:
 //
 //   data/displeje/<id>/
 //     kb.md                 znalostní báze pro chatbota (NENÍ slide)
@@ -20,23 +19,39 @@ import { writeFileAtomic } from "./atomic.js";
 //       1_info/<video>.mp4  volitelné video (Michal ho řadí na začátek galerie)
 //       2_ai/               prázdná složka = AI slide
 //       3_3d/001.png…       3D model: sekvence snímků, číslovaná od 001
-//       4_vid/<video>.mp4   jedno video
-//       5_gal/text.txt      zajímavost: "Popis: <dlouhý odstavec>"
-//       5_gal/<fotka>.png   zajímavost: jedna fotka (na zařízení vpravo)
-//       6_txt/text.txt      obecné informace: "ObecnyText:" a "Zajimavosti:"
-//                           (jen text, žádné fotky ani video)
+//       4_gal/text.txt      TEXTOVÝ slide: "ObecnyText:", "Zajimavosti:"
+//                           a "Taxonomie:" (jeden složený řádek)
+//       4_gal/<fotka>.png   textový slide: jedna fotka (na zařízení vpravo)
+//       5_vid/01.jpg…       GALERIE: fotky i videa dohromady, číslovaná
+//                           sekvenčně s vodící nulou (Unity je řadí abecedně)
 //
-// Typ slidu určuje suffix názvu složky, pořadí číslo na začátku. Při změně
-// pořadí nebo odebrání slidu se prefixy složek přečíslují na souvislou řadu.
+// POZOR na dva suffixy, jejichž název neodpovídá obsahu. Zůstaly kvůli tomu,
+// že je Unity čte, a přejmenovat je nejde bez zásahu na obou stranách:
+//   _gal  NENÍ galerie, ale textový slide (dva texty + taxonomie + fotka),
+//   _vid  NENÍ jen video, ale galerie fotek A videí dohromady.
 //
-// POZOR: `_gal` je podle finální struktury ZAJÍMAVOST (text + jedna fotka),
-// ne galerie fotek. Název suffixu zůstal kvůli kompatibilitě s Unity.
+// Šestý typ `_txt` (obecné informace, dva texty bez médií) je POZŮSTATEK.
+// V cílové struktuře od Michala není, takže se nový už nezaloží (chybí
+// v SLIDE_TYPY_NABIDKA), ale existující složky se dál čtou i editují, aby
+// se nikomu neztratil rozepsaný obsah.
+//
+// Při změně pořadí nebo odebrání slidu se prefixy složek přečíslují na
+// souvislou řadu.
+//
+// TĚŽKÁ MÉDIA JSOU VŽDYCKY JEN V cs/. Fotky, videa i 3D sekvence se ukládají
+// výhradně do české složky a Unity si je odtud „vypůjčí" i pro en/pl. Ve
+// složkách en/ a pl/ je jen text.txt s překladem. Proto všechny funkce, které
+// sahají na média, píšou natvrdo do "cs" a parametr `jazyk` neberou.
 
 export type SlideTyp = "info" | "ai" | "3d" | "vid" | "gal" | "txt";
 
-// Pořadí = pořadí v nabídce "Přidat slide". Nový typ se přidává na KONEC,
-// ať se kurátorovi nepřehází nabídka, na kterou je zvyklý.
+// Všechny typy, které umíme přečíst z disku (včetně pozůstalého `_txt`).
 export const SLIDE_TYPY: SlideTyp[] = ["info", "ai", "3d", "vid", "gal", "txt"];
+
+// Typy, které jde nově založit = nabídka "Přidat slide". Pořadí je pořadí
+// v nabídce; nový typ se přidává na KONEC, ať se kurátorovi nepřehází
+// nabídka, na kterou je zvyklý. `txt` tu schválně není, viz komentář výš.
+export const SLIDE_TYPY_NABIDKA: SlideTyp[] = ["info", "ai", "3d", "vid", "gal"];
 
 // Suffix složky pro nově zakládaný slide. Pro 3D model bere Michalovo Unity
 // obojí (`_3d` i `_mod`); zakládáme `_3d`, existující `_mod` se zachová.
@@ -207,33 +222,158 @@ export const SDILENA_POLE = ["Sekce", "Latinsky"] as const;
 
 export const MAPA_SOUBOR = "mapa.png";
 
-// Zajímavost (_gal): text.txt s jedním klíčem. Zapisujeme "Popis", při čtení
-// bereme i "Text": Michal používá obojí.
-export const ZAJIMAVOST_KLIC = "Popis";
-const ZAJIMAVOST_RE = /^\s*(?:Popis|Text)\s*:\s?(.*)$/i;
+// --- Klíče v text.txt textových slidů --------------------------------
+//
+// Blokový formát "Klic: Hodnota" jako u info panelu, ale hodnota smí
+// pokračovat na dalších řádcích: blok končí až dalším klíčem nebo koncem
+// souboru. Klíče jsou bez diakritiky, aby soubor přečetlo Unity i skripty,
+// které počítají s ASCII.
 
-// Obecné informace (_txt): text.txt se dvěma klíči ve stejném tvaru
-// "Klic: Hodnota" jako info panel. Oba texty jsou dlouhé, takže hodnota smí
-// pokračovat na dalších řádcích; blok končí až dalším klíčem nebo koncem
-// souboru (stejná úmluva jako u zajímavosti). Klíče jsou bez diakritiky,
-// aby soubor přečetlo Unity i skripty, které počítají s ASCII.
+// Textový slide (_gal): dva dlouhé texty, taxonomie a jedna fotka.
+// ObecnyText a Zajimavosti čte Unity DataLoader beze změny, proto jsou
+// stejné jako u pozůstalého `_txt`.
+export const GAL_KLICE = ["ObecnyText", "Zajimavosti", "Taxonomie"] as const;
+
+// Obecné informace (_txt, pozůstalý typ): tytéž dva texty bez taxonomie.
 export const TEXTOVE_KLICE = ["ObecnyText", "Zajimavosti"] as const;
 export type TextovyKlic = (typeof TEXTOVE_KLICE)[number];
 
-// Při čtení jsme k velikosti písmen tolerantní (ruční zásah do souboru,
-// jiný zdroj), při zápisu píšeme vždy kanonický tvar z TEXTOVE_KLICE.
-const TEXTOVY_KLIC_RE = new RegExp(`^\\s*(${TEXTOVE_KLICE.join("|")})\\s*:\\s?(.*)$`, "i");
+// Klíče, pod kterými se dřív ukládal text slidu `_gal`, když to byla
+// „zajímavost" s jediným odstavcem. Při čtení je pořád bereme a sypeme do
+// ObecnyText, ať se obsah uložený starým CMS neztratí; při zápisu už se
+// nepoužijí, takže prvním uložením soubor přejde do nového tvaru.
+const GAL_STARE_KLICE = ["Popis", "Text"] as const;
 
-function kanonickyTextovyKlic(raw: string): TextovyKlic | null {
-  const dolu = raw.trim().toLowerCase();
-  return TEXTOVE_KLICE.find((k) => k.toLowerCase() === dolu) ?? null;
+// Regex klíče se staví z předané sady. Při čtení jsme k velikosti písmen
+// tolerantní (ruční zásah do souboru, jiný zdroj), při zápisu píšeme vždy
+// kanonický tvar ze sady.
+function klicRegex(klice: readonly string[]): RegExp {
+  return new RegExp(`^\\s*(${klice.join("|")})\\s*:\\s?(.*)$`, "i");
 }
 
-// 3D model (_3d): sekvence snímků 001.png, 002.png, … Unity je řadí podle čísla.
+function kanonickyKlic(raw: string, klice: readonly string[]): string | null {
+  const dolu = raw.trim().toLowerCase();
+  return klice.find((k) => k.toLowerCase() === dolu) ?? null;
+}
+
+// --- Taxonomie (jen slide _gal) --------------------------------------
+//
+// Na disku je to JEDEN řádek ve tvaru, který čeká Unity:
+//
+//   Taxonomie: Třída: Obojživelníci | Řád: Žáby | Čeleď: Pralesničkovití
+//
+// V CMS ho kurátor zadává po částech ve třech polích a server ho složí.
+// Nevyplněná část se vynechá i s popiskem; všechny tři prázdné = řádek
+// `Taxonomie:` se nezapíše vůbec (stejně jako se nezapisují prázdná pole
+// info panelu).
+//
+// Klíč `Taxonomie:` je ve všech jazycích stejný, aby ho Unity našlo,
+// POPISKY uvnitř se překládají: na anglickém tabletu nemá být půl řádku
+// česky. Hodnoty píše kurátor v každém jazyce zvlášť, jako ostatní texty
+// slidu `_gal`.
+export const TAXONOMIE_KLIC = "Taxonomie";
+export const TAXONOMIE_SLOZKY = ["Trida", "Rad", "Celed"] as const;
+export type TaxonomieSlozka = (typeof TAXONOMIE_SLOZKY)[number];
+
+const TAXONOMIE_POPISKY: Record<Jazyk, Record<TaxonomieSlozka, string>> = {
+  cs: { Trida: "Třída", Rad: "Řád", Celed: "Čeleď" },
+  en: { Trida: "Class", Rad: "Order", Celed: "Family" },
+  pl: { Trida: "Gromada", Rad: "Rząd", Celed: "Rodzina" },
+};
+
+const TAXONOMIE_ODDELOVAC = " | ";
+
+// Porovnávání popisků bez ohledu na diakritiku a velikost písmen: kurátor
+// nebo ruční zásah může napsat "Trida" i "TŘÍDA", a při čtení nevíme, ve
+// kterém jazyce soubor vznikl.
+const DIAKRITIKA_RE = /[\u0300-\u036f]/g; // kombinující znaky po rozkladu NFD
+
+function bezDiakritiky(text: string): string {
+  return text.normalize("NFD").replace(DIAKRITIKA_RE, "").toLowerCase().trim();
+}
+
+// Popisek (v kterémkoli jazyce, i holý ASCII tvar) -> složka taxonomie.
+const TAXONOMIE_PODLE_POPISKU = new Map<string, TaxonomieSlozka>();
+for (const slozka of TAXONOMIE_SLOZKY) {
+  TAXONOMIE_PODLE_POPISKU.set(bezDiakritiky(slozka), slozka);
+  for (const jazyk of JAZYKY) {
+    TAXONOMIE_PODLE_POPISKU.set(bezDiakritiky(TAXONOMIE_POPISKY[jazyk][slozka]), slozka);
+  }
+}
+
+// Tři části -> jeden řádek pro Unity. Prázdné části se vynechají.
+export function serializeTaxonomie(
+  pole: Record<string, string>,
+  jazyk: Jazyk = "cs",
+): string {
+  const popisky = TAXONOMIE_POPISKY[jazyk];
+  const dily: string[] = [];
+  for (const slozka of TAXONOMIE_SLOZKY) {
+    const hodnota = (pole[slozka] ?? "").replace(/[\r\n|]/g, " ").trim();
+    if (hodnota) dily.push(`${popisky[slozka]}: ${hodnota}`);
+  }
+  return dily.join(TAXONOMIE_ODDELOVAC);
+}
+
+// Řádek zpátky na tři části. Co se rozpoznat nepodařilo, vrátíme v `zbytek`,
+// aby to editor mohl kurátorovi ukázat místo tichého zahození.
+export function parseTaxonomie(radek: string): {
+  pole: Record<TaxonomieSlozka, string>;
+  zbytek: string;
+} {
+  const pole = { Trida: "", Rad: "", Celed: "" };
+  // Taxonomie je jednořádková; kdyby po ní v souboru zbyly další řádky
+  // (ruční zásah), bereme jen ten první, zbytek by stejně nedával smysl.
+  const prvni = radek.replace(/\r\n/g, "\n").split("\n")[0] ?? "";
+  const nerozpoznane: string[] = [];
+
+  for (const dil of prvni.split("|")) {
+    if (!dil.trim()) continue;
+    const del = dil.indexOf(":");
+    const slozka = del === -1 ? undefined : TAXONOMIE_PODLE_POPISKU.get(bezDiakritiky(dil.slice(0, del)));
+    if (!slozka) {
+      nerozpoznane.push(dil.trim());
+      continue;
+    }
+    pole[slozka] = dil.slice(del + 1).trim();
+  }
+  return { pole, zbytek: nerozpoznane.join(TAXONOMIE_ODDELOVAC) };
+}
+
+// --- 3D model (_3d) --------------------------------------------------
+//
+// Sekvence snímků 001.png, 002.png, … Unity je řadí podle čísla, my držíme
+// pevnou šířku, aby souhlasilo i řazení abecední.
+const SEKVENCE_CIFER = 3;
 const SEKVENCE_RE = /^(\d{3,})\.png$/i;
 
 function sekvencniNazev(poradi: number): string {
-  return `${String(poradi).padStart(3, "0")}.png`;
+  return `${String(poradi).padStart(SEKVENCE_CIFER, "0")}.png`;
+}
+
+// --- Galerie (_vid) --------------------------------------------------
+//
+// Fotky i videa dohromady, pojmenovaná sekvenčně s vodící nulou (01.jpg,
+// 02.mp4, 03.png…). Unity je řadí ABECEDNĚ, proto musí mít všechny položky
+// stejný počet cifer: jinak by se 10 dostalo před 2. Šířka se proto počítá
+// z celkového počtu položek, ne z pevné konstanty.
+const GALERIE_PRIPONY = [".png", ".jpg", ".jpeg", ".mp4"] as const;
+const GALERIE_VIDEO_PRIPONY = [".mp4"] as const;
+const GALERIE_MIN_CIFER = 2;
+const GALERIE_RE = /^(\d+)\.[a-z0-9]+$/i;
+
+function galerieSirka(pocet: number): number {
+  return Math.max(GALERIE_MIN_CIFER, String(Math.max(pocet, 1)).length);
+}
+
+function galerieNazev(poradi: number, pripona: string, sirka: number): string {
+  return `${String(poradi).padStart(sirka, "0")}${pripona.toLowerCase()}`;
+}
+
+export function jeGalerieVideo(soubor: string): boolean {
+  return (GALERIE_VIDEO_PRIPONY as readonly string[]).includes(
+    path.extname(soubor).toLowerCase(),
+  );
 }
 
 export interface DisplayMeta {
@@ -255,15 +395,26 @@ export interface DisplayMeta {
   slidy?: { slozka: string; typ: SlideTyp }[];
 }
 
+// Jedna položka galerie (_vid). Fotky a videa jsou na disku promíchané
+// v jedné číslované řadě, takže se musí přenášet i s typem.
+export interface MediaPolozka {
+  nazev: string; // název souboru na disku (01.jpg), kvůli mazání
+  url: string; // URL do /data
+  typ: "foto" | "video";
+}
+
 export interface SlideContent {
   n: number; // pořadí = číselný prefix složky
   typ: SlideTyp;
   slozka: string; // skutečný název složky na disku (kvůli variantě _mod)
-  pole: Record<string, string>; // jen info: obsah text.txt
-  text: string; // jen gal (zajímavost): dlouhý odstavec z text.txt
-  obrazky: string[]; // URL do /data (info: fotky bez mapy; gal: jedna; 3d: sekvence)
+  // info: obsah text.txt; gal: dva texty + rozpadlá taxonomie; txt: dva texty
+  pole: Record<string, string>;
+  // URL do /data (info: fotky bez mapy; gal: jedna fotka; 3d: sekvence).
+  // U galerie (_vid) zůstává prázdné, ta má vlastní pole `media`.
+  obrazky: string[];
+  media: MediaPolozka[]; // jen vid: fotky i videa v pořadí, jak je řadí Unity
   mapa: string | null; // jen info: URL mapa.png
-  video: string | null; // vid: video slidu; info: volitelné video
+  video: string | null; // jen info: volitelné video (galerie má `media`)
 }
 
 export interface DisplaySummary {
@@ -424,67 +575,20 @@ async function readInfoPole(
   }
 }
 
-// --- text.txt zajímavosti (_gal): jeden dlouhý odstavec pod klíčem Popis ---
-
-// Zapisujeme "Popis: <text>", čteme i "Text:". Odstavec může na disku
-// pokračovat na dalších řádcích, bereme všechno za klíčem. Soubor bez klíče
-// (ruční zásah) čteme celý jako holý odstavec, ať se obsah neztratí.
-export function parseZajimavostText(raw: string): string {
-  const lines = raw.replace(/\r\n/g, "\n").split("\n");
-  const idx = lines.findIndex((l) => ZAJIMAVOST_RE.test(l));
-  if (idx === -1) return raw.replace(/\r\n/g, "\n").trim();
-  const prvni = ZAJIMAVOST_RE.exec(lines[idx])![1];
-  return [prvni, ...lines.slice(idx + 1)].join("\n").trim();
-}
-
-export function serializeZajimavostText(text: string): string {
-  const t = text.replace(/\r\n/g, "\n").trim();
-  return t ? `${ZAJIMAVOST_KLIC}: ${t}\n` : "";
-}
-
-async function readZajimavost(id: string, slozka: string, jazyk: Jazyk = "cs"): Promise<string> {
-  try {
-    return parseZajimavostText(
-      await fs.readFile(path.join(slideDirPath(id, slozka, jazyk), "text.txt"), "utf8"),
-    );
-  } catch {
-    return "";
-  }
-}
-
-export async function writeZajimavost(
-  id: string,
-  n: number,
-  text: string,
-  jazyk: Jazyk = "cs",
-): Promise<{ ok: boolean; chyba?: string }> {
-  const slide = await findSlide(id, n);
-  if (!slide || slide.typ !== "gal") {
-    return { ok: false, chyba: "Slide není typu zajímavost." };
-  }
-  const dir = slideDirPath(id, slide.slozka, jazyk);
-  await fs.mkdir(dir, { recursive: true }); // překladová složka nemusí existovat
-  await writeFileAtomic(path.join(dir, "text.txt"), serializeZajimavostText(text));
-  await touchDisplay(id);
-  // Zajímavost je souvislý text o druhu, chatbot ho může použít jako podklad.
-  void notifyReingest(id, `${jazyk}/${slide.slozka}/text.txt`);
-  return { ok: true };
-}
-
-// --- text.txt obecných informací (_txt): dva klíče, dlouhé hodnoty ---
+// --- text.txt textových slidů (_gal a pozůstalý _txt) ---------------
 
 // Blokový parser: řádek s klíčem začíná nový blok, všechny další řádky až
 // k dalšímu klíči k němu patří. Soubor BEZ jakéhokoli klíče (ruční zásah)
-// se přečte celý jako obecný text, ať se obsah neztratí; stejně se chová
-// i zajímavost.
-export function parseTextSlide(raw: string): Record<string, string> {
+// se přečte celý jako obecný text, ať se obsah neztratí.
+function parseBloky(raw: string, klice: readonly string[]): Record<string, string> {
+  const re = klicRegex(klice);
   const radky = raw.replace(/\r\n/g, "\n").split("\n");
-  const bloky = new Map<TextovyKlic, string[]>();
-  let aktualni: TextovyKlic | null = null;
+  const bloky = new Map<string, string[]>();
+  let aktualni: string | null = null;
 
   for (const radek of radky) {
-    const m = TEXTOVY_KLIC_RE.exec(radek);
-    const klic = m ? kanonickyTextovyKlic(m[1]) : null;
+    const m = re.exec(radek);
+    const klic = m ? kanonickyKlic(m[1], klice) : null;
     if (klic) {
       aktualni = klic;
       bloky.set(klic, [m![2]]);
@@ -508,13 +612,115 @@ export function parseTextSlide(raw: string): Record<string, string> {
 
 // Prázdné pole se nezapisuje (stejně jako u info panelu), takže prázdný
 // slide má na disku prázdný text.txt a pozná se jako nevyplněný.
-export function serializeTextSlide(pole: Record<string, string>): string {
+function serializeBloky(pole: Record<string, string>, klice: readonly string[]): string {
   const bloky: string[] = [];
-  for (const klic of TEXTOVE_KLICE) {
+  for (const klic of klice) {
     const v = (pole[klic] ?? "").replace(/\r\n/g, "\n").trim();
     if (v) bloky.push(`${klic}: ${v}`);
   }
   return bloky.length ? bloky.join("\n") + "\n" : "";
+}
+
+// --- Textový slide (_gal): dva texty + taxonomie ---
+
+// Čteme i staré klíče (`Popis:`, `Text:`) z doby, kdy `_gal` byla zajímavost
+// s jediným odstavcem; jejich obsah spadne do ObecnyText. Taxonomie se
+// rozpadne na tři pole, aby ji editor mohl nabídnout po částech; co se
+// rozpoznat nepodařilo, jde do klíče `TaxonomieZbytek`, ať to editor může
+// kurátorovi ukázat místo tichého zahození.
+export const GAL_TAXONOMIE_ZBYTEK = "TaxonomieZbytek";
+
+export function parseGalText(raw: string): Record<string, string> {
+  const bloky = parseBloky(raw, [...GAL_KLICE, ...GAL_STARE_KLICE]);
+
+  const pole: Record<string, string> = {};
+  for (const klic of TEXTOVE_KLICE) {
+    if (bloky[klic]) pole[klic] = bloky[klic];
+  }
+  // Starý jednopolový tvar: obsah patří do hlavního textu, ale jen když
+  // v souboru není novější ObecnyText (ten má přednost).
+  if (!pole.ObecnyText) {
+    const stary = GAL_STARE_KLICE.map((k) => bloky[k]).find((v) => v?.trim());
+    if (stary) pole.ObecnyText = stary;
+  }
+
+  const { pole: taxonomie, zbytek } = parseTaxonomie(bloky[TAXONOMIE_KLIC] ?? "");
+  for (const slozka of TAXONOMIE_SLOZKY) {
+    if (taxonomie[slozka]) pole[slozka] = taxonomie[slozka];
+  }
+  if (zbytek) pole[GAL_TAXONOMIE_ZBYTEK] = zbytek;
+  return pole;
+}
+
+// Tři pole taxonomie se skládají do jednoho řádku s popisky v jazyce
+// souboru; klíč `Taxonomie:` zůstává ve všech jazycích stejný, Unity ho
+// hledá podle něj.
+export function serializeGalText(
+  pole: Record<string, string>,
+  jazyk: Jazyk = "cs",
+): string {
+  const kZapisu: Record<string, string> = {};
+  for (const klic of TEXTOVE_KLICE) {
+    if (pole[klic]) kZapisu[klic] = pole[klic];
+  }
+  const taxonomie = serializeTaxonomie(pole, jazyk);
+  if (taxonomie) kZapisu[TAXONOMIE_KLIC] = taxonomie;
+  return serializeBloky(kZapisu, GAL_KLICE);
+}
+
+async function readGalPole(
+  id: string,
+  slozka: string,
+  jazyk: Jazyk = "cs",
+): Promise<Record<string, string>> {
+  try {
+    return parseGalText(
+      await fs.readFile(path.join(slideDirPath(id, slozka, jazyk), "text.txt"), "utf8"),
+    );
+  } catch {
+    return {};
+  }
+}
+
+// Zápis textového slidu. Na rozdíl od info panelu tu nejsou žádná sdílená
+// pole: všechno včetně taxonomie se píše v každém jazyce zvlášť, takže se
+// nic nedoplňuje z češtiny.
+export async function writeGalPole(
+  id: string,
+  n: number,
+  pole: Record<string, string>,
+  jazyk: Jazyk = "cs",
+): Promise<{ ok: boolean; chyba?: string }> {
+  const slide = await findSlide(id, n);
+  if (!slide || slide.typ !== "gal") {
+    return { ok: false, chyba: "Slide není textový." };
+  }
+  // Neznámé klíče zahazujeme, do souboru půjde jen to, co typ slidu zná.
+  // `TaxonomieZbytek` mezi ně schválně nepatří: je to jen hlášení pro
+  // editor o nerozpoznaném tvaru na disku, uložením se přepíše.
+  const ocistene: Record<string, string> = {};
+  for (const klic of [...TEXTOVE_KLICE, ...TAXONOMIE_SLOZKY]) {
+    const v = pole[klic];
+    if (typeof v === "string") ocistene[klic] = v;
+  }
+
+  const dir = slideDirPath(id, slide.slozka, jazyk);
+  await fs.mkdir(dir, { recursive: true }); // překladová složka nemusí existovat
+  await writeFileAtomic(path.join(dir, "text.txt"), serializeGalText(ocistene, jazyk));
+  await touchDisplay(id);
+  // Souvislý text o druhu, chatbot ho může použít jako podklad.
+  void notifyReingest(id, `${jazyk}/${slide.slozka}/text.txt`);
+  return { ok: true };
+}
+
+// --- Obecné informace (_txt, pozůstalý typ): dva klíče, dlouhé hodnoty ---
+
+export function parseTextSlide(raw: string): Record<string, string> {
+  return parseBloky(raw, TEXTOVE_KLICE);
+}
+
+export function serializeTextSlide(pole: Record<string, string>): string {
+  return serializeBloky(pole, TEXTOVE_KLICE);
 }
 
 async function readTextSlide(
@@ -555,7 +761,7 @@ export async function writeTextSlide(
   await writeFileAtomic(path.join(dir, "text.txt"), serializeTextSlide(ocistene));
   await touchDisplay(id);
   // Souvislý text o druhu, chatbot ho může použít jako podklad (stejně jako
-  // zajímavost).
+  // textový slide).
   void notifyReingest(id, `${jazyk}/${slide.slozka}/text.txt`);
   return { ok: true };
 }
@@ -667,6 +873,29 @@ export async function writeInfoPole(
 
 // --- Obsah slidů pro API ---
 
+// Soubory galerie (_vid) v tom pořadí, ve kterém je uvidí Unity.
+//
+// Unity řadí ABECEDNĚ, takže tady musíme udělat totéž, a ne řadit podle
+// čísla: kdyby na disku po ručním zásahu zůstala nestejně široká čísla
+// (2.jpg vedle 10.jpg), CMS by ukazovalo jiné pořadí než tablet. Radši ať
+// je ten nepořádek vidět; první uložení do slidu ho stejně srovná.
+// Soubory bez číselného názvu (obsah nahraný starším CMS) se nezahazují,
+// jen se řadí za očíslované, kam je zařadí i abecední řazení Unity.
+async function galerieSoubory(id: string, slozka: string): Promise<string[]> {
+  let soubory: string[];
+  try {
+    soubory = await fs.readdir(slideDirPath(id, slozka));
+  } catch {
+    return [];
+  }
+  const media = soubory.filter((f) =>
+    (GALERIE_PRIPONY as readonly string[]).includes(path.extname(f).toLowerCase()),
+  );
+  const cislovane = media.filter((f) => GALERIE_RE.test(f)).sort((a, b) => a.localeCompare(b, "en"));
+  const ostatni = media.filter((f) => !GALERIE_RE.test(f)).sort((a, b) => a.localeCompare(b, "en"));
+  return [...cislovane, ...ostatni];
+}
+
 // Snímky 3D sekvence seřazené podle čísla v názvu (001.png, 002.png, …).
 // Soubor s jiným názvem se ignoruje, ať se do sekvence nedostane nepořádek.
 async function sekvence(id: string, slozka: string): Promise<string[]> {
@@ -678,7 +907,7 @@ async function sekvence(id: string, slozka: string): Promise<string[]> {
     .map((x) => x.f);
 }
 
-// Text se čte z požadovaného jazyka, média vždy z češtiny: fotky, video
+// Text se čte z požadovaného jazyka, média vždy z češtiny: fotky, videa
 // i 3D sekvence jsou společné, kurátor je nahrává jednou.
 async function toContent(id: string, s: SlideDirInfo, jazyk: Jazyk): Promise<SlideContent> {
   const content: SlideContent = {
@@ -686,8 +915,8 @@ async function toContent(id: string, s: SlideDirInfo, jazyk: Jazyk): Promise<Sli
     typ: s.typ,
     slozka: s.slozka,
     pole: {},
-    text: "",
     obrazky: [],
+    media: [],
     mapa: null,
     video: null,
   };
@@ -702,15 +931,19 @@ async function toContent(id: string, s: SlideDirInfo, jazyk: Jazyk): Promise<Sli
     const videa = await listFiles(id, s.slozka, ".mp4");
     content.video = videa.length ? slideFileUrl(id, s.slozka, videa[0]) : null;
   } else if (s.typ === "gal") {
-    // Zajímavost: dlouhý text a jedna fotka.
-    content.text = await readZajimavost(id, s.slozka, jazyk);
+    // Textový slide: dva texty, taxonomie a jedna fotka.
+    content.pole = await readGalPole(id, s.slozka, jazyk);
     const pngs = await listFiles(id, s.slozka, ".png");
     content.obrazky = pngs.length ? [slideFileUrl(id, s.slozka, pngs[0])] : [];
   } else if (s.typ === "3d") {
     content.obrazky = (await sekvence(id, s.slozka)).map((f) => slideFileUrl(id, s.slozka, f));
   } else if (s.typ === "vid") {
-    const videos = await listFiles(id, s.slozka, ".mp4");
-    content.video = videos.length ? slideFileUrl(id, s.slozka, videos[0]) : null;
+    // Galerie: fotky i videa v jedné řadě.
+    content.media = (await galerieSoubory(id, s.slozka)).map((f) => ({
+      nazev: f,
+      url: slideFileUrl(id, s.slozka, f),
+      typ: jeGalerieVideo(f) ? ("video" as const) : ("foto" as const),
+    }));
   } else if (s.typ === "txt") {
     // Obecné informace: jen dva texty, žádná média. Jdou do `pole` stejně
     // jako u info panelu, takže se tvar odpovědi API nemění.
@@ -771,28 +1004,47 @@ export async function oznacRevizi(id: string, ceka: boolean): Promise<void> {
   await writeMeta(id, meta);
 }
 
-// --- Fotky (vždy PNG, aby je přečetlo Unity) ---
+// --- Fotky ---
 
-// Unity čte fotky jako .png, proto každý upload převedeme přes sharp.
-// Název je vždy unikátní (Safari pojmenovává přetažené obrázky "Unknown.jpeg",
-// bez unikátního jména by se soubory přepisovaly).
-export async function convertToPng(data: Buffer): Promise<Buffer> {
-  // 40 Mpx strop vstupu (výchozí sharp limit je ~268 Mpx), brzda proti
-  // obřím dekódovaným rastrům. SVG odmítáme úplně: renderuje se přes librsvg
-  // a i pár set bajtů (feTurbulence) může vyrobit desítky MB a spálit minuty
-  // CPU; navíc ho na displeji nepotřebujeme.
+// Společný začátek zpracování každého uploadu. 40 Mpx strop vstupu (výchozí
+// sharp limit je ~268 Mpx) je brzda proti obřím dekódovaným rastrům. SVG
+// odmítáme úplně: renderuje se přes librsvg a i pár set bajtů (feTurbulence)
+// může vyrobit desítky MB a spálit minuty CPU; navíc ho na displeji
+// nepotřebujeme. Výstup se zmenší na rozumný strop, ať jedno velké foto
+// nenafoukne soubor do stovek MB.
+async function pripravObrazek(
+  data: Buffer,
+): Promise<{ img: ReturnType<typeof sharp>; format?: string }> {
   const img = sharp(data, { limitInputPixels: 40_000_000 });
   const meta = await img.metadata();
   if (meta.format === "svg") {
     throw new Error("SVG se nepřijímá, nahrajte JPG nebo PNG.");
   }
-  // Výstup se navíc zmenší na rozumný strop, ať jedno velké foto nenafoukne
-  // PNG do stovek MB.
-  return img
-    .rotate()
-    .resize({ width: 4096, height: 4096, fit: "inside", withoutEnlargement: true })
-    .png()
-    .toBuffer();
+  return {
+    img: img
+      .rotate()
+      .resize({ width: 4096, height: 4096, fit: "inside", withoutEnlargement: true }),
+    format: meta.format,
+  };
+}
+
+// Info panel, textový slide i 3D sekvence čte Unity jako .png, proto se tam
+// každý upload převede.
+export async function convertToPng(data: Buffer): Promise<Buffer> {
+  const { img } = await pripravObrazek(data);
+  return img.png().toBuffer();
+}
+
+// Galerie (_vid) si naopak příponu drží: Michal ji řadí abecedně a formát
+// mu je jedno, takže JPG zůstane JPG a zbytečně se nenafoukne do PNG.
+// Ochrany (strop pixelů, zmenšení, odmítnutí SVG) platí stejně, jen se
+// nemění výstupní formát. Co není JPG ani PNG, převedeme na PNG.
+export async function zpracujGalerieObrazek(
+  data: Buffer,
+): Promise<{ buffer: Buffer; pripona: string }> {
+  const { img, format } = await pripravObrazek(data);
+  if (format === "jpeg") return { buffer: await img.jpeg().toBuffer(), pripona: ".jpg" };
+  return { buffer: await img.png().toBuffer(), pripona: ".png" };
 }
 
 function uniquePngName(): string {
@@ -861,64 +1113,123 @@ async function renumberSequence(id: string, slozka: string): Promise<void> {
   }
 }
 
+// Galerie (_vid) musí být souvislá řada od 01 se stejným počtem cifer
+// u všech položek, jinak by abecední řazení v Unity dalo jiné pořadí než
+// číselné. Srovnáváme po každém přidání i smazání, dvoufázově (přes dočasné
+// názvy), ať se nesrazí cíle. Přípona každého souboru zůstává.
+//
+// Tohle je zároveň jediné místo, kde se do nové konvence dostane obsah
+// nahraný starším CMS (video pod původním názvem): žádná migrace se nekoná,
+// složka se srovná až ve chvíli, kdy do ní kurátor sáhne.
+async function renumberGalerie(id: string, slozka: string): Promise<void> {
+  const dir = slideDirPath(id, slozka);
+  const soubory = await galerieSoubory(id, slozka);
+  const sirka = galerieSirka(soubory.length);
+  const cile = soubory.map((f, i) => ({
+    from: f,
+    to: galerieNazev(i + 1, path.extname(f), sirka),
+  }));
+  const meni = cile.filter((t) => t.from !== t.to);
+  if (meni.length === 0) return;
+  for (const t of meni) {
+    await renameSPokusy(path.join(dir, t.from), path.join(dir, `.tmp-${t.to}`));
+  }
+  for (const t of meni) {
+    await renameSPokusy(path.join(dir, `.tmp-${t.to}`), path.join(dir, t.to));
+  }
+}
+
 export async function saveImage(
   id: string,
   n: number,
   data: Buffer,
 ): Promise<{ ok: boolean; url?: string; chyba?: string }> {
   const slide = await findSlide(id, n);
-  if (!slide || (slide.typ !== "info" && slide.typ !== "gal" && slide.typ !== "3d")) {
-    return { ok: false, chyba: "Fotky patří jen na info panel, zajímavost nebo 3D model." };
-  }
-  let png: Buffer;
-  try {
-    png = await convertToPng(data);
-  } catch {
-    return { ok: false, chyba: "Obrázek se nepodařilo převést do PNG. Použijte JPG nebo PNG." };
+  if (
+    !slide ||
+    (slide.typ !== "info" && slide.typ !== "gal" && slide.typ !== "3d" && slide.typ !== "vid")
+  ) {
+    return {
+      ok: false,
+      chyba: "Fotky patří jen na info panel, textový slide, 3D model nebo do galerie.",
+    };
   }
 
   const dir = slideDirPath(id, slide.slozka);
+  let obsah: Buffer;
   let nazev: string;
 
-  if (slide.typ === "3d") {
-    // Snímek jde na konec sekvence; číslo bereme z nejvyššího, ne z počtu,
-    // ať se netrefíme do existujícího souboru po ručním zásahu do složky.
-    const cisla = (await sekvence(id, slide.slozka)).map((f) => Number(SEKVENCE_RE.exec(f)![1]));
-    nazev = sekvencniNazev((cisla.length ? Math.max(...cisla) : 0) + 1);
+  if (slide.typ === "vid") {
+    // Galerie: přípona zůstává, položka jde na konec řady. Zapisuje se pod
+    // dočasným jménem, které se řadí až za všechno očíslované, a hned nato
+    // se celá složka přečísluje, takže dostane správné číslo.
+    let zpracovany;
+    try {
+      zpracovany = await zpracujGalerieObrazek(data);
+    } catch {
+      return { ok: false, chyba: "Obrázek se nepodařilo zpracovat. Použijte JPG nebo PNG." };
+    }
+    obsah = zpracovany.buffer;
+    nazev = `zzz-nova-${Date.now().toString(36)}-${randomBytes(3).toString("hex")}${zpracovany.pripona}`;
   } else {
-    // Zajímavost má právě jednu fotku, předchozí nahradíme.
-    if (slide.typ === "gal") {
-      for (const old of await listFiles(id, slide.slozka, ".png")) {
-        try {
-          await fs.unlink(path.join(dir, old));
-        } catch {
-          // soubor mezitím zmizel, nevadí
+    try {
+      obsah = await convertToPng(data);
+    } catch {
+      return { ok: false, chyba: "Obrázek se nepodařilo převést do PNG. Použijte JPG nebo PNG." };
+    }
+    if (slide.typ === "3d") {
+      // Snímek jde na konec sekvence; číslo bereme z nejvyššího, ne z počtu,
+      // ať se netrefíme do existujícího souboru po ručním zásahu do složky.
+      const cisla = (await sekvence(id, slide.slozka)).map((f) => Number(SEKVENCE_RE.exec(f)![1]));
+      nazev = sekvencniNazev((cisla.length ? Math.max(...cisla) : 0) + 1);
+    } else {
+      // Textový slide má právě jednu fotku, předchozí nahradíme.
+      if (slide.typ === "gal") {
+        for (const old of await listFiles(id, slide.slozka, ".png")) {
+          try {
+            await fs.unlink(path.join(dir, old));
+          } catch {
+            // soubor mezitím zmizel, nevadí
+          }
         }
       }
+      nazev = uniquePngName();
     }
-    nazev = uniquePngName();
   }
 
   // Atomicky (tmp + rename) jako texty: Unity i chatbot čtou složku displeje
   // přímo, půlka souboru by jim vyrobila rozbitý obrázek.
-  await writeFileAtomic(path.join(dir, nazev), png);
+  await writeFileAtomic(path.join(dir, nazev), obsah);
   if (slide.typ === "3d") await renumberSequence(id, slide.slozka);
+  if (slide.typ === "vid") {
+    await renumberGalerie(id, slide.slozka);
+    // Po přečíslování má soubor jiné jméno, dohledáme ho podle přípony na
+    // konci řady (tam ho renumberGalerie zařadilo).
+    const po = await galerieSoubory(id, slide.slozka);
+    nazev = po[po.length - 1] ?? nazev;
+  }
   await touchDisplay(id);
   return { ok: true, url: slideFileUrl(id, slide.slozka, nazev) };
 }
 
-export async function deleteImage(id: string, n: number, filename: string): Promise<boolean> {
+// Smazání jedné položky: fotky (všude) nebo videa (jen z galerie).
+export async function deleteMedia(id: string, n: number, filename: string): Promise<boolean> {
   const slide = await findSlide(id, n);
   if (!slide) return false;
   const safe = path.basename(filename);
-  if (path.extname(safe).toLowerCase() !== ".png") return false;
+  const pripona = path.extname(safe).toLowerCase();
+  // Mimo galerii se přes tuhle cestu smí mazat jen PNG; video info panelu
+  // má vlastní endpoint, který maže celé pole videa.
+  const povolene = slide.typ === "vid" ? (GALERIE_PRIPONY as readonly string[]) : [".png"];
+  if (!povolene.includes(pripona)) return false;
   try {
     await fs.unlink(path.join(slideDirPath(id, slide.slozka), safe));
   } catch {
     return false;
   }
-  // Po vyjmutí snímku ze sekvence srovnáme čísla zpět na souvislou řadu.
+  // Po vyjmutí položky srovnáme čísla zpět na souvislou řadu.
   if (slide.typ === "3d") await renumberSequence(id, slide.slozka);
+  if (slide.typ === "vid") await renumberGalerie(id, slide.slozka);
   await touchDisplay(id);
   return true;
 }
@@ -967,7 +1278,7 @@ export async function setMapa(
   return { ok: true };
 }
 
-// --- Video (jedno MP4 ve složce _vid, volitelně i na info panelu) ---
+// --- Video (položka galerie _vid, volitelně jedno na info panelu) ---
 
 // Rezervovaná jména zařízení na Windows (i s příponou, např. CON.mp4),
 // zápis pod nimi na Windows selže nebo míří na zařízení, ne na soubor.
@@ -991,9 +1302,25 @@ export async function saveVideo(
 ): Promise<{ ok: boolean; url?: string; chyba?: string }> {
   const slide = await findSlide(id, n);
   if (!slide || (slide.typ !== "vid" && slide.typ !== "info")) {
-    return { ok: false, chyba: "Video patří jen na video slide nebo info panel." };
+    return { ok: false, chyba: "Video patří jen do galerie nebo na info panel." };
   }
   const dir = slideDirPath(id, slide.slozka);
+
+  if (slide.typ === "vid") {
+    // Galerie unese videí kolik chce, nové se PŘIDÁ na konec řady, nic se
+    // nepřepisuje. Dočasné jméno se řadí za všechno očíslované a hned nato
+    // se složka přečísluje. Původní název souboru se zahazuje schválně:
+    // v galerii rozhoduje pořadové číslo, ne jak se soubor jmenoval.
+    const docasny = `zzz-nove-${Date.now().toString(36)}-${randomBytes(3).toString("hex")}.mp4`;
+    await writeFileAtomic(path.join(dir, docasny), data);
+    await renumberGalerie(id, slide.slozka);
+    const po = await galerieSoubory(id, slide.slozka);
+    const nazev = po[po.length - 1] ?? docasny;
+    await touchDisplay(id);
+    return { ok: true, url: slideFileUrl(id, slide.slozka, nazev) };
+  }
+
+  // Info panel má nejvýš jedno video, nové nahradí staré.
   const stara = await listFiles(id, slide.slozka, ".mp4");
   let safe = sanitizeFilename(filename);
   if (path.extname(safe).toLowerCase() !== ".mp4") {
@@ -1011,9 +1338,12 @@ export async function saveVideo(
   return { ok: true, url: slideFileUrl(id, slide.slozka, safe) };
 }
 
-export async function deleteVideo(id: string, n: number): Promise<void> {
+// Smaže video info panelu (ten má nejvýš jedno). Na galerii se schválně
+// nevztahuje: tam se maže po jedné položce přes deleteMedia(), tohle by
+// smazalo všechna videa najednou.
+export async function deleteVideo(id: string, n: number): Promise<boolean> {
   const slide = await findSlide(id, n);
-  if (!slide) return;
+  if (!slide || slide.typ !== "info") return false;
   for (const v of await listFiles(id, slide.slozka, ".mp4")) {
     try {
       await fs.unlink(path.join(slideDirPath(id, slide.slozka), v));
@@ -1022,6 +1352,7 @@ export async function deleteVideo(id: string, n: number): Promise<void> {
     }
   }
   await touchDisplay(id);
+  return true;
 }
 
 // --- Správa slidů (pořadí drží číselný prefix názvu složky) ---
@@ -1113,8 +1444,12 @@ export async function reorderSlides(id: string, poradi: number[]): Promise<void>
 // --- Stav jazyků -----------------------------------------------------
 //
 // Kolik přeložitelných položek čeština má a kolik z nich v daném jazyce
-// chybí. Položka = info panel (název druhu), text každé zajímavosti
-// a znalostní báze. Podle toho se v CMS ukazuje „EN chybí".
+// chybí. Položka = info panel (název druhu), oba texty každého textového
+// slidu a znalostní báze. Podle toho se v CMS ukazuje „EN chybí".
+//
+// Taxonomie se schválně NEPOČÍTÁ: je nepovinná, a kdyby se počítala,
+// rozsvítilo by se „EN chybí" u všech displejů kvůli údaji, který kurátor
+// vyplňovat nemusí.
 
 export interface StavJazyka {
   jazyk: Jazyk;
@@ -1132,7 +1467,12 @@ export async function stavJazyku(id: string): Promise<StavJazyka[]> {
         const pole = await readInfoPole(id, s.slozka, jazyk);
         if ((pole.Nazev ?? "").trim()) mnozina.add(`info:${s.n}`);
       } else if (s.typ === "gal") {
-        if ((await readZajimavost(id, s.slozka, jazyk)).trim()) mnozina.add(`gal:${s.n}`);
+        // Oba texty se překládají zvlášť, proto se počítají jako dvě
+        // položky (stejně jako u `_txt`). Taxonomie se nepočítá.
+        const pole = await readGalPole(id, s.slozka, jazyk);
+        for (const klic of TEXTOVE_KLICE) {
+          if ((pole[klic] ?? "").trim()) mnozina.add(`gal:${s.n}:${klic}`);
+        }
       } else if (s.typ === "txt") {
         // Oba texty se překládají zvlášť, proto se počítají jako dvě
         // položky: přeložený jen jeden z nich = jazyk ještě není hotový.
@@ -1160,10 +1500,16 @@ export async function stavJazyku(id: string): Promise<StavJazyka[]> {
 
 async function thumbnailFor(id: string): Promise<string | null> {
   for (const s of await listSlides(id)) {
-    if (s.typ !== "info" && s.typ !== "gal") continue;
-    const pngs = await listFiles(id, s.slozka, ".png");
-    const hlavni = pngs.find((f) => f !== MAPA_SOUBOR) ?? pngs[0];
-    if (hlavni) return slideFileUrl(id, s.slozka, hlavni);
+    if (s.typ === "info" || s.typ === "gal") {
+      const pngs = await listFiles(id, s.slozka, ".png");
+      const hlavni = pngs.find((f) => f !== MAPA_SOUBOR) ?? pngs[0];
+      if (hlavni) return slideFileUrl(id, s.slozka, hlavni);
+    } else if (s.typ === "vid") {
+      // Galerie: první fotka. Video se na náhled nehodí, prohlížeč by z něj
+      // v seznamu displejů musel tahat snímek.
+      const fotka = (await galerieSoubory(id, s.slozka)).find((f) => !jeGalerieVideo(f));
+      if (fotka) return slideFileUrl(id, s.slozka, fotka);
+    }
   }
   return null;
 }

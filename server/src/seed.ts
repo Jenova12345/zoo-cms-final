@@ -3,7 +3,7 @@ import path from "node:path";
 import sharp from "sharp";
 import { DISPLAYS_DIR, DISPLAY_COUNT } from "./paths.js";
 import { SEED_DISPLAYS, DEFAULT_KB, placeholderSvg, type SeedDisplay } from "./content.js";
-import { serializeInfoText, serializeZajimavostText } from "./displays.js";
+import { serializeInfoText, serializeGalText } from "./displays.js";
 import { canonicalizeLatin } from "./latin.js";
 import { VYCHOZI_HESLO, VYCHOZI_JMENO, zalozVychoziUcet } from "./users.js";
 import { writeFileAtomic } from "./atomic.js";
@@ -13,8 +13,8 @@ import { writeFileAtomic } from "./atomic.js";
 //   <id>/kb.md                znalostní báze (kořen displeje)
 //   <id>/meta.json            doplněk (druh, stav, poslední změna)
 //   <id>/cs/1_info/text.txt   pole "Klic: Hodnota" + fotky .png + mapa.png
-//   <id>/cs/2_vid/            video slide (mp4 nahraje kurátor)
-//   <id>/cs/3_gal/text.txt    zajímavost: "Popis: …" + jedna fotka
+//   <id>/cs/2_vid/            galerie (fotky i videa nahraje kurátor)
+//   <id>/cs/3_gal/text.txt    textový slide: dva texty + Taxonomie + fotka
 //   <id>/cs/4_ai/             prázdná složka = AI slide
 //
 // Displeje 1-3 s obsahem, 4-37 jako "Nepřiřazeno" bez slidů (kurátor je
@@ -50,16 +50,20 @@ async function seedDisplay(id: number, seed: SeedDisplay | null) {
       await pngPlaceholder("Mapa výskytu", "#334155", seed.druh),
     );
 
-    // 2_vid: prázdné, mp4 nahraje kurátor
+    // 2_vid: prázdná galerie, fotky a videa nahraje kurátor
     await fs.mkdir(path.join(root, "cs", "2_vid"), { recursive: true });
 
-    // 3_gal: zajímavost, dlouhý text a jedna fotka (finální struktura)
+    // 3_gal: textový slide, dva texty a jedna fotka. Taxonomii seed
+    // nevyplňuje: třídu ani řád nemáme odkud vzít, doplní je kurátor.
     const gal = path.join(root, "cs", "3_gal");
     await fs.mkdir(gal, { recursive: true });
-    await writeFileAtomic(path.join(gal, "text.txt"), serializeZajimavostText(seed.zajimavost));
+    await writeFileAtomic(
+      path.join(gal, "text.txt"),
+      serializeGalText({ ObecnyText: seed.zajimavost }, "cs"),
+    );
     await fs.writeFile(
       path.join(gal, "foto-zajimavost.png"),
-      await pngPlaceholder(seed.druh, seed.barva, "Zajímavost"),
+      await pngPlaceholder(seed.druh, seed.barva, "Textový slide"),
     );
 
     // 4_ai: prázdná složka

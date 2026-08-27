@@ -19,10 +19,10 @@ import {
   readKb,
   writeKb,
   writeInfoPole,
-  writeZajimavost,
+  writeGalPole,
   writeTextSlide,
   saveImage,
-  deleteImage,
+  deleteMedia,
   setMapa,
   saveVideo,
   deleteVideo,
@@ -31,7 +31,7 @@ import {
   reorderSlides,
   displayExists,
   slideExists,
-  SLIDE_TYPY,
+  SLIDE_TYPY_NABIDKA,
   type SlideTyp,
 } from "./displays.js";
 import { KB_TEMPLATE } from "./kbTemplate.js";
@@ -384,34 +384,45 @@ app.put<{
   return { ok: true, latin: res.latin, latinCorrected: res.latinCorrected };
 });
 
-// Text zajímavosti (slide _gal): jeden dlouhý odstavec, na disku
-// cs/<slozka>/text.txt jako "Popis: …".
-app.put<{ Params: { id: string; n: string }; Body: { text?: string; jazyk?: string } }>(
-  "/api/displays/:id/slides/:n/text",
-  async (req, reply) => {
-    const { id } = req.params;
-    const n = Number(req.params.n);
-    if (!validId(id) || !validSlide(n)) return reply.code(400).send({ chyba: "Neplatné parametry." });
-    if (!(await slideExists(id, n))) return reply.code(404).send({ chyba: "Slide nenalezen." });
+// Texty textového slidu (_gal): dva dlouhé texty a taxonomie po částech.
+// Na disku cs/<slozka>/text.txt jako "ObecnyText: …", "Zajimavosti: …"
+// a jeden složený řádek "Taxonomie: Třída: … | Řád: … | Čeleď: …".
+//
+// Tři pole taxonomie chodí zvlášť (Trida, Rad, Celed) a skládá je až server,
+// aby tvar řádku, který čte Unity, vznikal na jednom místě.
+app.put<{
+  Params: { id: string; n: string };
+  Body: { pole?: Record<string, string>; jazyk?: string };
+}>("/api/displays/:id/slides/:n/text", async (req, reply) => {
+  const { id } = req.params;
+  const n = Number(req.params.n);
+  if (!validId(id) || !validSlide(n)) return reply.code(400).send({ chyba: "Neplatné parametry." });
+  if (!(await slideExists(id, n))) return reply.code(404).send({ chyba: "Slide nenalezen." });
 
-    // Prázdný text projde: kurátor si slide založí a text dopíše později,
-    // je to legitimní rozdělaná práce (za hotový takový slide označit nejde,
-    // to hlídá editor). Chybějící pole ale ne, to by znamenalo špatně
-    // poskládaný požadavek a tiché smazání obsahu.
-    const text = req.body?.text;
-    if (typeof text !== "string") {
-      return reply.code(400).send({ chyba: "Chybí text zajímavosti." });
+  // Prázdné texty projdou: kurátor si slide založí a text dopíše později,
+  // je to legitimní rozdělaná práce (za hotový takový slide označit nejde,
+  // to hlídá editor). Chybějící objekt `pole` ale ne, to by znamenalo
+  // špatně poskládaný požadavek a tiché smazání obsahu.
+  const pole = req.body?.pole;
+  if (!pole || typeof pole !== "object" || Array.isArray(pole)) {
+    return reply.code(400).send({ chyba: "Chybí texty slidu." });
+  }
+  for (const hodnota of Object.values(pole)) {
+    if (typeof hodnota !== "string") {
+      return reply.code(400).send({ chyba: "Texty slidu musí být řetězce." });
     }
-    const res = await writeZajimavost(id, n, text, jazykNeboVychozi(req.body?.jazyk));
-    if (!res.ok) return reply.code(400).send({ chyba: res.chyba });
-    await appendAudit({
-      uzivatel: currentUser(req),
-      akce: "úprava zajímavosti",
-      cil: `displej ${id}, slide ${n}`,
-    });
-    return { ok: true };
-  },
-);
+  }
+
+  const jazyk = jazykNeboVychozi(req.body?.jazyk);
+  const res = await writeGalPole(id, n, pole, jazyk);
+  if (!res.ok) return reply.code(400).send({ chyba: res.chyba });
+  await appendAudit({
+    uzivatel: currentUser(req),
+    akce: "úprava textového slidu",
+    cil: `displej ${id}, slide ${n} (${jazyk})`,
+  });
+  return { ok: true };
+});
 
 // Obecné informace (slide _txt): dva dlouhé texty, na disku
 // cs/<slozka>/text.txt jako "ObecnyText: …" a "Zajimavosti: …".
@@ -452,8 +463,9 @@ app.put<{
   return { ok: true };
 });
 
-// Upload fotky (info panel, zajímavost, snímek 3D sekvence). Vždy se převádí
-// do PNG kvůli Unity.
+// Upload fotky (info panel, textový slide, snímek 3D sekvence, položka
+// galerie). Mimo galerii se vždy převádí do PNG kvůli Unity; v galerii si
+// fotka drží příponu, protože Unity tam řadí abecedně a na formátu nezáleží.
 app.post<{ Params: { id: string; n: string } }>(
   "/api/displays/:id/slides/:n/image",
   async (req, reply) => {
@@ -477,7 +489,8 @@ app.post<{ Params: { id: string; n: string } }>(
   },
 );
 
-// Smazání jedné fotky slidu.
+// Smazání jedné položky slidu: fotky (info panel, textový slide, snímek 3D
+// sekvence) nebo jedné položky galerie, tam i videa.
 app.delete<{ Params: { id: string; n: string; nazev: string } }>(
   "/api/displays/:id/slides/:n/images/:nazev",
   async (req, reply) => {
@@ -489,12 +502,12 @@ app.delete<{ Params: { id: string; n: string; nazev: string } }>(
     // Fastify parametr už dekóduje; druhé decodeURIComponent zbytečně padalo
     // na URIError u samotného "%". Stačí basename.
     const nazev = path.basename(req.params.nazev);
-    const ok = await deleteImage(id, n, nazev);
-    if (!ok) return reply.code(400).send({ chyba: "Fotku se nepodařilo smazat." });
+    const ok = await deleteMedia(id, n, nazev);
+    if (!ok) return reply.code(400).send({ chyba: "Soubor se nepodařilo smazat." });
 
     await appendAudit({
       uzivatel: currentUser(req),
-      akce: "smazání fotky",
+      akce: "smazání souboru",
       cil: `displej ${id}, slide ${n}: ${nazev}`,
     });
     return { ok: true };
@@ -526,7 +539,8 @@ app.put<{ Params: { id: string; n: string }; Body: { nazev?: string | null } }>(
   },
 );
 
-// Nahrání videa (jen video slide, ukládá se jako mp4).
+// Nahrání videa: do galerie (_vid) se přidá jako další položka řady, na info
+// panelu nahradí to jediné, které tam smí být. Ukládá se jako mp4.
 app.post<{ Params: { id: string; n: string } }>(
   "/api/displays/:id/slides/:n/video",
   async (req, reply) => {
@@ -553,7 +567,8 @@ app.post<{ Params: { id: string; n: string } }>(
   },
 );
 
-// Smazání videa slidu.
+// Smazání videa info panelu. Z galerie se maže po jedné položce přes
+// DELETE .../images/:nazev, tohle by tam smazalo všechna videa najednou.
 app.delete<{ Params: { id: string; n: string } }>(
   "/api/displays/:id/slides/:n/video",
   async (req, reply) => {
@@ -562,7 +577,9 @@ app.delete<{ Params: { id: string; n: string } }>(
     if (!validId(id) || !validSlide(n)) return reply.code(400).send({ chyba: "Neplatné parametry." });
     if (!(await slideExists(id, n))) return reply.code(404).send({ chyba: "Slide nenalezen." });
 
-    await deleteVideo(id, n);
+    if (!(await deleteVideo(id, n))) {
+      return reply.code(400).send({ chyba: "Tenhle slide nemá samostatné video." });
+    }
     await appendAudit({
       uzivatel: currentUser(req),
       akce: "smazání videa",
@@ -580,8 +597,10 @@ app.post<{ Params: { id: string }; Body: { typ?: string } }>(
     if (!validId(id)) return reply.code(400).send({ chyba: "Neplatné id." });
     if (!(await displayExists(id))) return reply.code(404).send({ chyba: "Displej nenalezen." });
 
+    // Proti NABÍDCE, ne proti všem známým typům: `_txt` je pozůstalý typ,
+    // existující složky se dál čtou a editují, ale nový už nezaložíme.
     const typ = req.body?.typ;
-    if (!typ || !SLIDE_TYPY.includes(typ as SlideTyp)) {
+    if (!typ || !SLIDE_TYPY_NABIDKA.includes(typ as SlideTyp)) {
       return reply.code(400).send({ chyba: "Neplatný typ slidu." });
     }
     const n = await addSlide(id, typ as SlideTyp);

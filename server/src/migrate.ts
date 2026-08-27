@@ -8,18 +8,18 @@ import { writeFileAtomic } from "./atomic.js";
 // Jednorázová migrace staré struktury (cs/slide-1..6, text.md, kb.md ve
 // slide-6) na nový formát pro Unity (cs/<n>_<typ>, text.txt, kb.md v kořeni).
 //
-// Zachovává nahraná média: obrázky se převedou do PNG (fotky ze slide-1 jdou
-// do 1_info, ostatní do 3_gal), první nalezené MP4 jde do 2_vid. Texty starých
-// slidů se přesunou do znalostní báze kb.md, ať se o obsah nepřijde.
+// Zachovává nahraná média: fotky ze slide-1 jdou do 1_info, zbylé fotky
+// a videa do galerie 2_vid, kde tvoří jednu číslovanou řadu (01.png, 02.mp4…).
+// Texty starých slidů se přesunou do znalostní báze kb.md, ať se o obsah
+// nepřijde. 3_gal vzniká prázdný, texty do něj dopíše kurátor.
 //
 // Migrace je idempotentní: displej, který už nemá žádnou složku slide-*,
 // se přeskočí.
 //
-// POZOR (13. 8. 2026): skript zůstal ve stavu, v jakém migraci reálně provedl.
-// Po finální struktuře od Michala je `_gal` ZAJÍMAVOST (text.txt + jedna
-// fotka), ne galerie, kdyby se migrace pouštěla znovu na starých datech,
-// v 3_gal skončí víc fotek a CMS i Unity vezmou jen první, text bude prázdný.
-// Data v pavilonu jsou migrovaná, tohle je jen historická pojistka.
+// POZOR: data v pavilonu jsou dávno migrovaná, tohle je jen historická
+// pojistka pro případ, že by se někde našla složka ve starém tvaru. Cíl
+// odpovídá struktuře, kterou dnes čte Unity: `_gal` je TEXTOVÝ slide
+// (dva texty + taxonomie + jedna fotka), `_vid` je GALERIE fotek i videí.
 
 const IMAGE_EXT = new Set([".svg", ".png", ".jpg", ".jpeg", ".jfif", ".webp", ".gif", ".avif", ".bmp", ".tif", ".tiff"]);
 
@@ -133,16 +133,29 @@ async function migrateDisplay(id: string): Promise<void> {
     await writeFileAtomic(path.join(info, "text.txt"), serializeInfoText(pole));
     await copyImagesAsPng(oldSlides[0]?.images ?? [], info, "foto");
 
-    // 3) 2_vid: první nalezené MP4.
+    // 3) 2_vid: galerie. Zbylé fotky a všechna videa v jedné číslované řadě
+    // s vodící nulou, tak jak je čte Unity (řadí je abecedně).
     const vid = path.join(csDir, "2_vid");
     await fs.mkdir(vid, { recursive: true });
-    const mp4 = oldSlides.flatMap((s) => s.videos)[0];
-    if (mp4) await fs.copyFile(mp4, path.join(vid, path.basename(mp4)));
+    let poradi = 0;
+    const cislo = () => String(++poradi).padStart(2, "0");
+    for (const src of oldSlides.slice(1).flatMap((s) => s.images)) {
+      try {
+        const png = await convertToPng(await fs.readFile(src));
+        await fs.writeFile(path.join(vid, `${cislo()}.png`), png);
+      } catch {
+        console.warn(`  ! nepodařilo se převést do PNG, přeskočeno: ${src}`);
+      }
+    }
+    for (const mp4 of oldSlides.flatMap((s) => s.videos)) {
+      await fs.copyFile(mp4, path.join(vid, `${cislo()}.mp4`));
+    }
 
-    // 4) 3_gal: fotky z ostatních slidů.
+    // 4) 3_gal: textový slide. Média sem nepatří (jedna fotka, kterou si
+    // kurátor vybere) a texty jsou ve znalostní bázi, takže zakládáme
+    // prázdnou složku.
     const gal = path.join(csDir, "3_gal");
     await fs.mkdir(gal, { recursive: true });
-    await copyImagesAsPng(oldSlides.slice(1).flatMap((s) => s.images), gal, "foto");
 
     // 5) 4_ai: prázdná složka.
     await fs.mkdir(path.join(csDir, "4_ai"), { recursive: true });

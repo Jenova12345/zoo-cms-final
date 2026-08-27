@@ -39,24 +39,28 @@ import {
   SLIDE_TYPY,
   SLIDE_TYP_LABEL,
   SLIDE_TYP_POPIS,
+  TAXONOMIE_POLE,
+  TAXONOMIE_ZBYTEK,
   TEXTOVA_POLE,
+  galPrazdny,
   textovyPrazdny,
-  ZAJIMAVOST_LIMIT_SLOV,
   type DisplayDetail as Detail,
+  type MediaPolozka,
   type SlideContent,
   type SlideTyp,
 } from "../lib/types";
 import {
+  galNeulozeno,
   infoNeulozeno,
+  klicGalPole,
   klicPole,
   klicTextovehoPole,
-  klicZajimavosti,
   premapujDotcena,
   premapujDrafty,
+  slucGalDrafty,
   slucInfoDrafty,
   slucText,
   slucTextoveDrafty,
-  slucZajimavosti,
   textovyNeulozeno,
   textZmeneno,
   zapomen,
@@ -88,9 +92,9 @@ const TYP_IKONA: Record<SlideTyp, typeof Info> = {
   info: Info,
   ai: Sparkles,
   "3d": Box,
-  vid: Film,
-  gal: Lightbulb, // _gal = zajímavost (text + jedna fotka)
-  txt: AlignLeft, // _txt = obecné informace (dva texty, žádná média)
+  vid: ImageIcon, // _vid = galerie fotek i videí (ne jen video)
+  gal: AlignLeft, // _gal = textový slide (dva texty + taxonomie + fotka)
+  txt: Lightbulb, // _txt = pozůstalé obecné informace (dva texty, bez médií)
 };
 
 // Záložka "kb" = znalostní báze (kb.md v kořeni displeje), mimo slidy.
@@ -109,11 +113,13 @@ function jePrazdny(s: SlideContent): boolean {
     case "info":
       return !(s.pole.Nazev ?? "").trim() && s.obrazky.length === 0 && !s.mapa && !s.video;
     case "gal":
-      return !s.text.trim() && s.obrazky.length === 0;
+      // Taxonomie se nepočítá: je nepovinná a slide jen s ní by na tabletu
+      // zůstal skoro prázdný.
+      return galPrazdny(s.pole) && s.obrazky.length === 0;
     case "3d":
       return s.obrazky.length === 0;
     case "vid":
-      return !s.video;
+      return s.media.length === 0;
     case "txt":
       // Obecné informace jsou prázdné, dokud není vyplněný aspoň jeden
       // z obou textů. Média tenhle typ nemá.
@@ -136,9 +142,9 @@ const VYZVEDNE_SI_SAM =
 // obsah daného typu ukládá: fotky a video hned při nahrání, texty tlačítkem.
 const PRAZDNY_NAVOD: Record<SlideTyp, string> = {
   info: "Vyplňte Sekci a Název, nahrajte fotku a uložte. Než slide uložíte, nemá tablet co zobrazit.",
-  gal: "Napište text zajímavosti, přidejte k němu fotku a uložte.",
+  gal: "Napište oba texty, doplňte zařazení druhu, přidejte fotku a uložte. Stačí vyplnit aspoň jedno z obou textových polí.",
   "3d": "Nahrajte sekvenci snímků modelu. Ukládají se hned po nahrání a tablet si je pak vyzvedne sám.",
-  vid: "Nahrajte video ve formátu MP4. Uloží se hned po nahrání a tablet si ho pak vyzvedne sám.",
+  vid: "Nahrajte fotky a videa do galerie. Ukládají se hned po nahrání a tablet si je pak vyzvedne sám.",
   txt: "Napište obecný text o druhu, doplňte zajímavosti a uložte. Stačí vyplnit aspoň jedno z obou polí.",
   ai: "",
 };
@@ -149,16 +155,24 @@ function obsahSlidu(s: SlideContent): string[] {
   if (s.obrazky.length) {
     kusy.push(s.typ === "3d" ? pocetSnimku(s.obrazky.length) : pocetFotek(s.obrazky.length));
   }
+  if (s.media.length) {
+    const fotek = s.media.filter((m) => m.typ === "foto").length;
+    const videi = s.media.length - fotek;
+    if (fotek) kusy.push(pocetFotek(fotek));
+    if (videi) kusy.push(videi === 1 ? "video" : `${videi} videí`);
+  }
   if (s.mapa) kusy.push("mapa výskytu");
   if (s.video) kusy.push("video");
-  if (s.text.trim()) kusy.push("text zajímavosti");
   if (s.typ === "info" && Object.values(s.pole).some((v) => v.trim())) {
     kusy.push("vyplněné údaje o druhu");
   }
-  if (s.typ === "txt") {
+  if (s.typ === "gal" || s.typ === "txt") {
     for (const def of TEXTOVA_POLE) {
       if ((s.pole[def.klic] ?? "").trim()) kusy.push(def.label.toLowerCase());
     }
+  }
+  if (s.typ === "gal" && TAXONOMIE_POLE.some((def) => (s.pole[def.klic] ?? "").trim())) {
+    kusy.push("zařazení druhu");
   }
   return kusy;
 }
@@ -181,9 +195,10 @@ export default function DisplayDetail() {
   const [error, setError] = useState<string | null>(null);
   const [active, setActive] = useState<ActiveTab>(1);
   const [infoDrafts, setInfoDrafts] = useState<Record<number, Record<string, string>>>({});
-  // Text zajímavosti drží rodič stejně jako pole info panelu, jako lokální
-  // stav editoru se ztrácel při přepnutí záložky.
-  const [galDrafts, setGalDrafts] = useState<Record<number, string>>({});
+  // Textový slide (_gal): víc polí na slide (dva texty a tři části
+  // taxonomie), stejný tvar jako info panel. Drží je rodič, jako lokální
+  // stav editoru se ztrácely při přepnutí záložky.
+  const [galDrafts, setGalDrafts] = useState<Record<number, Record<string, string>>>({});
   // Obecné informace (_txt): dvě pole na slide, stejný tvar jako info panel.
   const [txtDrafts, setTxtDrafts] = useState<Record<number, Record<string, string>>>({});
   const [kbDraft, setKbDraft] = useState("");
@@ -235,7 +250,7 @@ export default function DisplayDetail() {
         Jazyk,
         {
           infoDrafts: Record<number, Record<string, string>>;
-          galDrafts: Record<number, string>;
+          galDrafts: Record<number, Record<string, string>>;
           txtDrafts: Record<number, Record<string, string>>;
           kbDraft: string;
           sectionDraft: string;
@@ -270,7 +285,7 @@ export default function DisplayDetail() {
         if (rezim === "slouc") {
           const dot = dotcenaRef.current;
           setInfoDrafts((prev) => slucInfoDrafty(prev, d.slides, dot));
-          setGalDrafts((prev) => slucZajimavosti(prev, d.slides, dot));
+          setGalDrafts((prev) => slucGalDrafty(prev, d.slides, dot));
           setTxtDrafts((prev) => slucTextoveDrafty(prev, d.slides, dot));
           setKbDraft((prev) => slucText(prev, d.kb, KLIC_KB, dot));
           setSectionDraft((prev) => slucText(prev, d.meta.section ?? "", KLIC_CELED, dot));
@@ -328,7 +343,7 @@ export default function DisplayDetail() {
         dotcenaRef.current = prazdna;
         setDotcena(prazdna);
         setInfoDrafts(slucInfoDrafty({}, d.slides, prazdna));
-        setGalDrafts(slucZajimavosti({}, d.slides, prazdna));
+        setGalDrafts(slucGalDrafty({}, d.slides, prazdna));
         setTxtDrafts(slucTextoveDrafty({}, d.slides, prazdna));
         setKbDraft(d.kb);
         setSectionDraft(d.meta.section ?? "");
@@ -368,7 +383,7 @@ export default function DisplayDetail() {
       return infoNeulozeno(s.n, infoDrafts[s.n], s.pole, dotcena) || celedNeulozena;
     }
     if (s.typ === "gal") {
-      return dotcena.has(klicZajimavosti(s.n)) && textZmeneno(galDrafts[s.n] ?? s.text, s.text);
+      return galNeulozeno(s.n, galDrafts[s.n], s.pole, dotcena);
     }
     if (s.typ === "txt") {
       return textovyNeulozeno(s.n, txtDrafts[s.n], s.pole, dotcena);
@@ -554,7 +569,7 @@ export default function DisplayDetail() {
       const d = await api.display(id);
       setDetail(d);
       setInfoDrafts((prev) => slucInfoDrafty(premapujDrafty(prev, poradi), d.slides, preskladana));
-      setGalDrafts((prev) => slucZajimavosti(premapujDrafty(prev, poradi), d.slides, preskladana));
+      setGalDrafts((prev) => slucGalDrafty(premapujDrafty(prev, poradi), d.slides, preskladana));
       setTxtDrafts((prev) => slucTextoveDrafty(premapujDrafty(prev, poradi), d.slides, preskladana));
       setKbDraft((prev) => slucText(prev, d.kb, KLIC_KB, preskladana));
       setSectionDraft((prev) => slucText(prev, d.meta.section ?? "", KLIC_CELED, preskladana));
@@ -963,7 +978,7 @@ export default function DisplayDetail() {
           withBusy={withBusy}
         />
       ) : slide.typ === "gal" ? (
-        <ZajimavostEditor
+        <TextovyEditor
           key={slide.n}
           slide={slide}
           displayId={id}
@@ -975,13 +990,16 @@ export default function DisplayDetail() {
           referenceCs={
             jazyk === "cs"
               ? null
-              : referenceCs?.slides.find((x) => x.n === slide.n)?.text ?? null
+              : referenceCs?.slides.find((x) => x.n === slide.n)?.pole ?? null
           }
-          text={galDrafts[slide.n] ?? slide.text}
-          onZmena={(v) => {
+          pole={galDrafts[slide.n] ?? slide.pole}
+          onZmena={(patch) => {
             setUlozeno(null);
-            oznacDotcene(klicZajimavosti(slide.n));
-            setGalDrafts((prev) => ({ ...prev, [slide.n]: v }));
+            for (const klic of Object.keys(patch)) oznacDotcene(klicGalPole(slide.n, klic));
+            setGalDrafts((prev) => ({
+              ...prev,
+              [slide.n]: { ...(prev[slide.n] ?? slide.pole), ...patch },
+            }));
           }}
           onUlozeno={() => {
             ulozeneZahod((d) => zapomenSlide(d, slide.n));
@@ -1034,7 +1052,7 @@ export default function DisplayDetail() {
           zeptejSe={zeptejSeNaZverejneni}
         />
       ) : slide.typ === "vid" ? (
-        <VidEditor
+        <GalerieEditor
           key={slide.n}
           slide={slide}
           displayId={id}
@@ -1255,13 +1273,15 @@ function PhotoDropzone({
   onFiles,
   vice = true,
   popis,
+  accept = "image/*",
 }: {
   uploading: boolean;
   prubeh?: { hotovo: number; celkem: number } | null;
   onZrus?: () => void;
   onFiles: (files: FileList | File[]) => void;
-  vice?: boolean; // false = slide unese jen jednu fotku (zajímavost)
+  vice?: boolean; // false = slide unese jen jednu fotku (textový slide)
   popis?: string;
+  accept?: string; // galerie bere i MP4, jinde jen obrázky
 }) {
   const [dragOver, setDragOver] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -1285,7 +1305,7 @@ function PhotoDropzone({
       <input
         ref={fileInput}
         type="file"
-        accept="image/*"
+        accept={accept}
         multiple={vice}
         className="hidden"
         onChange={(e) => {
@@ -1324,7 +1344,11 @@ function PhotoDropzone({
       ) : (
         <>
           <p className="mt-2 text-sm font-medium text-fg-muted">
-            {vice ? "Přetáhněte fotky sem nebo klikněte" : "Přetáhněte fotku sem nebo klikněte"}
+            {!vice
+              ? "Přetáhněte fotku sem nebo klikněte"
+              : accept.includes("video")
+                ? "Přetáhněte fotky a videa sem nebo klikněte"
+                : "Přetáhněte fotky sem nebo klikněte"}
           </p>
           <p className="text-xs text-fg-muted">
             {popis ?? "JPG nebo PNG, systém si formát převede sám"}
@@ -1517,7 +1541,7 @@ function InfoEditor({
   async function removeImage(url: string) {
     setSmazatFotku(null);
     await withBusy(async () => {
-      await api.deleteImage(displayId, slide.n, nazevSouboru(url));
+      await api.deleteMedia(displayId, slide.n, nazevSouboru(url));
       await reload();
       toast.success("Fotka odebrána");
     }, "Odebrání fotky selhalo.");
@@ -1816,9 +1840,13 @@ function InfoEditor({
   );
 }
 
-// --- Zajímavost (_gal): dlouhý text vlevo, jedna fotka vpravo ---
+// --- Textový slide (_gal): dva dlouhé texty a zařazení vlevo, fotka vpravo ---
+//
+// Oba texty i zařazení se překládají, sdílené s češtinou tu není nic. Fotka
+// je naopak společná: nahrává se jednou do češtiny a ostatní jazyky si ji
+// odtud berou, stejně jako u všech ostatních médií.
 
-function ZajimavostEditor({
+function TextovyEditor({
   slide,
   displayId,
   busy,
@@ -1827,7 +1855,7 @@ function ZajimavostEditor({
   zeptejSe,
   jazyk,
   referenceCs,
-  text,
+  pole,
   onUlozeno,
   onZmena,
   neulozeno,
@@ -1840,31 +1868,38 @@ function ZajimavostEditor({
   withBusy: (fn: () => Promise<void>, fail: string) => Promise<void>;
   zeptejSe: (popis: ReactNode, akce: () => Promise<void>) => void;
   jazyk: Jazyk;
-  referenceCs: string | null;
-  text: string;
+  referenceCs: Record<string, string> | null;
+  pole: Record<string, string>;
   onUlozeno: () => void;
-  onZmena: (v: string) => void;
+  onZmena: (patch: Record<string, string>) => void;
   neulozeno: boolean;
   ulozenoCas: string | null;
 }) {
   const toast = useToast();
   const [saving, setSaving] = useState(false);
-  // Zajímavost má na disku právě jednu fotku, tak ji ani nenabízíme víc.
+  const [smazatFotku, setSmazatFotku] = useState(false);
+  const [chybiObsah, setChybiObsah] = useState(false);
+  // Slide má na disku právě jednu fotku, tak ji ani nenabízíme víc.
   const { uploading, prubeh, upload, zrus } = usePhotoUpload(displayId, slide.n, reload, false, true);
   const fotka = slide.obrazky[0] ?? null;
 
-  // `odeslat` = navíc zapsat do auditu, že je kurátor s textem hotový.
+  const prazdny = galPrazdny(pole);
+  // Nerozpoznaný tvar taxonomie na disku (ruční zásah do text.txt). Ukazuje
+  // se místo tichého zahození, uložením se přepíše.
+  const zbytekTaxonomie = (slide.pole[TAXONOMIE_ZBYTEK] ?? "").trim();
+
+  // `odeslat` = navíc zapsat do auditu, že je kurátor s texty hotový.
   async function ulozit(odeslat: boolean) {
     setSaving(true);
     try {
-      await api.saveSlideText(displayId, slide.n, text, jazyk);
+      await api.saveSlideText(displayId, slide.n, pole, jazyk);
       if (odeslat) await api.refresh(displayId);
       onUlozeno();
       await reload();
       toast.success(
         odeslat
-          ? `Zajímavost uložena a zapsána jako hotová (displej ${displayId}).`
-          : "Zajímavost uložena. Tablet si ji vyzvedne sám, obvykle do minuty.",
+          ? `Texty uloženy a zapsány jako hotové (displej ${displayId}).`
+          : "Texty uloženy. Tablet si je vyzvedne sám, obvykle do minuty.",
       );
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Uložení selhalo.");
@@ -1877,29 +1912,27 @@ function ZajimavostEditor({
   // Hotovo je záznam do auditu, že obsah někdo zkontroloval; u prázdna to
   // nedává smysl a na tabletu by zůstalo prázdné místo.
   function zverejnit() {
-    if (!text.trim()) {
+    if (prazdny) {
       setChybiObsah(true);
-      toast.error("Ještě chybí vyplnit: text zajímavosti.");
-      document.getElementById(`popis-${slide.n}`)?.focus();
+      toast.error("Ještě chybí vyplnit: aspoň jeden z obou textů.");
+      document.getElementById(`gal-${slide.n}-${TEXTOVA_POLE[0].klic}`)?.focus();
       return;
     }
     setChybiObsah(false);
     zeptejSe(
       <>
-        Označí se jako hotový slide <strong className="font-semibold text-fg">Zajímavost</strong>{" "}
-        displeje {displayId}, text i fotka.
+        Označí se jako hotový slide{" "}
+        <strong className="font-semibold text-fg">Text a fotka</strong> displeje {displayId},
+        texty i fotka.
       </>,
       () => ulozit(true),
     );
   }
 
-  const [smazatFotku, setSmazatFotku] = useState(false);
-  const [chybiObsah, setChybiObsah] = useState(false);
-
   async function removeImage(url: string) {
     setSmazatFotku(false);
     await withBusy(async () => {
-      await api.deleteImage(displayId, slide.n, nazevSouboru(url));
+      await api.deleteMedia(displayId, slide.n, nazevSouboru(url));
       await reload();
       toast.success("Fotka odebrána");
     }, "Odebrání fotky selhalo.");
@@ -1907,28 +1940,90 @@ function ZajimavostEditor({
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
-      {/* Text zajímavosti (na disk jde text.txt jako "Popis: …") */}
-      <div className="space-y-4">
+      {/* Texty a zařazení (na disk jdou do text.txt) */}
+      <div className="space-y-6">
+        {TEXTOVA_POLE.map((def) => {
+          const hodnota = pole[def.klic] ?? "";
+          return (
+            <div key={def.klic}>
+              <label className="label" htmlFor={`gal-${slide.n}-${def.klic}`}>
+                {def.label}
+                <span className="text-fg-muted font-normal"> · překládá se</span>
+              </label>
+              <textarea
+                id={`gal-${slide.n}-${def.klic}`}
+                className="input min-h-[200px] resize-y leading-relaxed"
+                value={hodnota}
+                onChange={(e) => onZmena({ [def.klic]: e.target.value })}
+              />
+              {/* Český originál jako podklad k překladu. Schválně se
+                  nepředvyplňuje, aby se čeština omylem neuložila jako
+                  angličtina. */}
+              {!hodnota.trim() && <CeskyOriginal text={referenceCs?.[def.klic] ?? null} />}
+              <PodPolem
+                hint={`${def.hint} Ideálně do ${def.limitSlov} slov, delší text se na tabletu ořízne.`}
+                pocitadlo={
+                  hodnota.trim() ? (
+                    <Pocitadlo kolik={pocetSlov(hodnota)} limit={def.limitSlov} jednotka="slov" />
+                  ) : undefined
+                }
+              />
+            </div>
+          );
+        })}
+
+        {/* Zařazení druhu. Na disk jde jako JEDEN řádek "Taxonomie: Třída: …
+            | Řád: … | Čeleď: …", složí ho server podle jazyka. Kurátor ho
+            vyplňuje po částech, ať nemusí hlídat oddělovače. */}
         <div>
-          <label className="label" htmlFor={`popis-${slide.n}`}>
-            Popis <span className="text-fg-muted font-normal">· text zajímavosti</span>
-          </label>
-          <textarea
-            id={`popis-${slide.n}`}
-            className="input min-h-[320px] resize-y leading-relaxed"
-            value={text}
-            onChange={(e) => onZmena(e.target.value)}
-            placeholder="Např. Pralesnička harlekýn je drobná jedovatá žába obývající podrost tropických pralesů…"
-          />
-          {!text.trim() && <CeskyOriginal text={referenceCs} />}
+          <span className="label">
+            Zařazení druhu
+            <span className="text-fg-muted font-normal"> · nepovinné, překládá se</span>
+          </span>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            {TAXONOMIE_POLE.map((def) => {
+              const hodnota = pole[def.klic] ?? "";
+              return (
+                <div key={def.klic}>
+                  <label
+                    className="block text-xs font-medium text-fg-muted mb-1"
+                    htmlFor={`gal-${slide.n}-${def.klic}`}
+                  >
+                    {def.label}
+                  </label>
+                  <input
+                    id={`gal-${slide.n}-${def.klic}`}
+                    className="input"
+                    value={hodnota}
+                    onChange={(e) => onZmena({ [def.klic]: e.target.value })}
+                    placeholder={def.placeholder}
+                  />
+                  {!hodnota.trim() && <CeskyOriginal text={referenceCs?.[def.klic] ?? null} />}
+                </div>
+              );
+            })}
+          </div>
           <PodPolem
-            hint={`Delší text, ideálně do ${ZAJIMAVOST_LIMIT_SLOV} slov. Delší text se na tabletu ořízne.`}
-            pocitadlo={
-              text.trim() ? (
-                <Pocitadlo kolik={pocetSlov(text)} limit={ZAJIMAVOST_LIMIT_SLOV} jednotka="slov" />
-              ) : undefined
+            hint={
+              jazyk === "cs"
+                ? "Na tabletu se poskládá do jednoho řádku, oddělovače doplní systém. Nevyplněnou část vynechá."
+                : "Vyplňte v jazyce překladu, popisky (Class, Order, Family) doplní systém sám."
             }
           />
+          {/* Latinská čeleď z info panelu je jiný údaj (jde jen chatbotovi),
+              ať ji kurátor nehledá tady. */}
+          <p className="mt-1 text-xs text-fg-muted">
+            Tohle je text pro návštěvníka na tabletu. Latinská čeleď pro chatbota
+            (např. <span className="font-mono">Dendrobatidae</span>) se vyplňuje zvlášť
+            v Infopanelu.
+          </p>
+          {zbytekTaxonomie && (
+            <p className="mt-2 text-sm text-amber-deep">
+              V souboru na disku je zařazení v tvaru, kterému nerozumíme:{" "}
+              <span className="font-mono">{zbytekTaxonomie}</span>. Uložením slidu se přepíše
+              tím, co je v polích výš.
+            </p>
+          )}
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
@@ -1946,22 +2041,24 @@ function ZajimavostEditor({
           </button>
           <StavUlozeni neulozeno={neulozeno} ulozenoCas={ulozenoCas} />
         </div>
-        {chybiObsah && !text.trim() && (
+
+        {chybiObsah && prazdny && (
           <p className="text-sm text-danger">
-            Ještě chybí vyplnit: <span className="font-semibold">text zajímavosti</span>. Bez něj
-            slide nejde označit za hotový, uložit rozepsaný ale můžete.
+            Ještě chybí vyplnit: <span className="font-semibold">aspoň jeden z obou textů</span>.
+            Bez toho slide nejde označit za hotový, uložit rozepsaný ale můžete.
           </p>
         )}
+
         <p className="text-xs text-fg-muted">
-          <strong className="font-semibold text-fg">Uložit</strong> zapíše text na disk.{" "}
-          {VYZVEDNE_SI_SAM} Druhé tlačítko navíc zapíše do auditu, že je text hotový.
+          <strong className="font-semibold text-fg">Uložit</strong> zapíše texty na disk.{" "}
+          {VYZVEDNE_SI_SAM} Druhé tlačítko navíc zapíše do auditu, že jsou texty hotové.
         </p>
       </div>
 
       {/* Jedna fotka vpravo */}
       <div className="space-y-4 lg:border-l lg:border-line lg:pl-10">
         <div>
-          <span className="label">Fotka zajímavosti</span>
+          <span className="label">Fotka slidu</span>
           <p className="text-xs text-fg-muted -mt-1">
             Jedna fotka, na zařízení vpravo vedle textu. Nová nahraná ji nahradí. {SDILENE_HLASKA}
           </p>
@@ -1978,14 +2075,14 @@ function ZajimavostEditor({
 
         {fotka ? (
           <div className="group relative aspect-[4/3] max-w-sm rounded-lg overflow-hidden bg-canvas ring-1 ring-line">
-            <img src={fotka} alt="Fotka zajímavosti" className="h-full w-full object-cover" />
+            <img src={fotka} alt="Fotka slidu" className="h-full w-full object-cover" />
             <div className={`${OVLADANI_LISTA} justify-end`}>
               <button
                 onClick={() => setSmazatFotku(true)}
                 disabled={busy}
                 className={OVLADANI_SMAZAT}
                 title="Smazat fotku"
-                aria-label="Smazat fotku zajímavosti"
+                aria-label="Smazat fotku slidu"
               >
                 <Trash2 className="h-5 w-5" strokeWidth={2} />
               </button>
@@ -2191,7 +2288,7 @@ function ModelEditor({
   async function removeFrame(url: string) {
     setSmazatSnimek(null);
     await withBusy(async () => {
-      await api.deleteImage(displayId, slide.n, nazevSouboru(url));
+      await api.deleteMedia(displayId, slide.n, nazevSouboru(url));
       await reload();
       toast.success("Snímek odebrán, sekvence přečíslována");
     }, "Odebrání snímku selhalo.");
@@ -2298,11 +2395,11 @@ function ModelEditor({
   );
 }
 
-// --- Video: jedno MP4 (video slide i volitelné video na info panelu) ---
+// --- Video info panelu: jedno volitelné MP4 ---
 
-// Sdílený blok pro nahrání/nahrazení/odebrání jednoho MP4. Používá ho video
-// slide i info panel (tam je video volitelné, Michal ho na zařízení řadí na
-// začátek galerie fotek).
+// Nahrání, nahrazení a odebrání jednoho MP4. Používá ho už jen info panel
+// (Michal ho na zařízení řadí na začátek galerie fotek); galerie `_vid` má
+// vlastní blok, protože tam videí může být víc a míchají se s fotkami.
 function VideoBlok({
   slide,
   displayId,
@@ -2459,7 +2556,117 @@ function VideoBlok({
   );
 }
 
-function VidEditor({
+// --- Galerie (_vid): fotky i videa v jedné řadě ---
+//
+// Na disku je to jedna číslovaná sekvence (01.jpg, 02.mp4, 03.png…) a Unity
+// ji řadí ABECEDNĚ, takže pořadí položek = pořadí nahrání. Čísla i jednotnou
+// šířku hlídá server, kurátor je nikde nezadává.
+
+// Nahrávání do galerie: fotky i videa jedním dropzonem. Fotky jdou přes
+// stejný endpoint jako všude jinde, videa přes XHR kvůli procentům (u stovek
+// MB je kolečko bez čísla k ničemu). Průběh je po souborech, u právě
+// nahrávaného videa navíc v procentech.
+function useGalerieUpload(displayId: string, n: number, reload: () => Promise<void>) {
+  const toast = useToast();
+  const [prubeh, setPrubeh] = useState<{ hotovo: number; celkem: number } | null>(null);
+  const [procenta, setProcenta] = useState<number | null>(null);
+  const zruseni = useRef<AbortController | null>(null);
+
+  const upload = async (files: FileList | File[]) => {
+    const vsechny = Array.from(files);
+    const list = vsechny.filter(
+      (f) => f.type.startsWith("image/") || f.type === "video/mp4" || /\.mp4$/i.test(f.name),
+    );
+    if (list.length === 0) {
+      toast.error("Přetáhněte prosím fotky nebo videa ve formátu MP4.");
+      return;
+    }
+    const preskocene = vsechny.length - list.length;
+
+    // Pořadí v galerii = pořadí nahrání, proto se soubory z prohlížeče řadí
+    // podle názvu: u výběru víc souborů najednou není pořadí zaručené.
+    list.sort((a, b) => a.name.localeCompare(b.name, "cs", { numeric: true }));
+
+    // Limit videa hlídáme ještě před odesláním, ať kurátor nečeká na upload,
+    // který server stejně utne (a nedostane jen obecné 413).
+    const velke = list.find((f) => !f.type.startsWith("image/") && f.size > NAHRAVANI_MAX_B);
+    if (velke) {
+      toast.error(
+        `Video ${velke.name} má ${vMB(velke.size)}, maximum je ${NAHRAVANI_MAX_MB} MB. Zmenšete ho a zkuste to znovu.`,
+      );
+      return;
+    }
+
+    const rizeni = new AbortController();
+    zruseni.current = rizeni;
+    setPrubeh({ hotovo: 0, celkem: list.length });
+
+    let hotovo = 0;
+    let zruseno = false;
+    let chyba: string | null = null;
+
+    for (const file of list) {
+      try {
+        if (file.type.startsWith("image/")) {
+          await api.uploadImage(displayId, n, file, rizeni.signal);
+        } else {
+          setProcenta(0);
+          await api.uploadVideo(displayId, n, file, {
+            signal: rizeni.signal,
+            onProgress: setProcenta,
+          });
+          setProcenta(null);
+        }
+        hotovo++;
+        setPrubeh({ hotovo, celkem: list.length });
+      } catch (e) {
+        if (e instanceof DOMException && e.name === "AbortError") zruseno = true;
+        else chyba = `${file.name}: ${e instanceof Error ? e.message : "upload selhal"}`;
+        break;
+      }
+    }
+
+    zruseni.current = null;
+    setPrubeh(null);
+    setProcenta(null);
+    await reload(); // ať je hned vidět, co se stihlo nahrát
+
+    // Přerušený upload se nesmí spolknout: kurátor musí vědět, kolik souborů
+    // na disku opravdu je. Počet se bere ze serveru, ne z počítadla: zrušení
+    // nezastaví soubor, který už odešel.
+    if (zruseno || chyba) {
+      let naDisku = hotovo;
+      try {
+        const d = await api.display(displayId);
+        naDisku = d.slides.find((x) => x.n === n)?.media.length ?? hotovo;
+      } catch {
+        // nepodařilo se přečíst stav, zůstane počítadlo z klienta
+      }
+      const kolik = `Z ${list.length} vybraných se nenahrály všechny, v galerii je teď ${naDisku} položek.`;
+      toast.error(zruseno ? `Nahrávání zrušeno. ${kolik}` : `Upload selhal u ${chyba} ${kolik}`);
+      return;
+    }
+
+    const zaklad =
+      list.length === 1 ? "Položka nahrána" : `${pocetPolozek(list.length)} nahráno`;
+    toast.success(
+      preskocene
+        ? `${zaklad}. ${preskocene === 1 ? "Jeden soubor" : `${preskocene} souborů`} se přeskočil, galerie bere jen fotky a MP4.`
+        : zaklad,
+    );
+  };
+
+  const zrus = () => zruseni.current?.abort();
+  return { uploading: prubeh !== null, prubeh, procenta, upload, zrus };
+}
+
+function pocetPolozek(n: number): string {
+  if (n === 1) return "1 položka";
+  if (n >= 2 && n <= 4) return `${n} položky`;
+  return `${n} položek`;
+}
+
+function GalerieEditor({
   slide,
   displayId,
   busy,
@@ -2477,46 +2684,124 @@ function VidEditor({
   zeptejSe: (popis: ReactNode, akce: () => Promise<void>) => void;
 }) {
   const toast = useToast();
+  const { uploading, prubeh, procenta, upload, zrus } = useGalerieUpload(displayId, slide.n, reload);
+  const [smazatPolozku, setSmazatPolozku] = useState<MediaPolozka | null>(null);
   const [chybiObsah, setChybiObsah] = useState(false);
+
+  const fotek = slide.media.filter((m) => m.typ === "foto").length;
+  const videi = slide.media.length - fotek;
+
+  async function removeItem(polozka: MediaPolozka) {
+    setSmazatPolozku(null);
+    await withBusy(async () => {
+      await api.deleteMedia(displayId, slide.n, polozka.nazev);
+      await reload();
+      toast.success("Položka odebrána, galerie přečíslována");
+    }, "Odebrání položky selhalo.");
+  }
 
   return (
     <div className="max-w-3xl space-y-4">
       <div>
-        <span className="label">Video slidu</span>
+        <span className="label">Fotky a videa galerie</span>
         <p className="text-xs text-fg-muted -mt-1">
-          Jedno velké video na celou obrazovku tabletu. Formát MP4, uloží se hned po nahrání.
-          {" "}{SDILENE_HLASKA}
-          Krátké video do galerie info panelu patří naopak k Infopanelu.
+          {SDILENE_HLASKA} Fotky i videa se na tabletu střídají v tom pořadí, v jakém jsou
+          tady. Nahrané položky se ukládají pod čísly <span className="font-mono">01</span>,{" "}
+          <span className="font-mono">02</span>… a po smazání se zbytek sám přečísluje, takže
+          v řadě nezůstane díra. Vybírat můžete víc souborů najednou, seřadí se podle názvu.
         </p>
       </div>
 
-      <VideoBlok
-        slide={slide}
-        displayId={displayId}
-        busy={busy}
-        reload={reload}
-        withBusy={withBusy}
+      <PhotoDropzone
+        uploading={uploading}
+        prubeh={prubeh}
+        onZrus={zrus}
+        onFiles={upload}
+        accept="image/*,video/mp4"
+        popis={`Fotky (JPG nebo PNG) a videa MP4 do ${NAHRAVANI_MAX_MB} MB`}
       />
 
-      {chybiObsah && !slide.video && (
+      {/* Procenta jen u videa; fotky odejdou tak rychle, že by se ukazatel
+          jen mihl a mátl. */}
+      {procenta !== null && (
+        <div className="rounded-xl border border-line bg-canvas px-4 py-3">
+          <span className="text-sm font-semibold text-fg tnum">Nahrávám video {procenta} %</span>
+          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-surface">
+            <div className="h-full bg-accent transition-all" style={{ width: `${procenta}%` }} />
+          </div>
+        </div>
+      )}
+
+      {slide.media.length > 0 ? (
+        <>
+          <div className="text-xs text-fg-muted tnum">
+            {pocetPolozek(slide.media.length)} v galerii
+            {fotek > 0 && videi > 0 ? ` (${pocetFotek(fotek)}, ${videi === 1 ? "1 video" : `${videi} videí`})` : ""}
+          </div>
+          <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
+            {slide.media.map((m, i) => (
+              <div
+                key={m.url}
+                className="group relative aspect-square rounded-lg overflow-hidden bg-canvas ring-1 ring-line"
+              >
+                {m.typ === "video" ? (
+                  // Náhled bez ovládání a bez autoplay: v mřížce jde jen
+                  // o to poznat, který záběr to je.
+                  <video src={m.url} className="h-full w-full object-cover" muted playsInline preload="metadata" />
+                ) : (
+                  <img src={m.url} alt={`Položka ${i + 1}`} className="h-full w-full object-cover" />
+                )}
+                <span className="absolute left-1 top-1 rounded bg-black/55 px-1.5 py-0.5 text-[10px] font-semibold text-white tnum">
+                  {m.nazev}
+                </span>
+                {m.typ === "video" && (
+                  <span className="absolute right-1 top-1 grid h-6 w-6 place-items-center rounded bg-black/55">
+                    <Film className="h-3.5 w-3.5 text-white" strokeWidth={2} />
+                  </span>
+                )}
+                <div className={`${OVLADANI_LISTA} justify-end`}>
+                  <button
+                    onClick={() => setSmazatPolozku(m)}
+                    disabled={busy}
+                    className={OVLADANI_SMAZAT}
+                    title="Smazat položku"
+                    aria-label={`Smazat položku ${m.nazev}`}
+                  >
+                    <Trash2 className="h-5 w-5" strokeWidth={2} />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      ) : (
+        <PrazdnyStav
+          ikona={ImageIcon}
+          text="Galerie je zatím prázdná"
+          hint="Nahrajte fotky a videa, tablet je bude střídat v pořadí, v jakém je nahrajete."
+        />
+      )}
+
+      {chybiObsah && slide.media.length === 0 && (
         <p className="text-sm text-danger">
-          Ještě chybí nahrát: <span className="font-semibold">video</span>. Prázdný slide nejde
-          označit za hotový.
+          Ještě chybí nahrát: <span className="font-semibold">aspoň jednu fotku nebo video</span>.
+          Prázdný slide nejde označit za hotový.
         </p>
       )}
       <button
         onClick={() => {
-          if (!slide.video) {
+          if (slide.media.length === 0) {
             setChybiObsah(true);
-            toast.error("Ještě chybí nahrát: video.");
+            toast.error("Ještě chybí nahrát: aspoň jednu fotku nebo video.");
             return;
           }
           setChybiObsah(false);
           zeptejSe(
             <>
               Označí se jako hotový slide{" "}
-              <strong className="font-semibold text-fg">Video</strong> displeje {displayId},
-              nahrané video na celou obrazovku.
+              <strong className="font-semibold text-fg">Galerie</strong> displeje {displayId}
+              {", "}
+              {pocetPolozek(slide.media.length)}.
             </>,
             onSend,
           );
@@ -2527,9 +2812,23 @@ function VidEditor({
         <Send className="h-4 w-4" strokeWidth={1.75} /> Označit jako hotové
       </button>
       <p className="text-xs text-fg-muted">
-        Video je uložené hned po nahrání. {VYZVEDNE_SI_SAM} Tlačítkem se do auditu zapíše, že je
-        slide hotový.
+        Položky jsou uložené hned po nahrání. {VYZVEDNE_SI_SAM} Tlačítkem se do auditu zapíše,
+        že je slide hotový.
       </p>
+
+      <Confirm
+        open={!!smazatPolozku}
+        titulek={smazatPolozku?.typ === "video" ? "Smazat video?" : "Smazat fotku?"}
+        text={
+          <>
+            Položka <span className="font-mono">{smazatPolozku?.nazev}</span> se smaže z disku
+            a galerie se přečísluje. Vrátit to nepůjde, bude ji potřeba nahrát znovu.
+          </>
+        }
+        potvrdit="Smazat položku"
+        onPotvrdit={() => smazatPolozku && removeItem(smazatPolozku)}
+        onZrusit={() => setSmazatPolozku(null)}
+      />
     </div>
   );
 }

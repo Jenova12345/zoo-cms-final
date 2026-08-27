@@ -16,12 +16,13 @@ export function klicPole(n: number, klic: string): string {
   return `info:${n}:${klic}`;
 }
 
-export function klicZajimavosti(n: number): string {
-  return `gal:${n}`;
+// Textový slide (_gal) má na slidu víc polí (dva texty a tři části
+// taxonomie), tedy stejný tvar značky jako info panel, jen s jinou předponou.
+export function klicGalPole(n: number, klic: string): string {
+  return `gal:${n}:${klic}`;
 }
 
-// Obecné informace (_txt) mají dvě pole na slide, tedy stejný tvar značky
-// jako info panel, jen s jinou předponou.
+// Obecné informace (_txt) mají dvě pole na slide, tedy taky stejný tvar.
 export function klicTextovehoPole(n: number, klic: string): string {
   return `txt:${n}:${klic}`;
 }
@@ -31,11 +32,9 @@ interface SlideLike {
   n: number;
   typ: string;
   pole: Record<string, string>;
-  text: string;
 }
 
 export type InfoDrafty = Record<number, Record<string, string>>;
-export type TextDrafty = Record<number, string>;
 
 // Data ze serveru + zachované rozepsané hodnoty dotčených polí. Společné pro
 // typy, které mají na slidu víc textových polí (info panel, obecné informace);
@@ -77,17 +76,12 @@ export function slucTextoveDrafty(
   return slucPoleDrafty(prev, slidy, dotcena, "txt", klicTextovehoPole);
 }
 
-export function slucZajimavosti(
-  prev: TextDrafty,
+export function slucGalDrafty(
+  prev: InfoDrafty,
   slidy: SlideLike[],
   dotcena: Dotcena,
-): TextDrafty {
-  const out: TextDrafty = {};
-  for (const s of slidy) {
-    if (s.typ !== "gal") continue;
-    out[s.n] = dotcena.has(klicZajimavosti(s.n)) ? (prev[s.n] ?? s.text) : s.text;
-  }
-  return out;
+): InfoDrafty {
+  return slucPoleDrafty(prev, slidy, dotcena, "gal", klicGalPole);
 }
 
 export function slucText(prev: string, zeServeru: string, klic: string, dotcena: Dotcena): string {
@@ -136,7 +130,17 @@ export function infoNeulozeno(
   return poleNeulozeno(n, draft, pole, dotcena, klicPole);
 }
 
-// Obecné informace: stejné pravidlo, jen jiná předpona značky.
+// Textový slide: stejné pravidlo, jen jiná předpona značky.
+export function galNeulozeno(
+  n: number,
+  draft: Record<string, string> | undefined,
+  pole: Record<string, string>,
+  dotcena: Dotcena,
+): boolean {
+  return poleNeulozeno(n, draft, pole, dotcena, klicGalPole);
+}
+
+// Obecné informace: totéž s vlastní předponou.
 export function textovyNeulozeno(
   n: number,
   draft: Record<string, string> | undefined,
@@ -183,10 +187,10 @@ export function premapujDotcena(dotcena: Dotcena, poradi: number[]): Dotcena {
       if (cil !== undefined) out.add(klicTextovehoPole(cil, txt[2]));
       continue;
     }
-    const gal = /^gal:(\d+)$/.exec(klic);
+    const gal = /^gal:(\d+):(.*)$/.exec(klic);
     if (gal) {
       const cil = nove[Number(gal[1])];
-      if (cil !== undefined) out.add(klicZajimavosti(cil));
+      if (cil !== undefined) out.add(klicGalPole(cil, gal[2]));
       continue;
     }
     out.add(klic); // kb, celed, na čísle slidu nezávisí
@@ -198,8 +202,13 @@ export function premapujDotcena(dotcena: Dotcena, poradi: number[]): Dotcena {
 export function zapomenSlide(dotcena: Dotcena, n: number): Dotcena {
   const out: Dotcena = new Set();
   for (const klic of dotcena) {
-    if (klic.startsWith(`info:${n}:`) || klic.startsWith(`txt:${n}:`)) continue;
-    if (klic === klicZajimavosti(n)) continue;
+    if (
+      klic.startsWith(`info:${n}:`) ||
+      klic.startsWith(`gal:${n}:`) ||
+      klic.startsWith(`txt:${n}:`)
+    ) {
+      continue;
+    }
     out.add(klic);
   }
   return out;

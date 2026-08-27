@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ChevronLeft, ChevronRight, RefreshCw, X } from "lucide-react";
 import { api } from "../lib/api";
@@ -7,6 +7,7 @@ import {
   JAZYKY,
   JAZYK_LABEL,
   NEPRIRAZENO,
+  TAXONOMIE_POLE,
   type DisplayDetail,
   type Jazyk,
   type SlideContent,
@@ -112,7 +113,7 @@ export default function Tablet() {
   // jí prochází šipkami, přeskočení uprostřed by mu to zbouralo).
   const aktualni = detail?.slides[index];
   const drziSlide =
-    (aktualni?.typ === "vid" && !!aktualni.video) ||
+    (aktualni?.typ === "vid" && aktualni.media.length > 0) ||
     (aktualni?.typ === "3d" && aktualni.obrazky.length > 1);
 
   // Auto-advance.
@@ -279,12 +280,12 @@ type Tlacitko = "domu" | "ai" | "3d" | "video" | "zajimavost";
 function tlacitkoProSlide(typ: SlideContent["typ"] | null): Tlacitko {
   if (typ === "ai") return "ai";
   if (typ === "3d") return "3d";
+  // Galerie svítí pod tlačítkem videa, textový slide pod „zajímavostí":
+  // sada tlačítek i jejich ikony jsou z Michalových předloh
+  // (/michal/ikona-*.png) a jiné pro ně neexistují.
   if (typ === "vid") return "video";
   if (typ === "gal") return "zajimavost";
-  // `info` i `txt` zvýrazňují domeček. Obecné informace vlastní tlačítko
-  // zatím nemají: sada tlačítek i jejich ikony jsou z Michalových předloh
-  // (/michal/ikona-*.png) a pro nový typ ikona neexistuje. Až ji dodá,
-  // přibude sem větev a položka ve SpodniLista.
+  // `info` i pozůstalý `txt` zvýrazňují domeček.
   return "domu";
 }
 
@@ -334,13 +335,13 @@ function Zarizeni({
       ) : slide.typ === "info" ? (
         <ObsahInfo slide={slide} onPrev={onPrev} onNext={onNext} />
       ) : slide.typ === "gal" ? (
-        <ObsahZajimavost slide={slide} identita={id} />
+        <ObsahTextovy slide={slide} identita={id} />
       ) : slide.typ === "txt" ? (
         <ObsahObecne slide={slide} identita={id} />
       ) : slide.typ === "3d" ? (
         <ObsahModel slide={slide} identita={id} />
       ) : slide.typ === "vid" ? (
-        <ObsahVideo slide={slide} identita={id} onEnded={onEnded} />
+        <ObsahGalerie slide={slide} identita={id} onEnded={onEnded} />
       ) : (
         <ObsahAi identita={id} />
       )}
@@ -542,9 +543,36 @@ function ObsahInfo({
 // Zajímavost (_gal) podle předlohy "Text + schéma, 1.png": vlevo dlouhý text,
 // svislá bílá linka, vpravo jedna fotka. Pozice odměřené z předlohy
 // (linka x = 765 px, text končí na 700 px, obsah od y = 225 do 915 px).
-function ObsahZajimavost({ slide, identita }: { slide: SlideContent; identita: Identita }) {
+function ObsahTextovy({ slide, identita }: { slide: SlideContent; identita: Identita }) {
   const fotka = slide.obrazky[0] ?? null;
-  if (!slide.text.trim() && !fotka) return <PrazdnyObsah />;
+  const obecny = (slide.pole.ObecnyText ?? "").trim();
+  const zajimavosti = (slide.pole.Zajimavosti ?? "").trim();
+  // Zařazení druhu jde na tablet jako jeden řádek; skládá ho server, tady ho
+  // poskládáme stejně, ať kurátor vidí přesně to, co uvidí návštěvník.
+  const taxonomie = TAXONOMIE_POLE.map((def) => {
+    const hodnota = (slide.pole[def.klic] ?? "").trim();
+    return hodnota ? `${def.label}: ${hodnota}` : null;
+  })
+    .filter(Boolean)
+    .join("  |  ");
+
+  if (!obecny && !zajimavosti && !taxonomie && !fotka) return <PrazdnyObsah />;
+
+  const odstavec = {
+    fontSize: 19,
+    color: "#fff",
+    marginTop: 10,
+    lineHeight: 1.55,
+    whiteSpace: "pre-wrap" as const,
+  };
+  const nadpis = {
+    fontSize: 13,
+    letterSpacing: "0.14em",
+    textTransform: "uppercase" as const,
+    color: "#fff",
+    opacity: 0.55,
+    marginTop: 18,
+  };
 
   return (
     <div className="absolute inset-0">
@@ -552,21 +580,21 @@ function ObsahZajimavost({ slide, identita }: { slide: SlideContent; identita: I
           svislou linku), text pod ní končí před linkou. */}
       <div className="absolute top-0" style={{ left: OKRAJ, width: 620 }}>
         <Hlavicka {...identita} cara={false} />
-        {slide.text.trim() ? (
-          <div
-            style={{
-              width: 429,
-              fontSize: 19,
-              color: "#fff",
-              marginTop: 26,
-              lineHeight: 1.55,
-              whiteSpace: "pre-wrap",
-            }}
-          >
-            {slide.text}
+      </div>
+
+      <div className="absolute overflow-hidden" style={{ left: OKRAJ, top: 200, bottom: 135, width: 429 }}>
+        {obecny && <div style={odstavec}>{obecny}</div>}
+        {zajimavosti && (
+          <>
+            <div style={nadpis}>Zajímavosti</div>
+            <div style={odstavec}>{zajimavosti}</div>
+          </>
+        )}
+        {!obecny && !zajimavosti && <div style={{ ...odstavec, color: "#666" }}>Bez textu</div>}
+        {taxonomie && (
+          <div style={{ fontSize: 16, color: "#fff", opacity: 0.7, marginTop: 20 }}>
+            {taxonomie}
           </div>
-        ) : (
-          <div style={{ fontSize: 19, color: "#666", marginTop: 26 }}>Bez textu</div>
         )}
       </div>
 
@@ -576,7 +604,7 @@ function ObsahZajimavost({ slide, identita }: { slide: SlideContent; identita: I
         {fotka ? (
           <img
             src={fotka}
-            alt="Fotka zajímavosti"
+            alt="Fotka slidu"
             className="h-full w-full"
             style={{ objectFit: "contain" }}
           />
@@ -638,8 +666,11 @@ function ObsahModel({ slide, identita }: { slide: SlideContent; identita: Identi
   );
 }
 
-// Video: MP4 přes celou plochu, hlavička přes něj, uprostřed tlačítko přehrát.
-function ObsahVideo({
+// Galerie (_vid): fotky a videa přes celou plochu, hlavička přes ně. Tablet
+// je střídá v pořadí, ve kterém jsou na disku (Unity je řadí abecedně, proto
+// je server ukládá jako 01, 02, 03…). Fotka se přepne po chvíli, video až
+// když dohraje.
+function ObsahGalerie({
   slide,
   identita,
   onEnded,
@@ -648,48 +679,33 @@ function ObsahVideo({
   identita: Identita;
   onEnded: () => void;
 }) {
-  const ref = useRef<HTMLVideoElement | null>(null);
-  const [bezi, setBezi] = useState(true);
+  const polozky = useMemo<MediaItem[]>(
+    () =>
+      slide.media.map((m) => ({
+        typ: m.typ === "video" ? ("video" as const) : ("foto" as const),
+        url: m.url,
+      })),
+    [slide.media],
+  );
 
-  if (!slide.video) return <PrazdnyObsah />;
+  if (polozky.length === 0) return <PrazdnyObsah />;
 
   return (
     <>
-      <video
-        ref={ref}
-        key={slide.video}
-        src={slide.video}
-        className="absolute inset-0 h-full w-full object-cover"
-        autoPlay
-        muted
-        playsInline
-        onEnded={onEnded}
-        onPlay={() => setBezi(true)}
-        onPause={() => setBezi(false)}
+      {/* Jedna položka = jedno video, které po dohrání posune celý slide;
+          u víc položek se galerie točí sama dokola uvnitř slidu. */}
+      <Carousel
+        key={slide.n}
+        items={polozky}
+        alt="Fotka galerie"
+        onEnded={polozky.length === 1 ? onEnded : undefined}
       />
-      {/* Tlačítko přehrát je i v Michalově předloze; tady navíc pauzuje,
-          ať se kurátor může na konkrétní záběr v klidu podívat. */}
-      <button
-        onClick={(e) => {
-          e.stopPropagation();
-          const v = ref.current;
-          if (!v) return;
-          if (v.paused) void v.play();
-          else v.pause();
-        }}
-        className="absolute"
-        style={{ left: 600 - 61, top: 400 - 61, width: 122, height: 122, opacity: bezi ? 0 : 1 }}
-        aria-label={bezi ? "Pozastavit video" : "Přehrát video"}
-      >
-        <img src={`${G}/play.png`} alt="" style={{ width: 122, height: 122 }} />
-      </button>
       <div className="absolute top-0" style={{ left: OKRAJ, width: 620 }}>
         <Hlavicka {...identita} cara={false} />
       </div>
     </>
   );
 }
-
 // AI slide: styl předlohy "Text + schéma" (černá plocha, svislá bílá linka).
 function ObsahAi({ identita: id }: { identita: Identita }) {
   return (
@@ -972,7 +988,17 @@ function SpodniLista({ aktivni }: { aktivni: Tlacitko }) {
 }
 
 // Carousel fotek jednoho slidu (autoplay jako na reálném tabletu).
-function Carousel({ items, alt }: { items: MediaItem[]; alt: string }) {
+function Carousel({
+  items,
+  alt,
+  onEnded,
+}: {
+  items: MediaItem[];
+  alt: string;
+  // Zavolá se, když dohraje video a není kam pokračovat uvnitř slidu
+  // (galerie s jedinou položkou). Slide se pak posune dál, jako dřív video.
+  onEnded?: () => void;
+}) {
   const [i, setI] = useState(0);
   const safe = Math.min(i, items.length - 1);
   const current = items[safe];
@@ -998,8 +1024,8 @@ function Carousel({ items, alt }: { items: MediaItem[]; alt: string }) {
           autoPlay
           muted
           playsInline
-          loop={items.length === 1}
-          onEnded={dalsi}
+          loop={items.length === 1 && !onEnded}
+          onEnded={items.length === 1 ? onEnded : dalsi}
         />
       ) : (
         <img src={current.url} alt={alt} className="h-full w-full object-cover" />

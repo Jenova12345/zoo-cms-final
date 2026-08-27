@@ -42,10 +42,14 @@ export interface DisplaySummary {
   thumbnail: string | null;
 }
 
-// Typ slidu = suffix názvu složky na disku (<n>_<typ>), pořadí = číselný prefix.
-// Finální struktura od Michala má pevných pět typů. Pozor: "gal" je
-// ZAJÍMAVOST (dlouhý text + jedna fotka), ne galerie, suffix zůstal kvůli
-// Unity. Typ "3d" má na disku suffix _3d nebo _mod, server čte obojí.
+// Typ slidu = suffix názvu složky na disku (<n>_<typ>), pořadí = číselný
+// prefix. Cílová struktura má pět typů. Pozor na dva suffixy, jejichž název
+// neodpovídá obsahu (zůstaly kvůli tomu, že je tak čte Unity):
+//   "gal" NENÍ galerie, ale TEXTOVÝ slide (dva texty + taxonomie + fotka),
+//   "vid" NENÍ jen video, ale GALERIE fotek i videí dohromady.
+// Typ "3d" má na disku suffix _3d nebo _mod, server čte obojí. Typ "txt"
+// (obecné informace) je pozůstatek: nový už nejde založit, existující se
+// dál čtou a editují. Zrcadlí server/src/displays.ts.
 export type SlideTyp = "info" | "ai" | "3d" | "vid" | "gal" | "txt";
 
 export interface DisplayMeta {
@@ -62,15 +66,25 @@ export interface DisplayMeta {
   slidy?: { slozka: string; typ: SlideTyp }[];
 }
 
+// Jedna položka galerie (_vid). Fotky a videa jsou na disku promíchané
+// v jedné číslované řadě, takže se přenášejí i s typem.
+export interface MediaPolozka {
+  nazev: string; // název souboru na disku (01.jpg), kvůli mazání
+  url: string;
+  typ: "foto" | "video";
+}
+
 export interface SlideContent {
   n: number; // číselný prefix složky slidu
   typ: SlideTyp;
   slozka: string; // název složky na disku (u 3D modelu i varianta <n>_mod)
-  pole: Record<string, string>; // jen info: obsah text.txt ("Klic: Hodnota")
-  text: string; // jen gal (zajímavost): dlouhý odstavec z text.txt
+  // info: obsah text.txt ("Klic: Hodnota"); gal: dva texty + rozpadlá
+  // taxonomie (Trida, Rad, Celed); txt: dva texty
+  pole: Record<string, string>;
   obrazky: string[]; // URL fotek (info: fotky; gal: jedna; 3d: sekvence snímků)
+  media: MediaPolozka[]; // jen vid: fotky i videa v pořadí, jak je řadí Unity
   mapa: string | null; // jen info: URL mapa.png
-  video: string | null; // vid: video slidu; info: volitelné video
+  video: string | null; // jen info: volitelné video (galerie má `media`)
 }
 
 export interface DisplayDetail {
@@ -335,20 +349,18 @@ export const INFO_POLE: InfoPoleDef[] = [
   },
 ];
 
-// Doporučená délka textu zajímavosti (slide _gal). Delší text se na tabletu
-// ořízne, pole neroluje.
-export const ZAJIMAVOST_LIMIT_SLOV = 200;
-
-// České názvy typů podle finální struktury (stejné popisky jako tlačítka na
-// zařízení). Pořadí = pořadí v nabídce "Přidat slide".
-export const SLIDE_TYPY: SlideTyp[] = ["info", "ai", "3d", "vid", "gal", "txt"];
+// Typy, které jde nově založit = nabídka „Přidat slide". Pořadí = pořadí
+// v nabídce. `txt` (obecné informace) tu schválně není: je to pozůstalý typ,
+// existující slidy se dál editují, nový už se nezaloží. Zrcadlí
+// SLIDE_TYPY_NABIDKA v server/src/displays.ts, který to hlídá i na serveru.
+export const SLIDE_TYPY: SlideTyp[] = ["info", "ai", "3d", "vid", "gal"];
 
 export const SLIDE_TYP_LABEL: Record<SlideTyp, string> = {
   info: "Infopanel",
   ai: "AI otázky",
   "3d": "3D model",
-  vid: "Video",
-  gal: "Zajímavost",
+  vid: "Galerie",
+  gal: "Text a fotka",
   txt: "Obecné informace",
 };
 
@@ -358,15 +370,46 @@ export const SLIDE_TYP_POPIS: Record<SlideTyp, string> = {
   info: "Základní info o druhu: název, strava, velikost a fotky.",
   ai: "Chat s AI průvodcem. Nic se sem nevyplňuje.",
   "3d": "Otočení modelu ze sekvence fotek.",
-  vid: "Velké video na celou obrazovku.",
-  gal: "Delší text o druhu s jednou fotkou.",
+  vid: "Fotky a videa za sebou, tablet je střídá.",
+  gal: "Dva delší texty o druhu, zařazení a jedna fotka.",
   txt: "Dva delší texty o druhu. Bez fotek a videa.",
 };
 
-// --- Obecné informace (slide _txt) ---
-// Dvě dlouhá textová pole, obě se překládají (sdílené s češtinou není nic).
-// Klíče musí sedět na server/src/displays.ts (TEXTOVE_KLICE), zapisují se
-// v tomhle tvaru do text.txt.
+// --- Textový slide (_gal) ---
+//
+// Dva dlouhé texty a k nim taxonomie po částech. Klíče ObecnyText
+// a Zajimavosti čte Unity beze změny, proto se shodují s typem `_txt`.
+// Taxonomii server složí do jednoho řádku "Taxonomie: Třída: … | Řád: …
+// | Čeleď: …" s popisky v jazyce, ve kterém se slide ukládá.
+// Zrcadlí GAL_KLICE a TAXONOMIE_SLOZKY v server/src/displays.ts.
+
+export interface TaxonomiePoleDef {
+  klic: string;
+  label: string;
+  placeholder: string;
+}
+
+export const TAXONOMIE_POLE: TaxonomiePoleDef[] = [
+  { klic: "Trida", label: "Třída", placeholder: "Např. Obojživelníci" },
+  { klic: "Rad", label: "Řád", placeholder: "Např. Žáby" },
+  { klic: "Celed", label: "Čeleď", placeholder: "Např. Pralesničkovití" },
+];
+
+// Klíč, pod kterým server hlásí nerozpoznaný tvar taxonomie na disku
+// (ruční zásah do text.txt). Neukládá se, jen se kurátorovi ukáže.
+export const TAXONOMIE_ZBYTEK = "TaxonomieZbytek";
+
+// Je textový slide prázdný? Taxonomie se nepočítá: je nepovinná a slide
+// jen s ní by na tabletu zůstal skoro prázdný.
+export function galPrazdny(pole: Record<string, string>): boolean {
+  return TEXTOVA_POLE.every((def) => !(pole[def.klic] ?? "").trim());
+}
+
+// --- Dva dlouhé texty (slide _gal i pozůstalý _txt) ---
+// Obě pole se překládají (sdílené s češtinou není nic). Klíče musí sedět na
+// server/src/displays.ts (TEXTOVE_KLICE), zapisují se v tomhle tvaru do
+// text.txt a Unity je čte beze změny. Textový slide `_gal` k nim přidává
+// ještě taxonomii (TAXONOMIE_POLE) a jednu fotku.
 
 export interface TextovePoleDef {
   klic: string;
