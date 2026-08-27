@@ -17,7 +17,8 @@
     "migrate": "npm run migrate --workspace server",
     "useradd": "npm run useradd --workspace server --",
     "userlist": "npm run userlist --workspace server",
-    "import-obsahu": "npm run import-obsahu --workspace server --"
+    "import-obsahu": "npm run import-obsahu --workspace server --",
+    "prevod-obsahu": "npm run prevod-obsahu --workspace server --"
   },
   "devDependencies": {
     "concurrently": "^9.1.0"

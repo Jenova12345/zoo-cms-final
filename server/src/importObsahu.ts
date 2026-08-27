@@ -7,6 +7,7 @@ import { appendAudit } from "./audit.js";
 import { DEFAULT_KB } from "./content.js";
 import { canonicalizeLatin } from "./latin.js";
 import {
+  JAZYKY,
   NEPRIRAZENO,
   addSlide,
   displayExists,
@@ -18,10 +19,11 @@ import {
   validateInfoPole,
   writeInfoPole,
   writeKb,
+  type Jazyk,
 } from "./displays.js";
 
-// Hromadný import obsahu do CMS (kb.md + pole info panelu) z připravené
-// složky, kde má každý druh vlastní podsložku.
+// Hromadný import obsahu do CMS (kb.md + pole info panelu ve všech jazycích)
+// z připravené složky, kde má každý druh vlastní podsložku.
 //
 //   npm run import-obsahu -- <zdroj> <mapovani.json>              nanečisto (výchozí)
 //   npm run import-obsahu -- <zdroj> <mapovani.json> --zapsat     opravdu zapsat
@@ -42,8 +44,14 @@ Hromadný import obsahu do CMS Amphibiárium
 
 Zdrojová složka: pro každý druh jedna podsložka s
   meta.json          (name, latin_name; volitelně section a příznak AI konceptu)
-  kb.md              znalostní báze pro chatbota
+  kb.md              znalostní báze pro chatbota (VYNECHEJTE, když ji
+                     nechcete přepsat: prázdná nebo chybějící se neimportuje)
   cs/1_info/text.txt pole info panelu ve tvaru "Klic: Hodnota"
+  en/1_info/text.txt překlad do angličtiny (volitelné)
+  pl/1_info/text.txt překlad do polštiny (volitelné)
+
+V překladech stačí přeložená pole (Nazev, Strava, Velikost, DobaLihnuti,
+Ohrozeni, DelkaZivota). Sekci a latinské jméno si server doplní z češtiny.
 
 Mapovací soubor: JSON { "<klíč>": <číslo displeje> }, kde klíč je
   latinský název druhu (párovací klíč), nebo název zdrojové podsložky.
@@ -71,7 +79,13 @@ interface Polozka {
   nazev: string;
   displej?: string;
   kb: string;
-  pole: Record<string, string>;
+  pole: Record<string, string>; // info panel v češtině (zdroj identity)
+  // Překlady info panelu, jen jazyky, které zdroj opravdu má. Čeština tu
+  // není, ta je v `pole`.
+  preklady: Partial<Record<Jazyk, Record<string, string>>>;
+  // Jazyky, které zdroj má, ale neprojdou (chybí název). Neblokují import
+  // češtiny, jen se vypíšou, ať o nich kurátor ví.
+  vadnePreklady: { jazyk: Jazyk; duvod: Duvod }[];
   section: string;
   cekaNaRevizi: boolean;
   novySlide: boolean; // displej ještě nemá info panel, bude se zakládat
@@ -88,6 +102,8 @@ async function nactiZdroj(korenn: string, slozka: string): Promise<Polozka> {
     nazev: "",
     kb: "",
     pole: {},
+    preklady: {},
+    vadnePreklady: [],
     section: "",
     cekaNaRevizi: false,
     novySlide: false,
@@ -118,12 +134,33 @@ async function nactiZdroj(korenn: string, slozka: string): Promise<Polozka> {
   if (!(pole.Nazev ?? "").trim() && meta.name) pole.Nazev = meta.name.trim();
   if (!(pole.Latinsky ?? "").trim()) pole.Latinsky = latin;
 
+  // Překlady: <jazyk>/1_info/text.txt. Chybějící soubor NENÍ chyba, druh
+  // prostě přeložený není. Soubor, který existuje, ale nemá název druhu,
+  // se nahlásí a přeskočí se jen ten jazyk: čeština se má naimportovat tak
+  // jako tak, ať kurátor nepřijde o celý druh kvůli rozdělanému překladu.
+  const preklady: Polozka["preklady"] = {};
+  const vadnePreklady: Polozka["vadnePreklady"] = [];
+  for (const jazyk of JAZYKY) {
+    if (jazyk === "cs") continue;
+    const raw = await precti(path.join(cesta, jazyk, "1_info", "text.txt"));
+    if (!raw.trim()) continue;
+    const prelozene = parseInfoText(raw);
+    const chyba = validateInfoPole(prelozene, jazyk);
+    if (chyba) {
+      vadnePreklady.push({ jazyk, duvod: chyba.toLowerCase() });
+      continue;
+    }
+    preklady[jazyk] = prelozene;
+  }
+
   return {
     ...zaklad,
     latin,
     nazev: (pole.Nazev ?? meta.name ?? "").trim(),
     kb,
     pole,
+    preklady,
+    vadnePreklady,
     section: (meta.section ?? "").trim(),
     cekaNaRevizi: jeAiKoncept(meta, kb),
   };
@@ -208,15 +245,19 @@ function radek(p: Polozka): string {
   const zdroj = p.slozka.padEnd(28);
   if (p.preskocit) return `  ⤫ ${zdroj} PŘESKOČENO: ${p.preskocit}`;
   const cil = `→ displej ${p.displej}`.padEnd(16);
+  const jazyky = ["cs", ...Object.keys(p.preklady)].join(" + ");
   const co = [
-    p.novySlide ? "založí se info panel" : "zapíše se info panel",
+    `${p.novySlide ? "založí se" : "zapíše se"} info panel (${jazyky})`,
     p.kb.trim() ? "znalostní báze" : "bez znalostní báze",
     p.cekaNaRevizi ? "označí se jako AI koncept k revizi" : "bez příznaku revize",
   ].join(", ");
+  const vadne = p.vadnePreklady.length
+    ? `\n      PŘEKLAD SE NEZAPÍŠE: ${p.vadnePreklady.map((v) => `${v.jazyk} (${v.duvod})`).join(", ")}`
+    : "";
   const prepis = p.prepisuje.length
     ? `\n      PŘEPÍŠE, co tam dnes je: ${p.prepisuje.join(", ")}`
     : "";
-  return `  ✓ ${zdroj} ${cil} ${p.latin}\n      ${co}${prepis}`;
+  return `  ✓ ${zdroj} ${cil} ${p.latin}\n      ${co}${vadne}${prepis}`;
 }
 
 // --- Hlavní běh --------------------------------------------------------
@@ -335,6 +376,16 @@ async function main(): Promise<void> {
       const res = await writeInfoPole(id, n, p.pole, p.section);
       if (!res.ok) throw new Error(res.chyba ?? "zápis info panelu selhal");
 
+      // Překlady až po češtině: doplnSdilenaPole() si z ní bere sekci
+      // a latinské jméno, takže musí být na disku dřív. Sekci a Latinsky
+      // ze zdroje překladu server stejně přepíše hodnotou z češtiny.
+      for (const [jazyk, prelozene] of Object.entries(p.preklady)) {
+        const resJazyk = await writeInfoPole(id, n, prelozene, p.section, jazyk as Jazyk);
+        if (!resJazyk.ok) {
+          throw new Error(`zápis překladu ${jazyk} selhal: ${resJazyk.chyba ?? "neznámá chyba"}`);
+        }
+      }
+
       if (p.kb.trim()) await writeKb(id, p.kb);
 
       // Značka se ruší jen vědomým schválením kurátora v CMS, takže na pořadí
@@ -346,11 +397,13 @@ async function main(): Promise<void> {
         uzivatel: kdo,
         akce: "hromadný import",
         cil:
-          `displej ${id} ← ${p.slozka} (${p.latin})` +
+          `displej ${id} ← ${p.slozka} (${p.latin}), jazyky ${["cs", ...Object.keys(p.preklady)].join("+")}` +
           (p.cekaNaRevizi ? ", označeno k revizi kurátorem" : ""),
       });
       hotovo++;
-      console.log(`  zapsáno: displej ${id} ← ${p.slozka}`);
+      console.log(
+        `  zapsáno: displej ${id} ← ${p.slozka} (${["cs", ...Object.keys(p.preklady)].join("+")})`,
+      );
     } catch (e) {
       const duvod = e instanceof Error ? e.message : String(e);
       selhalo.push({ slozka: p.slozka, duvod });

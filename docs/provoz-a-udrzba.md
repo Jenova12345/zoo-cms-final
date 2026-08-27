@@ -1007,6 +1007,8 @@ Spouštějí se z kořene repozitáře a **respektují `DATA_ROOT`**.
 | `npm run seed` | **Destruktivní.** Smaže a znovu vygeneruje `data/displeje/1..37`. Displeje 1 až 3 dostanou obsah (`1_info`, `2_vid` prázdná galerie, `3_gal` s texty a fotkou, `4_ai`, `kb.md`), 4 až 37 jsou `Nepřiřazeno` bez slidů. Displeje s číslem dělitelným 11 dostanou `stav: "offline"`. Zakládá výchozí účet, pokud žádný neexistuje. |
 | `npm run migrate` | Jednorázová migrace staré struktury (`cs/slide-1..6`, `text.md`, `kb.md` uvnitř slidu) na formát pro Unity. Zachová média (obrázky se převedou na PNG, první MP4 jde do `2_vid`), texty starých slidů připojí do `kb.md`. **Idempotentní**, displej bez složek `slide-*` přeskočí. |
 | `npm run backfill --workspace server` | Doplní do existujících `meta.json` identifikaci pro chatbota (`name`, `druh`, `latin_name`, `category`) z `text.txt`. Idempotentní, médií ani textů se nedotýká. `section` (čeleď) nezná, tu doplní kurátor v UI. V kořenovém `package.json` zkratka není. |
+| `npm run prevod-obsahu -- <vstup.txt> <vystup>` | Převede blokový textový soubor (`=== ČESKY === / === ENGLISH === / === POLSKI ===`, uvnitř číslo displeje a řádky `Klic: Hodnota`) na zdrojovou strukturu pro import plus `mapovani.json`. **Na datovou složku CMS nesahá**, jen čte text a vyrábí novou složku. Výchozí je nanečisto, zapíše se až s `--zapsat`. Klíč `Celed` míří do `meta.json` jako `section`, ostatní do `<jazyk>/1_info/text.txt`. |
+| `npm run import-obsahu -- <zdroj> <mapovani.json>` | Hromadný import info panelu (všechny tři jazyky) a `kb.md` do CMS. Výchozí je **nanečisto**, zapíše se až s `--zapsat`; displej, který už obsah má, se přeskočí, pokud se nepřidá `--prepsat`. Zapisuje výhradně přes `writeInfoPole()`/`writeKb()`, takže projde validací, kanonizací latiny, atomickým zápisem i auditem. Viz varování níž. |
 | `npm run useradd -- …` / `npm run userlist` | Správa účtů, viz [kapitola 4](#4-účty-a-přihlašování). |
 
 Reset demo dat:
@@ -1014,6 +1016,26 @@ Reset demo dat:
 ```bash
 rm -rf data/displeje data/audit.jsonl && npm run seed
 ```
+### Co import PŘEPÍŠE a co ne
+
+Ověřeno na kopii dat. `--prepsat` **nemaže** galerie, videa, fotky, 3D sekvence
+ani ostatní slidy: importér nikde nevolá `removeSlide()`, `deleteMedia()` ani
+`deleteVideo()`, jen odemyká zámek „displej už má obsah, přeskakuji".
+
+Přepisuje se ale tohle, a je to potřeba vědět dopředu:
+
+1. **`<jazyk>/<n>_info/text.txt` se přepíše CELÝ, nemerguje se.** Pole, které
+   ve zdroji chybí, na displeji zmizí. Zdroj proto musí nést všech osm polí,
+   i ta, která se nemění.
+2. **`meta.section` se SMAŽE**, když zdrojový `meta.json` nemá `section`
+   (`writeInfoPole()` prázdnou hodnotu maže). Tiše, bez hlášky. Vždycky proto
+   `section` do zdroje dejte, i beze změny.
+3. **`kb.md` se přepíše**, ale jen když zdrojová složka má neprázdné `kb.md`.
+   Když ho ve zdroji vynecháte, znalostní báze na disku zůstane nedotčená.
+
+Importér nemá přepínač „jen displej N": jede přes všechny podsložky zdroje.
+Rozsah se omezuje tím, co ve zdrojové složce je.
+
 
 ---
 
