@@ -207,7 +207,7 @@ Vše je pod `DATA_ROOT` (výchozí `<repo>/data`):
         2_ai/                   prázdná složka = AI otázky
         3_3d/                   3D model (i varianta 3_mod)
           001.png, 002.png, …   sekvence snímků, číslovaná od 001
-        4_gal/                  Text a fotka (NE galerie!)
+        4_gal/                  Informace (NE galerie!)
           text.txt              "ObecnyText:", "Zajimavosti:", "Taxonomie:"
           foto-*.png            jedna fotka (na zařízení vpravo)
         5_vid/                  GALERIE fotek i videí (NE jen video!)
@@ -483,7 +483,7 @@ cs/<pořadí>_<typ>/
   | `_ai` | AI otázky | prázdná složka |
   | `_3d` (i `_mod`) | 3D model | sekvence `001.png`, `002.png`, … |
   | `_vid` | Galerie | fotky i videa v jedné řadě: `01.jpg`, `02.mp4`, `03.png`, … |
-  | `_gal` | Text a fotka | `text.txt` (`ObecnyText:`, `Zajimavosti:`, `Taxonomie:`) + jedna `.png` |
+  | `_gal` | Informace | `text.txt` (`ObecnyText:`, `Zajimavosti:`, `Taxonomie:`) + jedna `.png` |
   | `_txt` | Obecné informace | `text.txt` (`ObecnyText: …`, `Zajimavosti: …`), **žádná média** |
 
 - **Pořadí** = číselný prefix. Složka musí odpovídat regulárnímu výrazu

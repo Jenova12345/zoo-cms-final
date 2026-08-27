@@ -360,7 +360,7 @@ export const SLIDE_TYP_LABEL: Record<SlideTyp, string> = {
   ai: "AI otázky",
   "3d": "3D model",
   vid: "Galerie",
-  gal: "Text a fotka",
+  gal: "Informace",
   txt: "Obecné informace",
 };
 

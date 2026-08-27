@@ -1498,19 +1498,42 @@ export async function stavJazyku(id: string): Promise<StavJazyka[]> {
 
 // --- Přehled displejů ---
 
+// Náhledová fotka displeje do přehledu. Hledá se podle PRIORITY TYPU slidu,
+// ne v pořadí, v jakém slidy na displeji leží: náhled má být fotka druhu, a ta
+// je na info panelu bez ohledu na to, kolikátý ten slide je.
+//
+//   1. info panel   první fotka (NIKDY mapa výskytu, viz níž)
+//   2. galerie      první položka, která není video
+//   3. textový slide jeho jediná fotka
+//   4. null         přehled ukáže placeholder (ikona v Displays.tsx)
+//
+// POZOR na `mapa.png`: mapa výskytu se jako náhled nebere ANI když je to
+// jediné PNG na info panelu. Dřív tu byl fallback `?? pngs[0]`, kvůli kterému
+// displej s videem a mapou (ale bez fotky) ukazoval v přehledu mapu světa
+// a kurátoři z toho nepoznali, o který druh jde. Prázdný náhled je čitelnější
+// než špatný, a od té doby se stejně dřív sáhne do galerie.
 async function thumbnailFor(id: string): Promise<string | null> {
-  for (const s of await listSlides(id)) {
-    if (s.typ === "info" || s.typ === "gal") {
-      const pngs = await listFiles(id, s.slozka, ".png");
-      const hlavni = pngs.find((f) => f !== MAPA_SOUBOR) ?? pngs[0];
-      if (hlavni) return slideFileUrl(id, s.slozka, hlavni);
-    } else if (s.typ === "vid") {
-      // Galerie: první fotka. Video se na náhled nehodí, prohlížeč by z něj
-      // v seznamu displejů musel tahat snímek.
-      const fotka = (await galerieSoubory(id, s.slozka)).find((f) => !jeGalerieVideo(f));
-      if (fotka) return slideFileUrl(id, s.slozka, fotka);
-    }
+  const slides = await listSlides(id);
+
+  // 1. Info panel: fotka druhu, mapa výskytu se vynechá.
+  for (const s of slides.filter((x) => x.typ === "info")) {
+    const fotka = (await listFiles(id, s.slozka, ".png")).find((f) => f !== MAPA_SOUBOR);
+    if (fotka) return slideFileUrl(id, s.slozka, fotka);
   }
+
+  // 2. Galerie: první fotka. Video se na náhled nehodí, prohlížeč by z něj
+  // v seznamu displejů musel tahat snímek.
+  for (const s of slides.filter((x) => x.typ === "vid")) {
+    const fotka = (await galerieSoubory(id, s.slozka)).find((f) => !jeGalerieVideo(f));
+    if (fotka) return slideFileUrl(id, s.slozka, fotka);
+  }
+
+  // 3. Textový slide: má nejvýš jednu fotku, ale pořád je to fotka druhu.
+  for (const s of slides.filter((x) => x.typ === "gal")) {
+    const fotka = (await listFiles(id, s.slozka, ".png"))[0];
+    if (fotka) return slideFileUrl(id, s.slozka, fotka);
+  }
+
   return null;
 }
 

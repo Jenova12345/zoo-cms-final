@@ -16,7 +16,7 @@ a podklady pro AI průvodce (chatbota).
 3. [Jak je displej poskládaný](#3-jak-je-displej-poskládaný)
 4. [Info panel, základní údaje o druhu](#4-info-panel--základní-údaje-o-druhu)
 5. [Fotky a mapa výskytu](#5-fotky-a-mapa-výskytu)
-6. [Text a fotka, obecné informace a 3D model](#6-text-a-fotka-obecné-informace-a-3d-model)
+6. [Informace, obecné informace a 3D model](#6-informace-obecné-informace-a-3d-model)
 7. [Galerie](#7-galerie)
 8. [Přidání, odebrání a přesun slidu](#8-přidání-odebrání-a-přesun-slidu)
 9. [Znalostní báze pro chatbota (kb.md)](#9-znalostní-báze-pro-chatbota-kbmd)
@@ -92,14 +92,14 @@ přehrávají za sebou dokola. Slidy jsou **šesti typů**:
 | **AI otázky** | Místo, kde se návštěvník může zeptat AI průvodce. Nic se do něj nevyplňuje. |
 | **3D model** | Sekvence snímků, kterými se model na tabletu otáčí. |
 | **Galerie** | Fotky a videa za sebou, tablet je střídá. |
-| **Text a fotka** | Dva delší texty o druhu, zařazení druhu a k tomu jedna fotka. |
-| **Obecné informace** | Starší typ, nový už nejde přidat. Dva delší texty bez fotek. Nahradil ho **Text a fotka**. |
+| **Informace** | Dva delší texty o druhu, zařazení druhu a k tomu jedna fotka. |
+| **Obecné informace** | Starší typ, nový už nejde přidat. Dva delší texty bez fotek. Nahradil ho slide **Informace**. |
 
 Slidy vidíte v detailu displeje jako **záložky** pod hlavičkou, očíslované
 zleva doprava v pořadí, ve kterém se budou přehrávat:
 
 ```
-1 · Infopanel   2 · AI otázky   3 · 3D model   4 · Galerie   5 · Text a fotka   + Přidat slide      ✦ Znalostní báze (AI)
+1 · Infopanel   2 · AI otázky   3 · 3D model   4 · Galerie   5 · Informace   + Přidat slide      ✦ Znalostní báze (AI)
 ```
 
 **Displej, který ještě nemá obsah** (v seznamu je jako „Nepřiřazeno") žádné
@@ -232,14 +232,14 @@ a nedá se vrátit, systém se na nic neptá.
 
 ---
 
-## 6. Text a fotka, obecné informace a 3D model
+## 6. Informace, obecné informace a 3D model
 
-### Text a fotka
+### Informace
 
-Slide **Text a fotka** je delší povídání o druhu a k němu jedna fotka. Na
+Slide **Informace** je delší povídání o druhu a k němu jedna fotka. Na
 tabletu jsou texty vlevo a fotka vpravo.
 
-1. Otevřete záložku slidu **Text a fotka**.
+1. Otevřete záložku slidu **Informace**.
 2. Do pole **Obecný text** napište souvislý text o druhu, klidně na několik
    odstavců.
 3. Do pole **Zajímavosti** napište, co návštěvníka zaujme. Klidně několik bodů
@@ -276,10 +276,10 @@ omylem neuloží jako angličtina. Fotka je naopak společná, nahrává se jedn
 ### Obecné informace (starší typ)
 
 Slide **Obecné informace** jsou dvě velká textová pole bez fotek a videa.
-**Nový slide tohoto typu už přidat nejde**, nahradil ho **Text a fotka**, který
-má tatáž dvě pole a k tomu zařazení druhu a fotku. Slidy, které už na displejích
-jsou, zůstávají a dají se dál normálně upravovat: postup je stejný jako u
-**Text a fotka**, jen bez zařazení a bez fotky.
+**Nový slide tohoto typu už přidat nejde**, nahradil ho slide **Informace**,
+který má tatáž dvě pole a k tomu zařazení druhu a fotku. Slidy, které už na
+displejích jsou, zůstávají a dají se dál normálně upravovat: postup je stejný
+jako u slidu **Informace**, jen bez zařazení a bez fotky.
 
 ### 3D model
 
@@ -343,8 +343,8 @@ Slide 2 z 4 · Galerie · složka 2_vid                             ‹   ›   
 
 1. V řadě záložek klikněte na **+ Přidat slide**.
 2. Vyberte typ: **Infopanel**, **AI otázky**, **3D model**, **Galerie** nebo
-   **Text a fotka**. (**Obecné informace** v nabídce nejsou, je to starší typ,
-   nahradil ho **Text a fotka**.)
+   **Informace**. (**Obecné informace** v nabídce nejsou, je to starší typ,
+   nahradil ho slide **Informace**.)
    U každého typu je krátký popis, co na tabletu dělá.
 3. Nový slide se přidá **na konec** řady a rovnou se otevře. Odtud ho můžete
    přetáhnout nebo posunout šipkami, kam potřebujete.

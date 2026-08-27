@@ -102,7 +102,7 @@ data/displeje/<cislo>/cs/<n>_info/text.txt      Infopanel: řádky "Klic: Hodnot
 data/displeje/<cislo>/cs/<n>_ai/                AI otázky (prázdná složka)
 data/displeje/<cislo>/cs/<n>_3d/001.png…        3D model: sekvence snímků (i varianta <n>_mod)
 data/displeje/<cislo>/cs/<n>_vid/01.jpg, 02.mp4… Galerie: fotky i videa, číslovaná s vodící nulou
-data/displeje/<cislo>/cs/<n>_gal/text.txt       Text a fotka: "ObecnyText:", "Zajimavosti:", "Taxonomie:" + jedna fotka
+data/displeje/<cislo>/cs/<n>_gal/text.txt       Informace: "ObecnyText:", "Zajimavosti:", "Taxonomie:" + jedna fotka
 data/displeje/<cislo>/cs/<n>_txt/text.txt       Obecné informace (pozůstalý typ, nový nejde založit)
 data/prales.json                                nastavení displeje u deštného pralesa (není slide)
 data/audit.jsonl                                append-only audit log

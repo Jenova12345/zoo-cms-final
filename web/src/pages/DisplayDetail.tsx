@@ -923,8 +923,8 @@ export default function DisplayDetail() {
           </h2>
           <p className="mx-auto mt-1.5 max-w-md text-sm text-fg-muted">
             Začněte přidáním <strong className="font-semibold text-fg">Infopanelu</strong>: to
-            je základní panel s názvem druhu, údaji o něm a fotkami. Další typy slidů (video,
-            zajímavost, obecné informace, 3D model, AI otázky) můžete přidat kdykoliv potom.
+            je základní panel s názvem druhu, údaji o něm a fotkami. Další typy slidů
+            (galerie, informace, 3D model, AI otázky) můžete přidat kdykoliv potom.
           </p>
           <div className="mt-5 flex flex-wrap items-center justify-center gap-3">
             <button onClick={() => addSlide("info")} disabled={busy} className="btn-primary">
@@ -1922,7 +1922,7 @@ function TextovyEditor({
     zeptejSe(
       <>
         Označí se jako hotový slide{" "}
-        <strong className="font-semibold text-fg">Text a fotka</strong> displeje {displayId},
+        <strong className="font-semibold text-fg">Informace</strong> displeje {displayId},
         texty i fotka.
       </>,
       () => ulozit(true),
