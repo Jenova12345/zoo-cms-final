@@ -197,9 +197,9 @@ export interface SekceDef {
 export const SEKCE_TEMATA: SekceDef[] = [
   {
     cislo: 1,
-    cs: "Červoři, záhadní obojživelníci",
-    en: "Caecilians, Mysterious Amphibians",
-    pl: "Płazy beznogie, tajemnicze stworzenia",
+    cs: "Červoři — záhadní obojživelníci",
+    en: "Caecilians — Mysterious Amphibians",
+    pl: "Płazy beznogie — tajemnicze stworzenia",
   },
   {
     cislo: 2,
@@ -209,9 +209,9 @@ export const SEKCE_TEMATA: SekceDef[] = [
   },
   {
     cislo: 3,
-    cs: "Pralesničky, jedovaté krásky",
-    en: "Poison Dart Frogs, Poisonous Beauties",
-    pl: "Drzewołazy, trujące piękności",
+    cs: "Pralesničky — jedovaté krásky",
+    en: "Poison Dart Frogs — Poisonous Beauties",
+    pl: "Drzewołazy — trujące piękności",
   },
   {
     cislo: 4,
@@ -221,39 +221,39 @@ export const SEKCE_TEMATA: SekceDef[] = [
   },
   {
     cislo: 5,
-    cs: "Historie obojživelníků, přechod obratlovců z vody na souš",
-    en: "History of Amphibians, the Transition of Vertebrates from Water to Land",
-    pl: "Historia płazów, wyjście kręgowców z wody na ląd",
+    cs: "Historie obojživelníků — přechod obratlovců z vody na souš",
+    en: "History of Amphibians — the Transition of Vertebrates from Water to Land",
+    pl: "Historia płazów — wyjście kręgowców z wody na ląd",
   },
   {
     cislo: 6,
-    cs: 'Lezci, novodobí "obojživelníci"',
-    en: 'Mudskippers, Modern-day "Amphibians"',
-    pl: 'Poskoczki, współczesne "płazy"',
+    cs: 'Lezci — novodobí "obojživelníci"',
+    en: 'Mudskippers — Modern-day "Amphibians"',
+    pl: 'Poskoczki — współczesne "płazy"',
   },
   {
     cislo: 7,
-    cs: "Madagaskar, žabí ráj",
-    en: "Madagascar, Frog Paradise",
-    pl: "Madagaskar, raj dla żab",
+    cs: "Madagaskar — žabí ráj",
+    en: "Madagascar — Frog Paradise",
+    pl: "Madagaskar — raj dla żab",
   },
   {
     cislo: 8,
-    cs: "Listovnice, královny noci",
-    en: "Leaf Frogs, Queens of the Night",
-    pl: "Chwytnice, królowe nocy",
+    cs: "Listovnice — královny noci",
+    en: "Leaf Frogs — Queens of the Night",
+    pl: "Chwytnice — królowe nocy",
   },
   {
     cislo: 9,
-    cs: "Caudata, obojživelníci s ocasem",
-    en: "Caudata, Amphibians with a Tail",
-    pl: "Caudata, płazy ogoniaste",
+    cs: "Caudata — obojživelníci s ocasem",
+    en: "Caudata — Amphibians with a Tail",
+    pl: "Caudata — płazy ogoniaste",
   },
   {
     cislo: 10,
-    cs: "Neotenie, původ moderních obojživelníků",
-    en: "Neoteny, the Origin of Modern Amphibians",
-    pl: "Neotenia, pochodzenie współczesnych płazów",
+    cs: "Neotenie — původ moderních obojživelníků",
+    en: "Neoteny — the Origin of Modern Amphibians",
+    pl: "Neotenia — pochodzenie współczesnych płazów",
   },
   {
     cislo: 11,
@@ -270,24 +270,46 @@ export const SEKCE = SEKCE_TEMATA.map((s) => s.cs);
 // Displeje uložené dřív je mají v text.txt i v meta.json, takže musí dál
 // projít validací. Klíč je starý název, hodnota nový.
 export const SEKCE_STARE: Record<string, string> = {
-  Listovnice: "Listovnice, královny noci",
-  Caudata: "Caudata, obojživelníci s ocasem",
-  Červoři: "Červoři, záhadní obojživelníci",
-  Lezci: 'Lezci, novodobí "obojživelníci"',
-  Madagaskar: "Madagaskar, žabí ráj",
-  Neotenie: "Neotenie, původ moderních obojživelníků",
-  Pralesničky: "Pralesničky, jedovaté krásky",
+  Listovnice: "Listovnice — královny noci",
+  Caudata: "Caudata — obojživelníci s ocasem",
+  Červoři: "Červoři — záhadní obojživelníci",
+  Lezci: 'Lezci — novodobí "obojživelníci"',
+  Madagaskar: "Madagaskar — žabí ráj",
+  Neotenie: "Neotenie — původ moderních obojživelníků",
+  Pralesničky: "Pralesničky — jedovaté krásky",
 };
+
+// Porovnávací tvar názvu sekce. Oddělovač mezi hlavním názvem a přívlastkem
+// se srazí na obyčejnou mezeru, ať je v uložené hodnotě čárka, em dash, en
+// dash nebo spojovník.
+//
+// Proč: názvy sekcí se přepsaly z „Červoři, záhadní obojživelníci" na
+// „Červoři — záhadní obojživelníci", ale displeje uložené dřív mají v
+// text.txt i v meta.json pořád čárkovou podobu. Bez tohohle by je kurátor
+// nemohl uložit („Neplatná sekce.") a v editoru by se mu rozbalovátko tiše
+// přeplo na prázdno. Na disku se nic nepřepisuje, starý tvar se sám nahradí
+// novým při prvním uložení displeje.
+//
+// Ověřeno, že všech jedenáct sekcí zůstává po normalizaci navzájem odlišných.
+function porovnavaciTvar(hodnota: string): string {
+  return hodnota
+    .replace(/\s*[,\u2014\u2013-]\s*/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
 
 // Je hodnota platnou sekcí (nový nebo starý název)?
 export function jeSekce(hodnota: string): boolean {
-  return SEKCE.includes(hodnota) || hodnota in SEKCE_STARE;
+  return najdiSekci(hodnota) !== null;
 }
 
-// Sekce podle uložené hodnoty, ať je název starý nebo nový.
+// Sekce podle uložené hodnoty, ať je název starý nebo nový a ať je
+// oddělovač čárka, nebo pomlčka.
 export function najdiSekci(hodnota: string): SekceDef | null {
-  const cs = SEKCE_STARE[hodnota] ?? hodnota;
-  return SEKCE_TEMATA.find((s) => s.cs === cs) ?? null;
+  const cs = SEKCE_STARE[hodnota.trim()] ?? hodnota;
+  const hledany = porovnavaciTvar(cs);
+  return SEKCE_TEMATA.find((s) => porovnavaciTvar(s.cs) === hledany) ?? null;
 }
 
 // Pole info panelu: klíč přesně tak, jak se zapisuje do text.txt.

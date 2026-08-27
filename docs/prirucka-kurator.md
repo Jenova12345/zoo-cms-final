@@ -126,8 +126,23 @@ Otevřete záložku slidu **Infopanel**. Vlevo je formulář s údaji o druhu.
 Bez těchto dvou se slide neuloží:
 
 - **Sekce**, vybírá se z rozbalovacího seznamu (nedá se napsat vlastní text).
-  Na výběr je: Listovnice, Caudata, Červoři, Lezci, Madagaskar, Neotenie,
-  Obojživelníci České republiky, Pralesničky, Rozmanitost žab, Šesté vymírání.
+  Na výběr je jedenáct sekcí podle tabule v pavilonu:
+
+  1. Červoři — záhadní obojživelníci
+  2. Rozmanitost žab
+  3. Pralesničky — jedovaté krásky
+  4. Šesté vymírání
+  5. Historie obojživelníků — přechod obratlovců z vody na souš
+  6. Lezci — novodobí „obojživelníci"
+  7. Madagaskar — žabí ráj
+  8. Listovnice — královny noci
+  9. Caudata — obojživelníci s ocasem
+  10. Neotenie — původ moderních obojživelníků
+  11. Obojživelníci České republiky
+
+  U displeje uloženého dřív může být sekce zapsaná postaru (jiný název nebo
+  čárka místo pomlčky). Systém ji uzná a v seznamu ji necháte vidět, ale
+  pod polem se ukáže, čemu dnes odpovídá; vyberte prosím aktuální tvar.
   Sekce říká, do které zóny expozice druh patří.
 - **Název**, český název druhu, například `Axolotl mexický`. Tenhle název se
   zároveň propíše do seznamu displejů, takže dlaždice přestane být „Nepřiřazeno".

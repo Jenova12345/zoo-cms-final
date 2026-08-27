@@ -32,8 +32,8 @@ import {
   NEPRIRAZENO,
   JAZYKY,
   JAZYK_LABEL,
-  SEKCE_STARE,
   SEKCE_TEMATA,
+  najdiSekci,
   jePrekladane,
   type Jazyk,
   SLIDE_TYPY,
@@ -1487,12 +1487,17 @@ function InfoEditor({
   const [showErrors, setShowErrors] = useState(false);
   const { uploading, prubeh, upload, zrus } = usePhotoUpload(displayId, slide.n, reload);
 
-  // Sekce uložená pod starým názvem: v nabídce je jen nové pojmenování, tak
-  // kurátorovi ukážeme, čemu ta stará hodnota odpovídá.
-  const novyNazevSekce = SEKCE_STARE[pole.Sekce ?? ""];
-  const staraSekce = novyNazevSekce
-    ? SEKCE_TEMATA.find((sekce) => sekce.cs === novyNazevSekce) ?? null
-    : null;
+  // Sekce uložená pod starým názvem nebo se starým oddělovačem (čárka místo
+  // em dashe). V nabídce je jen aktuální pojmenování, takže hodnota z disku
+  // by se s žádnou položkou nesešla a rozbalovátko by tiše spadlo na prázdné
+  // „vyberte sekci". Dohledáme ji proto přes najdiSekci(), která je k obojímu
+  // tolerantní, a necháme ji v nabídce navíc.
+  const ulozenaSekce = (pole.Sekce ?? "").trim();
+  const sekceDef = ulozenaSekce ? najdiSekci(ulozenaSekce) : null;
+  // Sedí uložený řetězec přesně na některou položku nabídky? Když ne, je to
+  // starý zápis a musí dostat vlastní <option>, jinak by ho select neuměl
+  // vybrat.
+  const staraSekce = sekceDef && sekceDef.cs !== ulozenaSekce ? sekceDef : null;
 
   const chybi = (klic: string) => !(pole[klic] ?? "").trim();
   // V překladu se vyplňuje jen to, co je překládané; sekci a latinu drží
@@ -1600,10 +1605,12 @@ function InfoEditor({
                       {sekce.cislo}. {sekce.cs}
                     </option>
                   ))}
-                  {/* Displej uložený dřív má starý název sekce. Necháme ho
-                      v nabídce, ať kurátor vidí, co v souboru opravdu je. */}
+                  {/* Displej uložený dřív má starý zápis sekce (jiný název
+                      nebo čárku místo pomlčky). Necháme ho v nabídce, ať
+                      kurátor vidí, co v souboru opravdu je; uložením se
+                      přepíše aktuálním tvarem. */}
                   {staraSekce && (
-                    <option value={hodnota}>{hodnota} (starý název)</option>
+                    <option value={hodnota}>{hodnota} (starý zápis)</option>
                   )}
                 </select>
               ) : (
@@ -1642,11 +1649,12 @@ function InfoEditor({
                 )}
               {def.klic === "Sekce" && staraSekce && (
                 <p className="mt-1 text-xs text-amber-deep">
-                  „{hodnota}" je starý název. Podle tabule v pavilonu je to teď{" "}
+                  „{hodnota}" je starší zápis (jiný název nebo čárka místo pomlčky).
+                  Podle tabule v pavilonu je to teď{" "}
                   <span className="font-semibold">
                     {staraSekce.cislo}. {staraSekce.cs}
                   </span>
-                  , vyberte ho, ať sedí čísla na podlaze.
+                  , vyberte ho ze seznamu, ať sedí čísla na podlaze a zápis je všude stejný.
                 </p>
               )}
               {def.klic === "Latinsky" && latinSeZmeni && (

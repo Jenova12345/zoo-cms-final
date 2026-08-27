@@ -249,7 +249,7 @@ srovná se sám, jakmile do slidu kurátor v CMS něco přidá nebo z něj smaž
 **prázdná pole se nezapisují vůbec**:
 
 ```
-Sekce: Neotenie
+Sekce: Neotenie — původ moderních obojživelníků
 Nazev: Axolotl mexický
 Latinsky: Ambystoma mexicanum
 Strava: vodní bezobratlí, larvy hmyzu, drobní korýši
@@ -263,10 +263,27 @@ DelkaZivota: 10 až 15 let
   `Velikost`, `DobaLihnuti`, `Ohrozeni`, `DelkaZivota`. Klíče jsou bez
   diakritiky a case-sensitive.
 - **Povinné:** `Sekce` a `Nazev`. Validuje server i editor; `Sekce` musí být
-  jedna z deseti hodnot seznamu (`Listovnice`, `Caudata`, `Červoři`, `Lezci`,
-  `Madagaskar`, `Neotenie`, `Obojživelníci České republiky`, `Pralesničky`,
-  `Rozmanitost žab`, `Šesté vymírání`, definováno v `server/src/displays.ts`
-  a v `web/src/lib/types.ts`, seznamy je nutné držet shodné).
+  jedna z **jedenácti** hodnot podle oficiální tabule v pavilonu (definováno
+  v `SEKCE_TEMATA` v `server/src/displays.ts` a v `web/src/lib/types.ts`,
+  seznamy je nutné držet shodné):
+
+  1. Červoři — záhadní obojživelníci
+  2. Rozmanitost žab
+  3. Pralesničky — jedovaté krásky
+  4. Šesté vymírání
+  5. Historie obojživelníků — přechod obratlovců z vody na souš
+  6. Lezci — novodobí „obojživelníci"
+  7. Madagaskar — žabí ráj
+  8. Listovnice — královny noci
+  9. Caudata — obojživelníci s ocasem
+  10. Neotenie — původ moderních obojživelníků
+  11. Obojživelníci České republiky
+
+  Porovnává se **tolerantně k oddělovači**: čárka, em dash, en dash i
+  spojovník jsou zaměnitelné, takže `Neotenie, původ moderních obojživelníků`
+  i `Neotenie — původ moderních obojživelníků` projdou jako táž sekce. Do
+  souboru se zapisuje kanonický tvar s em dashem. Krátké názvy z doby před
+  srovnáním s tabulí (`Caudata`, `Neotenie`, …) dál projdou přes `SEKCE_STARE`.
 - Parser toleruje CRLF i mezery kolem hodnoty; při zápisu se hodnoty ořezávají.
 - `Latinsky` se před zápisem **kanonizuje** (`server/src/latin.ts`): pryč
   uvozovky a koncová tečka, kolaps mezer, první písmeno velké, zbytek malými.
@@ -290,7 +307,7 @@ DelkaZivota: 10 až 15 let
   ],
   "name": "Axolotl mexický",
   "latin_name": "Ambystoma mexicanum",
-  "category": "Neotenie",
+  "category": "Neotenie — původ moderních obojživelníků",
   "section": "Ambystomatidae"
 }
 ```
