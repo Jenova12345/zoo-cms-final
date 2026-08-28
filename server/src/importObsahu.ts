@@ -12,18 +12,26 @@ import {
   addSlide,
   displayExists,
   oznacRevizi,
+  parseGalText,
   parseInfoText,
   readKb,
   readMeta,
   readSlides,
   validateInfoPole,
+  writeGalPole,
   writeInfoPole,
   writeKb,
   type Jazyk,
 } from "./displays.js";
 
-// Hromadný import obsahu do CMS (kb.md + pole info panelu ve všech jazycích)
-// z připravené složky, kde má každý druh vlastní podsložku.
+// Hromadný import obsahu do CMS z připravené složky, kde má každý druh
+// vlastní podsložku. Umí infopanel (_info), textový slide „Informace"
+// (_gal) a znalostní bázi, všechno ve všech třech jazycích.
+//
+// Zdrojová složka nemusí nést obojí: import se řídí tím, co v ní opravdu je.
+// Zdroj jen s textovým slidem nepotřebuje ani latinské jméno, ani sekci,
+// a NEVOLÁ se u něj writeInfoPole(), takže se nemá jak dotknout identity
+// druhu v meta.json.
 //
 //   npm run import-obsahu -- <zdroj> <mapovani.json>              nanečisto (výchozí)
 //   npm run import-obsahu -- <zdroj> <mapovani.json> --zapsat     opravdu zapsat
@@ -46,12 +54,15 @@ Zdrojová složka: pro každý druh jedna podsložka s
   meta.json          (name, latin_name; volitelně section a příznak AI konceptu)
   kb.md              znalostní báze pro chatbota (VYNECHEJTE, když ji
                      nechcete přepsat: prázdná nebo chybějící se neimportuje)
-  cs/1_info/text.txt pole info panelu ve tvaru "Klic: Hodnota"
-  en/1_info/text.txt překlad do angličtiny (volitelné)
-  pl/1_info/text.txt překlad do polštiny (volitelné)
+  <jazyk>/<n>_info/text.txt  pole info panelu ve tvaru "Klic: Hodnota"
+  <jazyk>/<n>_gal/text.txt   textový slide (ObecnyText, Zajimavosti, Taxonomie)
 
-V překladech stačí přeložená pole (Nazev, Strava, Velikost, DobaLihnuti,
-Ohrozeni, DelkaZivota). Sekci a latinské jméno si server doplní z češtiny.
+Čeština je povinná, en/pl volitelné. V překladu infopanelu stačí přeložená
+pole (Nazev, Strava, …), sekci a latinské jméno si server doplní z češtiny.
+Alespoň jeden z obou typů obsahu musí zdrojová složka mít.
+
+Cílový slide se na displeji hledá podle TYPU, ne podle čísla ve zdroji:
+existující _info/_gal se přepíše, chybějící se založí na konci.
 
 Mapovací soubor: JSON { "<klíč>": <číslo displeje> }, kde klíč je
   latinský název druhu (párovací klíč), nebo název zdrojové podsložky.
@@ -73,27 +84,96 @@ interface ZdrojovaMeta {
 
 type Duvod = string;
 
+// Obsah jednoho typu slidu ve zdrojové složce, po jazycích. Čeština je
+// zdroj pravdy, en/pl jsou volitelné překlady.
+interface ObsahTypu {
+  cs: Record<string, string>;
+  preklady: Partial<Record<Jazyk, Record<string, string>>>;
+  // Jazyky, které zdroj má, ale neprojdou. Neblokují import češtiny, jen se
+  // vypíšou, ať o nich kurátor ví.
+  vadnePreklady: { jazyk: Jazyk; duvod: Duvod }[];
+  novySlide: boolean; // displej slide tohoto typu ještě nemá, bude se zakládat
+}
+
 interface Polozka {
   slozka: string;
   latin: string;
   nazev: string;
   displej?: string;
   kb: string;
-  pole: Record<string, string>; // info panel v češtině (zdroj identity)
-  // Překlady info panelu, jen jazyky, které zdroj opravdu má. Čeština tu
-  // není, ta je v `pole`.
-  preklady: Partial<Record<Jazyk, Record<string, string>>>;
-  // Jazyky, které zdroj má, ale neprojdou (chybí název). Neblokují import
-  // češtiny, jen se vypíšou, ať o nich kurátor ví.
-  vadnePreklady: { jazyk: Jazyk; duvod: Duvod }[];
+  // Co zdrojová složka nese. `null` = tenhle typ obsahu ve zdroji není
+  // a import se ho ani nedotkne.
+  info: ObsahTypu | null;
+  gal: ObsahTypu | null;
   section: string;
   cekaNaRevizi: boolean;
-  novySlide: boolean; // displej ještě nemá info panel, bude se zakládat
   prepisuje: string[]; // co na cílovém displeji dnes je (jen s --prepsat)
+  poznamky: string[]; // co má kurátor vidět, ale nebrání to importu
   preskocit?: Duvod;
 }
 
 // --- Čtení zdroje ------------------------------------------------------
+
+// Najde ve zdrojové složce podsložku slidu daného typu (<n>_info, <n>_gal).
+// Číslo je jen štítek, cílový slide se na displeji hledá podle typu, takže
+// bereme první, která sedí; převodník vyrábí vždycky "1_info" a "1_gal".
+async function najdiSlozkuSlidu(
+  cesta: string,
+  jazyk: Jazyk,
+  typ: "info" | "gal",
+): Promise<string | null> {
+  const re = new RegExp(`^\\d+_${typ}$`);
+  try {
+    const polozky = await fs.readdir(path.join(cesta, jazyk), { withFileTypes: true });
+    const nalezene = polozky
+      .filter((e) => e.isDirectory() && re.test(e.name))
+      .map((e) => e.name)
+      .sort();
+    return nalezene[0] ?? null;
+  } catch {
+    return null;
+  }
+}
+
+// Načte jeden typ obsahu ve všech jazycích. Vrací null, když zdroj tenhle
+// typ vůbec nemá: takový import se ho pak ani nedotkne.
+async function nactiTyp(
+  cesta: string,
+  typ: "info" | "gal",
+  parsuj: (raw: string) => Record<string, string>,
+  overPreklad: (pole: Record<string, string>, jazyk: Jazyk) => string | null,
+): Promise<ObsahTypu | null> {
+  const slozkaCs = await najdiSlozkuSlidu(cesta, "cs", typ);
+  if (!slozkaCs) return null;
+  const raw = await precti(path.join(cesta, "cs", slozkaCs, "text.txt"));
+  if (!raw.trim()) return null;
+
+  const preklady: ObsahTypu["preklady"] = {};
+  const vadnePreklady: ObsahTypu["vadnePreklady"] = [];
+  for (const jazyk of JAZYKY) {
+    if (jazyk === "cs") continue;
+    const slozka = await najdiSlozkuSlidu(cesta, jazyk, typ);
+    if (!slozka) continue;
+    const rawJazyk = await precti(path.join(cesta, jazyk, slozka, "text.txt"));
+    if (!rawJazyk.trim()) continue;
+    const prelozene = parsuj(rawJazyk);
+    const chyba = overPreklad(prelozene, jazyk);
+    if (chyba) {
+      vadnePreklady.push({ jazyk, duvod: chyba.toLowerCase() });
+      continue;
+    }
+    preklady[jazyk] = prelozene;
+  }
+
+  return { cs: parsuj(raw), preklady, vadnePreklady, novySlide: false };
+}
+
+// Textový slide nemá povinná pole jako infopanel; prázdný překlad ale nemá
+// smysl zapisovat, přepsal by tím to, co v jazyce dnes je.
+function overGalPreklad(pole: Record<string, string>): string | null {
+  const maText = (pole.ObecnyText ?? "").trim() || (pole.Zajimavosti ?? "").trim();
+  return maText ? null : "Chybí oba texty.";
+}
 
 async function nactiZdroj(korenn: string, slozka: string): Promise<Polozka> {
   const zaklad: Polozka = {
@@ -101,13 +181,12 @@ async function nactiZdroj(korenn: string, slozka: string): Promise<Polozka> {
     latin: "",
     nazev: "",
     kb: "",
-    pole: {},
-    preklady: {},
-    vadnePreklady: [],
+    info: null,
+    gal: null,
     section: "",
     cekaNaRevizi: false,
-    novySlide: false,
     prepisuje: [],
+    poznamky: [],
   };
   const cesta = path.join(korenn, slozka);
 
@@ -118,49 +197,48 @@ async function nactiZdroj(korenn: string, slozka: string): Promise<Polozka> {
     return { ...zaklad, preskocit: "meta.json chybí nebo není platný JSON" };
   }
 
-  // Bez latinského názvu druh nenajde chatbot ani analytika, takový záznam
-  // se zásadně neimportuje, jen nahlásí.
-  const latin = canonicalizeLatin((meta.latin_name ?? "").trim());
-  if (!latin) {
-    return { ...zaklad, nazev: meta.name ?? "", preskocit: "v meta.json chybí latin_name" };
+  const kb = await precti(path.join(cesta, "kb.md"));
+
+  const info = await nactiTyp(cesta, "info", parseInfoText, (pole, jazyk) =>
+    validateInfoPole(pole, jazyk),
+  );
+  const gal = await nactiTyp(cesta, "gal", parseGalText, (pole) => overGalPreklad(pole));
+
+  if (!info && !gal) {
+    return { ...zaklad, kb, preskocit: "zdroj nemá ani info panel, ani textový slide" };
   }
 
-  const kb = await precti(path.join(cesta, "kb.md"));
-  const infoRaw = await precti(path.join(cesta, "cs", "1_info", "text.txt"));
-  const pole = parseInfoText(infoRaw);
+  // Latinské jméno je identita druhu pro chatbota a bere se z infopanelu.
+  // Zdroj, který nese jen textový slide, ho nemá odkud vzít a nepotřebuje ho:
+  // na displej se páruje názvem složky a identity v meta.json se nedotkne.
+  const latin = canonicalizeLatin((meta.latin_name ?? "").trim());
+  if (info && !latin) {
+    return {
+      ...zaklad,
+      kb,
+      nazev: meta.name ?? "",
+      preskocit: "zdroj má info panel, ale v meta.json chybí latin_name",
+    };
+  }
 
-  // Identita z meta.json doplní to, co v text.txt chybí (zdrojem pravdy pro
-  // pole zůstává text.txt, protože přesně to čte tablet).
-  if (!(pole.Nazev ?? "").trim() && meta.name) pole.Nazev = meta.name.trim();
-  if (!(pole.Latinsky ?? "").trim()) pole.Latinsky = latin;
+  if (info) {
+    // Identita z meta.json doplní to, co v text.txt chybí (zdrojem pravdy pro
+    // pole zůstává text.txt, protože přesně to čte tablet).
+    if (!(info.cs.Nazev ?? "").trim() && meta.name) info.cs.Nazev = meta.name.trim();
+    if (!(info.cs.Latinsky ?? "").trim()) info.cs.Latinsky = latin;
+  }
 
-  // Překlady: <jazyk>/1_info/text.txt. Chybějící soubor NENÍ chyba, druh
-  // prostě přeložený není. Soubor, který existuje, ale nemá název druhu,
-  // se nahlásí a přeskočí se jen ten jazyk: čeština se má naimportovat tak
-  // jako tak, ať kurátor nepřijde o celý druh kvůli rozdělanému překladu.
-  const preklady: Polozka["preklady"] = {};
-  const vadnePreklady: Polozka["vadnePreklady"] = [];
-  for (const jazyk of JAZYKY) {
-    if (jazyk === "cs") continue;
-    const raw = await precti(path.join(cesta, jazyk, "1_info", "text.txt"));
-    if (!raw.trim()) continue;
-    const prelozene = parseInfoText(raw);
-    const chyba = validateInfoPole(prelozene, jazyk);
-    if (chyba) {
-      vadnePreklady.push({ jazyk, duvod: chyba.toLowerCase() });
-      continue;
-    }
-    preklady[jazyk] = prelozene;
+  if (gal && !(gal.cs.ObecnyText ?? "").trim() && !(gal.cs.Zajimavosti ?? "").trim()) {
+    return { ...zaklad, kb, latin, preskocit: "textový slide nemá ani jeden z obou textů" };
   }
 
   return {
     ...zaklad,
     latin,
-    nazev: (pole.Nazev ?? meta.name ?? "").trim(),
+    nazev: (info?.cs.Nazev ?? meta.name ?? "").trim(),
     kb,
-    pole,
-    preklady,
-    vadnePreklady,
+    info,
+    gal,
     section: (meta.section ?? "").trim(),
     cekaNaRevizi: jeAiKoncept(meta, kb),
   };
@@ -209,55 +287,118 @@ async function nactiMapovani(soubor: string): Promise<Map<string, string>> {
 
 // --- Stav cílového displeje -------------------------------------------
 
-// Co na displeji je. Prázdný displej pozná import podle toho, že nemá druh,
-// znalostní bázi ani vyplněný obsah slidů.
-async function coJeNaDispleji(id: string): Promise<string[]> {
-  const nalezeno: string[] = [];
+// Co na displeji je, rozdělené podle toho, čeho by se import mohl dotknout.
+// Zámek „displej už má obsah" je totiž TYPOVĚ CITLIVÝ: import textového
+// slidu nemá být blokovaný tím, že displej má vyplněný infopanel, protože
+// se ho ani nedotkne. Kdyby byl zámek společný, kurátor by musel pouštět
+// --prepsat i tam, kde se nic nepřepisuje, a tím by si odemkl i přepis
+// všeho ostatního.
+//
+// Do `jine` jde všechno, co import nikdy nepřepisuje (galerie, videa, 3D,
+// obecné informace). Vypisuje se jen pro přehled, na rozhodování nemá vliv.
+interface StavDispleje {
+  info: string[];
+  gal: string[];
+  kb: string[];
+  jine: string[];
+}
+
+async function coJeNaDispleji(id: string): Promise<StavDispleje> {
+  const stav: StavDispleje = { info: [], gal: [], kb: [], jine: [] };
   const meta = await readMeta(id);
-  if (meta && meta.druh !== NEPRIRAZENO) nalezeno.push(`druh „${meta.druh}"`);
+  if (meta && meta.druh !== NEPRIRAZENO) stav.info.push(`druh „${meta.druh}"`);
   // Seed zakládá u nepřiřazených displejů zástupný text, ten se nepočítá
   // jako obsah, jinak by import nemohl obsadit žádný volný displej.
   const kb = (await readKb(id)).trim();
-  if (kb && kb !== DEFAULT_KB.trim()) nalezeno.push("znalostní bázi");
+  if (kb && kb !== DEFAULT_KB.trim()) stav.kb.push("znalostní bázi");
+
+  let vyplnenychGal = 0;
   for (const s of await readSlides(id)) {
-    if (s.typ === "info" && Object.values(s.pole).some((v) => v.trim())) {
-      nalezeno.push("vyplněný info panel");
+    if (s.typ === "info") {
+      if (Object.values(s.pole).some((v) => v.trim())) stav.info.push("vyplněný info panel");
+      if (s.obrazky.length) stav.info.push(`${s.obrazky.length}× fotku info panelu`);
+      if (s.video) stav.jine.push("video info panelu");
+    } else if (s.typ === "gal") {
+      // Textový slide i obecné informace drží texty v `pole` stejně jako info
+      // panel; bez téhle větve by import považoval vyplněný slide za prázdný
+      // a přepsal ho. Slidů může být na displeji víc, ale hlásíme je jednou:
+      // přepíše se stejně jen ten první.
+      if (Object.values(s.pole).some((v) => v.trim())) vyplnenychGal += 1;
+      // Fotka textového slidu se nepřepisuje, import médií se nedotýká.
+      if (s.obrazky.length) stav.jine.push("fotku textového slidu");
+    } else if (s.typ === "txt") {
+      if (Object.values(s.pole).some((v) => v.trim())) stav.jine.push("vyplněné obecné informace");
+    } else if (s.typ === "3d") {
+      if (s.obrazky.length) stav.jine.push(`3D sekvenci (${s.obrazky.length} snímků)`);
+    } else if (s.typ === "vid") {
+      if (s.media.length) stav.jine.push(`galerii (${s.media.length} položek)`);
     }
-    // Textový slide i obecné informace drží texty v `pole` stejně jako info
-    // panel; bez téhle větve by import považoval vyplněný slide za prázdný
-    // a přepsal ho.
-    if (s.typ === "gal" && Object.values(s.pole).some((v) => v.trim())) {
-      nalezeno.push("vyplněný textový slide");
-    }
-    if (s.typ === "txt" && Object.values(s.pole).some((v) => v.trim())) {
-      nalezeno.push("vyplněné obecné informace");
-    }
-    if (s.obrazky.length) nalezeno.push(`${s.obrazky.length}× obrázek`);
-    if (s.media.length) nalezeno.push(`galerii (${s.media.length} položek)`);
-    if (s.video) nalezeno.push("video");
   }
-  return nalezeno;
+  if (vyplnenychGal === 1) stav.gal.push("vyplněný textový slide");
+  else if (vyplnenychGal > 1) stav.gal.push(`${vyplnenychGal} vyplněné textové slidy`);
+  return stav;
+}
+
+// Co z toho by import opravdu přepsal: jen typy obsahu, které zdroj nese.
+function coPrepise(p: Polozka, stav: StavDispleje): string[] {
+  return [
+    ...(p.info ? stav.info : []),
+    ...(p.gal ? stav.gal : []),
+    ...(p.kb.trim() ? stav.kb : []),
+  ];
+}
+
+// Opak: co na displeji je a co tenhle import nechá být. Kurátor to má vidět
+// černé na bílém, je to hlavní věc, kterou u hromadného zápisu řeší.
+function coZustane(p: Polozka, stav: StavDispleje): string[] {
+  return [
+    ...(p.info ? [] : stav.info),
+    ...(p.gal ? [] : stav.gal),
+    ...(p.kb.trim() ? [] : stav.kb),
+    ...stav.jine,
+  ];
 }
 
 // --- Výpis -------------------------------------------------------------
+
+// Co se u položky zapsalo, do logu i do auditu.
+function popisZapsaneho(p: Polozka): string {
+  const kusy: string[] = [];
+  if (p.info) kusy.push(`info panel (${["cs", ...Object.keys(p.info.preklady)].join("+")})`);
+  if (p.gal) kusy.push(`textový slide (${["cs", ...Object.keys(p.gal.preklady)].join("+")})`);
+  if (p.kb.trim()) kusy.push("znalostní báze");
+  return kusy.join(", ");
+}
 
 function radek(p: Polozka): string {
   const zdroj = p.slozka.padEnd(28);
   if (p.preskocit) return `  ⤫ ${zdroj} PŘESKOČENO: ${p.preskocit}`;
   const cil = `→ displej ${p.displej}`.padEnd(16);
-  const jazyky = ["cs", ...Object.keys(p.preklady)].join(" + ");
-  const co = [
-    `${p.novySlide ? "založí se" : "zapíše se"} info panel (${jazyky})`,
-    p.kb.trim() ? "znalostní báze" : "bez znalostní báze",
-    p.cekaNaRevizi ? "označí se jako AI koncept k revizi" : "bez příznaku revize",
-  ].join(", ");
-  const vadne = p.vadnePreklady.length
-    ? `\n      PŘEKLAD SE NEZAPÍŠE: ${p.vadnePreklady.map((v) => `${v.jazyk} (${v.duvod})`).join(", ")}`
-    : "";
-  const prepis = p.prepisuje.length
-    ? `\n      PŘEPÍŠE, co tam dnes je: ${p.prepisuje.join(", ")}`
-    : "";
-  return `  ✓ ${zdroj} ${cil} ${p.latin}\n      ${co}${vadne}${prepis}`;
+
+  const co: string[] = [];
+  if (p.info) {
+    const jazyky = ["cs", ...Object.keys(p.info.preklady)].join(" + ");
+    co.push(`${p.info.novySlide ? "založí se" : "zapíše se"} info panel (${jazyky})`);
+  }
+  if (p.gal) {
+    const jazyky = ["cs", ...Object.keys(p.gal.preklady)].join(" + ");
+    co.push(`${p.gal.novySlide ? "založí se" : "zapíše se"} textový slide (${jazyky})`);
+  }
+  co.push(p.kb.trim() ? "znalostní báze" : "bez znalostní báze");
+  if (p.cekaNaRevizi) co.push("označí se jako AI koncept k revizi");
+
+  const vadne = [...(p.info?.vadnePreklady ?? []), ...(p.gal?.vadnePreklady ?? [])];
+  const radky = [`  ✓ ${zdroj} ${cil} ${p.latin || "(bez latinského jména)"}`, `      ${co.join(", ")}`];
+  for (const pozn of p.poznamky) radky.push(`      ! ${pozn}`);
+  if (vadne.length) {
+    radky.push(
+      `      PŘEKLAD SE NEZAPÍŠE: ${vadne.map((v) => `${v.jazyk} (${v.duvod})`).join(", ")}`,
+    );
+  }
+  if (p.prepisuje.length) {
+    radky.push(`      PŘEPÍŠE, co tam dnes je: ${p.prepisuje.join(", ")}`);
+  }
+  return radky.join("\n");
 }
 
 // --- Hlavní běh --------------------------------------------------------
@@ -327,15 +468,35 @@ async function main(): Promise<void> {
         p.preskocit = `displej ${id} v datové složce neexistuje`;
       } else {
         p.displej = id;
-        const chyba = validateInfoPole(p.pole);
-        const uz = await coJeNaDispleji(id);
+        const chyba = p.info ? validateInfoPole(p.info.cs) : null;
+        const stav = await coJeNaDispleji(id);
+        // Zámek se ptá jen na typy obsahu, které zdroj opravdu nese.
+        const kolize = coPrepise(p, stav);
         if (chyba) {
           p.preskocit = `info panel neprojde validací: ${chyba.toLowerCase()}`;
-        } else if (uz.length > 0 && !prepsat) {
-          p.preskocit = `displej ${id} už má obsah (${uz.join(", ")}), přepis jen s --prepsat`;
+        } else if (kolize.length > 0 && !prepsat) {
+          p.preskocit = `displej ${id} už má ${kolize.join(", ")}, přepis jen s --prepsat`;
         } else {
-          p.prepisuje = uz; // prázdné = displej je volný
-          p.novySlide = !(await readSlides(id)).some((s) => s.typ === "info");
+          p.prepisuje = kolize; // prázdné = na tenhle typ obsahu je displej volný
+          const slidy = await readSlides(id);
+          if (p.info) p.info.novySlide = !slidy.some((s) => s.typ === "info");
+          if (p.gal) {
+            const galSlidy = slidy.filter((s) => s.typ === "gal");
+            p.gal.novySlide = galSlidy.length === 0;
+            // Displej může mít textových slidů víc (na disku třeba 3_gal
+            // i 4_gal). Zapisujeme do prvního v pořadí a říkáme to nahlas,
+            // ať to není loterie.
+            if (galSlidy.length > 1) {
+              p.poznamky.push(
+                `displej má ${galSlidy.length} textové slidy, zapíšu do prvního (${galSlidy[0].slozka})`,
+              );
+            }
+          }
+          // Obsah, kterého se import nedotkne, ale kurátor o něm má vědět.
+          const zustane = coZustane(p, stav);
+          if (zustane.length) {
+            p.poznamky.push(`nedotčeno zůstane: ${zustane.join(", ")}`);
+          }
           // Displej si rezervuje až zdroj, který se opravdu zapíše.
           obsazeneDispleje.set(id, p.slozka);
         }
@@ -370,19 +531,45 @@ async function main(): Promise<void> {
     const id = p.displej!;
     try {
       const slidy = await readSlides(id);
-      const info = slidy.find((s) => s.typ === "info");
-      const n = info ? info.n : await addSlide(id, "info");
 
-      const res = await writeInfoPole(id, n, p.pole, p.section);
-      if (!res.ok) throw new Error(res.chyba ?? "zápis info panelu selhal");
+      // Infopanel. Zdroj, který ho nenese, se ho vůbec nedotkne, takže se
+      // nemá jak stát, že by se smazala identita druhu z meta.json.
+      if (p.info) {
+        const existujici = slidy.find((s) => s.typ === "info");
+        const n = existujici ? existujici.n : await addSlide(id, "info");
 
-      // Překlady až po češtině: doplnSdilenaPole() si z ní bere sekci
-      // a latinské jméno, takže musí být na disku dřív. Sekci a Latinsky
-      // ze zdroje překladu server stejně přepíše hodnotou z češtiny.
-      for (const [jazyk, prelozene] of Object.entries(p.preklady)) {
-        const resJazyk = await writeInfoPole(id, n, prelozene, p.section, jazyk as Jazyk);
-        if (!resJazyk.ok) {
-          throw new Error(`zápis překladu ${jazyk} selhal: ${resJazyk.chyba ?? "neznámá chyba"}`);
+        const res = await writeInfoPole(id, n, p.info.cs, p.section);
+        if (!res.ok) throw new Error(res.chyba ?? "zápis info panelu selhal");
+
+        // Překlady až po češtině: doplnSdilenaPole() si z ní bere sekci
+        // a latinské jméno, takže musí být na disku dřív. Sekci a Latinsky
+        // ze zdroje překladu server stejně přepíše hodnotou z češtiny.
+        for (const [jazyk, prelozene] of Object.entries(p.info.preklady)) {
+          const resJazyk = await writeInfoPole(id, n, prelozene, p.section, jazyk as Jazyk);
+          if (!resJazyk.ok) {
+            throw new Error(`zápis překladu ${jazyk} selhal: ${resJazyk.chyba ?? "neznámá chyba"}`);
+          }
+        }
+      }
+
+      // Textový slide. writeGalPole() zapisuje JEDINÝ soubor
+      // (<jazyk>/<slozka>/text.txt), takže fotka slidu, galerie, video ani
+      // infopanel se tím nemají jak změnit. Taxonomii skládá z Trida/Rad/
+      // Celed až server, aby tvar řádku pro Unity vznikal na jednom místě.
+      if (p.gal) {
+        const galSlidy = slidy.filter((s) => s.typ === "gal");
+        const n = galSlidy.length ? galSlidy[0].n : await addSlide(id, "gal");
+
+        const res = await writeGalPole(id, n, p.gal.cs, "cs");
+        if (!res.ok) throw new Error(res.chyba ?? "zápis textového slidu selhal");
+
+        for (const [jazyk, prelozene] of Object.entries(p.gal.preklady)) {
+          const resJazyk = await writeGalPole(id, n, prelozene, jazyk as Jazyk);
+          if (!resJazyk.ok) {
+            throw new Error(
+              `zápis překladu textového slidu (${jazyk}) selhal: ${resJazyk.chyba ?? "neznámá chyba"}`,
+            );
+          }
         }
       }
 
@@ -397,13 +584,11 @@ async function main(): Promise<void> {
         uzivatel: kdo,
         akce: "hromadný import",
         cil:
-          `displej ${id} ← ${p.slozka} (${p.latin}), jazyky ${["cs", ...Object.keys(p.preklady)].join("+")}` +
+          `displej ${id} ← ${p.slozka} (${p.latin || "bez latinského jména"}): ${popisZapsaneho(p)}` +
           (p.cekaNaRevizi ? ", označeno k revizi kurátorem" : ""),
       });
       hotovo++;
-      console.log(
-        `  zapsáno: displej ${id} ← ${p.slozka} (${["cs", ...Object.keys(p.preklady)].join("+")})`,
-      );
+      console.log(`  zapsáno: displej ${id} ← ${p.slozka}, ${popisZapsaneho(p)}`);
     } catch (e) {
       const duvod = e instanceof Error ? e.message : String(e);
       selhalo.push({ slozka: p.slozka, duvod });

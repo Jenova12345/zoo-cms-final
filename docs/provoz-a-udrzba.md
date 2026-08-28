@@ -1024,8 +1024,8 @@ Spouštějí se z kořene repozitáře a **respektují `DATA_ROOT`**.
 | `npm run seed` | **Destruktivní.** Smaže a znovu vygeneruje `data/displeje/1..37`. Displeje 1 až 3 dostanou obsah (`1_info`, `2_vid` prázdná galerie, `3_gal` s texty a fotkou, `4_ai`, `kb.md`), 4 až 37 jsou `Nepřiřazeno` bez slidů. Displeje s číslem dělitelným 11 dostanou `stav: "offline"`. Zakládá výchozí účet, pokud žádný neexistuje. |
 | `npm run migrate` | Jednorázová migrace staré struktury (`cs/slide-1..6`, `text.md`, `kb.md` uvnitř slidu) na formát pro Unity. Zachová média (obrázky se převedou na PNG, první MP4 jde do `2_vid`), texty starých slidů připojí do `kb.md`. **Idempotentní**, displej bez složek `slide-*` přeskočí. |
 | `npm run backfill --workspace server` | Doplní do existujících `meta.json` identifikaci pro chatbota (`name`, `druh`, `latin_name`, `category`) z `text.txt`. Idempotentní, médií ani textů se nedotýká. `section` (čeleď) nezná, tu doplní kurátor v UI. V kořenovém `package.json` zkratka není. |
-| `npm run prevod-obsahu -- <vstup.txt> <vystup>` | Převede blokový textový soubor (`=== ČESKY === / === ENGLISH === / === POLSKI ===`, uvnitř číslo displeje a řádky `Klic: Hodnota`) na zdrojovou strukturu pro import plus `mapovani.json`. **Na datovou složku CMS nesahá**, jen čte text a vyrábí novou složku. Výchozí je nanečisto, zapíše se až s `--zapsat`. Klíč `Celed` míří do `meta.json` jako `section`, ostatní do `<jazyk>/1_info/text.txt`. |
-| `npm run import-obsahu -- <zdroj> <mapovani.json>` | Hromadný import info panelu (všechny tři jazyky) a `kb.md` do CMS. Výchozí je **nanečisto**, zapíše se až s `--zapsat`; displej, který už obsah má, se přeskočí, pokud se nepřidá `--prepsat`. Zapisuje výhradně přes `writeInfoPole()`/`writeKb()`, takže projde validací, kanonizací latiny, atomickým zápisem i auditem. Viz varování níž. |
+| `npm run prevod-obsahu -- <vstup.txt> <vystup>` | Převede blokový textový soubor (`=== ČESKY === / === ENGLISH === / === POLSKI ===`, uvnitř číslo displeje a řádky `Klic: Hodnota` nebo `Klic - Hodnota`) na zdrojovou strukturu pro import plus `mapovani.json`. **Na datovou složku CMS nesahá.** Umí infopanel i textový slide a typ pozná podle klíčů v každém bloku (`--typ=info\|gal` to vynutí). Výchozí je nanečisto, zapíše se až s `--zapsat`. |
+| `npm run import-obsahu -- <zdroj> <mapovani.json>` | Hromadný import infopanelu, textového slidu a `kb.md` do CMS, ve všech třech jazycích. Výchozí je **nanečisto**, zapíše se až s `--zapsat`; displej, který už obsah daného typu má, se přeskočí, pokud se nepřidá `--prepsat`. Zapisuje výhradně přes `writeInfoPole()`/`writeGalPole()`/`writeKb()`, takže projde validací, kanonizací latiny, atomickým zápisem i auditem. Viz varování níž. |
 | `npm run useradd -- …` / `npm run userlist` | Správa účtů, viz [kapitola 4](#4-účty-a-přihlašování). |
 
 Reset demo dat:
@@ -1033,22 +1033,63 @@ Reset demo dat:
 ```bash
 rm -rf data/displeje data/audit.jsonl && npm run seed
 ```
+### Formát zdrojové složky
+
+```
+zdroj/07-testus-testus/
+  meta.json                 name, latin_name, section (LATINSKÁ čeleď)
+  kb.md                     VOLITELNÉ, viz níž
+  cs/1_info/text.txt        infopanel
+  cs/1_gal/text.txt         textový slide „Informace"
+  en/1_gal/text.txt         překlady, cs je povinná, en/pl volitelné
+  pl/1_gal/text.txt
+```
+
+Číslo ve složce (`1_info`, `1_gal`) je **jen štítek**. Cílový slide se na
+displeji hledá **podle typu**, ne podle čísla: existující `_info`/`_gal` se
+přepíše, chybějící se založí na konci. Když má displej textových slidů víc
+(na disku třeba `3_gal` i `4_gal`), zapíše se do prvního a plán to hlásí.
+
+Zdrojová složka nemusí mít obojí. **Zdroj jen s textovým slidem nepotřebuje
+latinské jméno ani sekci** a `writeInfoPole()` se u něj vůbec nezavolá, takže
+se identita druhu v `meta.json` nemá jak změnit; na displej se páruje názvem
+složky (importér ho bere jako druhý párovací klíč vedle latinského jména).
+
+**Pozor na klíč `Celed`, který je v obou sadách a znamená pokaždé něco jiného:**
+
+| Kde | Význam | Kam na disku |
+|---|---|---|
+| infopanel | **latinská** čeleď pro chatbota (`Ambystomatidae`) | `meta.json`, pole `section` |
+| textový slide | **česká** čeleď pro návštěvníka (`Rosničkovití`) | řádek `Taxonomie:` v `text.txt` |
+
+Blok, ve kterém je `Celed` sám a žádný jiný klíč, se nedá zařadit; převodník
+ho odmítne a vyzve k `--typ`. Nikdy netipuje.
+
 ### Co import PŘEPÍŠE a co ne
 
 Ověřeno na kopii dat. `--prepsat` **nemaže** galerie, videa, fotky, 3D sekvence
 ani ostatní slidy: importér nikde nevolá `removeSlide()`, `deleteMedia()` ani
 `deleteVideo()`, jen odemyká zámek „displej už má obsah, přeskakuji".
 
-Přepisuje se ale tohle, a je to potřeba vědět dopředu:
+Zámek je **typově citlivý**: ptá se jen na typy obsahu, které zdroj opravdu
+nese. Přidat textový slide na displej, který má vyplněný infopanel, proto
+`--prepsat` nevyžaduje — nic se nepřepisuje. Kurátor tak nemusí odemykat
+přepis všeho jen kvůli tomu, aby doplnil jeden typ obsahu.
+
+Přepisuje se tohle, a je to potřeba vědět dopředu:
 
 1. **`<jazyk>/<n>_info/text.txt` se přepíše CELÝ, nemerguje se.** Pole, které
    ve zdroji chybí, na displeji zmizí. Zdroj proto musí nést všech osm polí,
-   i ta, která se nemění.
+   i ta, která se nemění. Totéž platí pro `<n>_gal/text.txt`.
 2. **`meta.section` se SMAŽE**, když zdrojový `meta.json` nemá `section`
    (`writeInfoPole()` prázdnou hodnotu maže). Tiše, bez hlášky. Vždycky proto
-   `section` do zdroje dejte, i beze změny.
+   `section` do zdroje dejte, i beze změny. **Zdroje jen s textovým slidem se
+   to netýká**, ty `writeInfoPole()` nevolají.
 3. **`kb.md` se přepíše**, ale jen když zdrojová složka má neprázdné `kb.md`.
    Když ho ve zdroji vynecháte, znalostní báze na disku zůstane nedotčená.
+
+Fotka textového slidu, galerie ani video se nepřepisují nikdy: import řeší
+jen texty. Plán u každého displeje vypisuje řádek `nedotčeno zůstane: …`.
 
 Importér nemá přepínač „jen displej N": jede přes všechny podsložky zdroje.
 Rozsah se omezuje tím, co ve zdrojové složce je.
